@@ -28,9 +28,11 @@ function printHelp() {
 
 Usage:
   remotelab setup                    Run interactive setup
-  remotelab start                    Start auth proxy + ttyd
+  remotelab start                    Start all services
   remotelab stop                     Stop all services
+  remotelab restart [service]        Restart services (chat|proxy|tunnel|all)
   remotelab server                   Run auth proxy in foreground
+  remotelab chat                     Run chat server in foreground
   remotelab generate-token           Generate a new access token
   remotelab --help                   Show this help message
   remotelab --version                Show version`);
@@ -49,8 +51,22 @@ switch (command) {
     runShell('stop.sh');
     break;
 
+  case 'restart': {
+    const service = args[0] || 'all';
+    try {
+      execFileSync('bash', [scriptPath('restart.sh'), service], { stdio: 'inherit' });
+    } catch (err) {
+      process.exit(err.status ?? 1);
+    }
+    break;
+  }
+
   case 'server':
     await import(scriptPath('auth-proxy.mjs'));
+    break;
+
+  case 'chat':
+    await import(scriptPath('chat-server.mjs'));
     break;
 
   case 'generate-token': {

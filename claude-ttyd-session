@@ -4,8 +4,8 @@ SESSION_NAME="${1:-claude-web}"
 WORK_DIR="${2:-$HOME}"
 TOOL_CMD="${3:-claude}"
 
-# Ensure Homebrew PATH is available (launchd has a minimal environment)
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# Ensure Homebrew and pnpm PATH is available (launchd has a minimal environment)
+export PATH="$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Source shell profile to get proper PATH and environment
 if [ -f "$HOME/.zshrc" ]; then

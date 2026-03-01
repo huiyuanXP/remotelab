@@ -41,12 +41,14 @@
   "files": [
     "cli.js",
     "auth-proxy.mjs",
+    "chat-server.mjs",
     "generate-token.mjs",
     "setup.sh",
     "start.sh",
     "stop.sh",
     "claude-ttyd-session",
     "lib/",
+    "chat/",
     "templates/",
     "static/",
     "LICENSE",
@@ -55,9 +57,13 @@
   ],
   "scripts": {
     "start": "node auth-proxy.mjs",
+    "chat": "node chat-server.mjs",
     "stop": "./stop.sh",
     "setup": "./setup.sh",
     "generate-token": "node generate-token.mjs",
     "prepublishOnly": "chmod +x cli.js setup.sh start.sh stop.sh claude-ttyd-session"
+  },
+  "dependencies": {
+    "ws": "^8.19.0"
   }
 }
