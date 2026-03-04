@@ -1,5 +1,7 @@
 # RemoteLab
 
+[中文](README.zh.md) | English
+
 Control AI coding tools (Claude Code, Codex, Cline) from your phone mac or any other device! — no SSH, no VPN, just a browser.
 
 ![Chat UI](docs/demo.gif)
