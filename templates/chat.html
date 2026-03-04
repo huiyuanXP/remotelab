@@ -31,8 +31,6 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --sidebar-width: 300px;
   --sidebar-collapsed-width: 48px;
-  --content-max: 740px;
-  --input-max: 1100px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -295,8 +293,7 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 .messages-inner {
-  max-width: var(--content-max);
-  margin: 0 auto;
+  width: 100%;
 }
 .empty-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -519,8 +516,6 @@ body {
 .input-area.is-resized .send-btn,
 .input-area.is-resized .cancel-btn { align-self: flex-end; }
 .input-wrapper {
-  max-width: var(--input-max);
-  margin: 0 auto;
   background: var(--bg);
   border: 1.5px solid var(--border-strong);
   border-radius: 14px;
@@ -627,9 +622,12 @@ body {
     justify-content: center; padding: 12px 4px;
   }
 
-  .messages { padding: 28px 32px; }
-  .input-area { padding: 0 32px 14px; padding-bottom: calc(14px + var(--safe-bottom)); }
-  .input-resize-handle { margin: 0 -32px 10px; }
+  /* Desktop: strip side padding from containers; 70% width on inner elements */
+  .messages { padding: 28px 0; }
+  .messages-inner { width: 70%; margin: 0 auto; }
+  .input-area { padding: 0 0 14px; padding-bottom: calc(14px + var(--safe-bottom)); }
+  .input-wrapper { width: 70%; margin: 0 auto; }
+  .input-resize-handle { margin: 0 0 10px; }
 }
 </style>
 </head>
