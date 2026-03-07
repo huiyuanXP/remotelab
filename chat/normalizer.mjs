@@ -40,14 +40,18 @@ export function statusEvent(content) {
   return createEvent('status', { role: 'system', content });
 }
 
-export function usageEvent(inputTokens, outputTokens) {
-  return createEvent('usage', { role: 'system', inputTokens, outputTokens });
+export function usageEvent(inputTokens, outputTokens, cacheCreationTokens = 0, cacheReadTokens = 0) {
+  return createEvent('usage', { role: 'system', inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens });
 }
 
-export function questionEvent(questions) {
-  return createEvent('question', { role: 'assistant', questions });
+export function sessionErrorEvent(message) {
+  return createEvent('session_error', { role: 'system', content: message });
 }
 
-export function planApprovalEvent(plan, allowedPrompts) {
-  return createEvent('plan_approval', { role: 'assistant', plan, allowedPrompts });
+export function questionEvent(questions, toolUseId) {
+  return createEvent('question', { role: 'assistant', questions, toolUseId });
+}
+
+export function planApprovalEvent(plan, allowedPrompts, toolUseId) {
+  return createEvent('plan_approval', { role: 'assistant', plan, allowedPrompts, toolUseId });
 }

@@ -28,8 +28,51 @@ function saveImages(images) {
 // sessionId -> { id, folder, tool, status, runner, listeners: Set<ws> }
 const liveSessions = new Map();
 
+// Maps Claude's internal session_id → RemoteLab sessionId (for hook routing)
+const claudeSessionMap = new Map();
+
+// Pending PreToolUse hook requests: remoteLabSessionId → { resolve, reject, toolName, toolInput }
+const pendingHooks = new Map();
+
 function generateId() {
   return randomBytes(16).toString('hex');
+}
+
+// ---- Hook IPC (PreToolUse HTTP bridge for AskUserQuestion / ExitPlanMode) ----
+
+export function registerClaudeSession(claudeSessionId, remoteLabSessionId) {
+  claudeSessionMap.set(claudeSessionId, remoteLabSessionId);
+}
+
+export function unregisterClaudeSession(claudeSessionId) {
+  claudeSessionMap.delete(claudeSessionId);
+}
+
+/**
+ * Called by the HTTP hook endpoint when Claude fires a PreToolUse event.
+ * Returns a Promise that resolves when the user responds via hook_response WebSocket action.
+ * Rejects after timeout or if the session ends.
+ */
+export function receiveHookRequest(claudeSessionId, toolName, toolInput) {
+  const remoteLabSessionId = claudeSessionMap.get(claudeSessionId);
+  if (!remoteLabSessionId) {
+    return Promise.reject(new Error(`No RemoteLab session mapped for Claude session ${claudeSessionId}`));
+  }
+  return new Promise((resolve, reject) => {
+    pendingHooks.set(remoteLabSessionId, { resolve, reject, toolName, toolInput });
+  });
+}
+
+/**
+ * Called from ws.mjs when user sends a hook_response action.
+ * Returns true if a pending hook was found and resolved, false otherwise.
+ */
+export function resolveHookRequest(remoteLabSessionId, msg) {
+  const pending = pendingHooks.get(remoteLabSessionId);
+  if (!pending) return false;
+  pendingHooks.delete(remoteLabSessionId);
+  pending.resolve(msg);
+  return true;
 }
 
 // ---- Persistence ----
@@ -214,11 +257,27 @@ export function sendMessage(sessionId, text, images, options = {}) {
   const onExit = (code) => {
     console.log(`[session-mgr] onExit session=${sessionId.slice(0,8)} code=${code}`);
     const l = liveSessions.get(sessionId);
+
+    // Auto-retry: if --resume failed (non-zero exit, resume was attempted, not already retried),
+    // clear the stale claudeSessionId and re-spawn the same message fresh.
+    if (code !== 0 && spawnOptions.claudeSessionId && !spawnOptions._retried) {
+      console.log(`[session-mgr] Resume failed for session ${sessionId.slice(0,8)}, retrying without --resume`);
+      delete spawnOptions.claudeSessionId;
+      spawnOptions._retried = true;
+      if (l) {
+        l.claudeSessionId = undefined;
+        const retryRunner = spawnTool(effectiveTool, session.folder, text, onEvent, onExit, spawnOptions);
+        l.runner = retryRunner;
+      }
+      return;
+    }
+
     if (l) {
       // Capture session/thread IDs for next resume
       if (l.runner?.claudeSessionId) {
         l.claudeSessionId = l.runner.claudeSessionId;
         console.log(`[session-mgr] Saved claudeSessionId=${l.claudeSessionId} for session ${sessionId.slice(0,8)}`);
+        unregisterClaudeSession(l.runner.claudeSessionId);
       }
       if (l.runner?.codexThreadId) {
         l.codexThreadId = l.runner.codexThreadId;
@@ -226,6 +285,12 @@ export function sendMessage(sessionId, text, images, options = {}) {
       }
       l.status = 'idle';
       l.runner = null;
+    }
+    // Reject any pending hook so the HTTP long-poll can unblock
+    const pending = pendingHooks.get(sessionId);
+    if (pending) {
+      pendingHooks.delete(sessionId);
+      pending.reject(new Error('Session ended before hook was resolved'));
     }
     broadcast(sessionId, {
       type: 'session',
@@ -251,6 +316,10 @@ export function sendMessage(sessionId, text, images, options = {}) {
   if (options.thinking) {
     spawnOptions.thinking = true;
   }
+  // Register Claude's session_id → our sessionId mapping when Claude announces itself
+  spawnOptions.onClaudeSessionId = (claudeSessionId) => {
+    registerClaudeSession(claudeSessionId, sessionId);
+  };
 
   console.log(`[session-mgr] Spawning tool=${effectiveTool} folder=${session.folder} thinking=${!!options.thinking}`);
   const runner = spawnTool(effectiveTool, session.folder, text, onEvent, onExit, spawnOptions);

@@ -439,6 +439,41 @@ body {
   font-size: 11px; color: var(--text-muted); text-align: center;
   padding: 4px; margin: 2px 0 12px;
 }
+.context-bar {
+  height: 3px; border-radius: 2px; background: var(--border);
+  margin: 5px auto 2px; width: 120px; overflow: hidden;
+}
+.context-bar-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--text-muted); transition: width 0.3s;
+}
+.context-bar-fill.context-bar-danger { background: var(--error); }
+.compact-btn {
+  display: block; margin: 4px auto 0; font-size: 11px;
+  padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  border: 1px solid var(--border); font-family: inherit;
+}
+.compact-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.compact-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Session error card */
+.session-error-card { border-color: var(--error-bg); }
+.session-error-actions { display: flex; gap: 8px; margin-top: 10px; }
+.session-error-btn {
+  flex: 1; padding: 9px 12px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 500; font-family: inherit;
+  border: 1px solid var(--border);
+}
+.session-error-delete {
+  background: var(--error-bg); color: var(--error); border-color: var(--error-bg);
+}
+.session-error-delete:hover { opacity: 0.85; }
+.session-error-recover {
+  background: var(--text); color: var(--bg); border-color: var(--text);
+}
+.session-error-recover:hover { opacity: 0.85; }
+.session-error-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ---- Thinking block ---- */
 .thinking-block {
@@ -562,6 +597,22 @@ body {
 }
 .interactive-other-send:disabled { opacity: 0.4; cursor: default; }
 
+/* Question form layout */
+.question-section { margin-bottom: 12px; }
+.question-section:last-of-type { margin-bottom: 0; }
+.question-card.submitted .interactive-option-btn:not(.selected) { opacity: 0.35; }
+.question-submit-wrap {
+  margin-top: 14px; display: flex; justify-content: flex-end;
+}
+.question-submit-btn {
+  padding: 10px 28px; border: none; border-radius: 8px;
+  background: var(--text); color: var(--bg); font-size: 14px;
+  font-weight: 500; cursor: pointer; font-family: inherit;
+  transition: opacity 0.1s;
+}
+.question-submit-btn:hover:not(:disabled) { opacity: 0.85; }
+.question-submit-btn:disabled { opacity: 0.4; cursor: default; }
+
 /* Plan approval */
 .plan-body {
   max-height: 300px; overflow-y: auto;
@@ -589,6 +640,22 @@ body {
 .plan-btn.reject.selected {
   background: var(--error-bg); color: var(--error); border-color: var(--error);
 }
+
+/* ---- Quick reply chips ---- */
+.quick-replies {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  max-width: var(--content-max); margin: 0 auto 8px;
+  padding: 0 2px;
+}
+.qr-btn {
+  padding: 5px 12px; border-radius: 16px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-secondary); color: var(--text-secondary);
+  font-size: 13px; cursor: pointer; font-family: inherit;
+  white-space: nowrap; transition: background 0.1s, color 0.1s;
+}
+.qr-btn:hover { background: var(--bg-tertiary); color: var(--text); }
+.qr-btn:active { opacity: 0.75; }
 
 /* ---- Input area ---- */
 .input-area {
@@ -755,6 +822,13 @@ body {
 
     <!-- Input area -->
     <div class="input-area" id="inputArea">
+      <div id="quickReplies" class="quick-replies" style="display:none">
+        <button class="qr-btn" data-text="Continue">Continue</button>
+        <button class="qr-btn" data-text="Explain this">Explain this</button>
+        <button class="qr-btn" data-text="Run tests">Run tests</button>
+        <button class="qr-btn" data-text="Show diff">Show diff</button>
+        <button class="qr-btn" data-text="Done">Done</button>
+      </div>
       <div class="input-wrapper">
         <!-- Image preview inside wrapper -->
         <div class="img-preview-strip" id="imgPreviewStrip"></div>
@@ -762,9 +836,11 @@ body {
           <select class="tool-select" id="inlineToolSelect" disabled></select>
           <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
           <button class="img-btn" id="imgBtn" disabled title="Attach image">&#128247;</button>
+          <button class="img-btn" id="fileAttachBtn" disabled title="Attach file">&#128206;</button>
         </div>
         <div class="input-row">
           <input type="file" id="imgFileInput" accept="image/*" multiple hidden>
+          <input type="file" id="fileAttachInput" multiple hidden>
           <textarea id="msgInput" placeholder="Message..." disabled></textarea>
           <button class="send-btn" id="sendBtn" disabled title="Send">&#9654;</button>
           <button class="cancel-btn" id="cancelBtn" title="Stop" style="display:none">&#9632;</button>

@@ -7,6 +7,26 @@ import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
 import { statusEvent } from './normalizer.mjs';
 import { getToolCommand, fullPath } from '../lib/tools.mjs';
+import { CHAT_PORT } from '../lib/config.mjs';
+
+/**
+ * Build the inline hook settings JSON that routes AskUserQuestion and ExitPlanMode
+ * to RemoteLab's internal HTTP endpoint so users can respond via the web UI.
+ */
+function buildHookSettings(port) {
+  return JSON.stringify({
+    hooks: {
+      PreToolUse: [{
+        matcher: 'AskUserQuestion|ExitPlanMode',
+        hooks: [{
+          type: 'http',
+          url: `http://127.0.0.1:${port}/api/internal/hook/pretooluse`,
+          timeout: 300,
+        }],
+      }],
+    },
+  });
+}
 
 function resolveCwd(folder) {
   if (!folder || folder === '~') return homedir();
@@ -115,6 +135,7 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
       dangerouslySkipPermissions: true,
       resume: options.claudeSessionId,
       thinking: options.thinking,
+      hookSettingsJson: buildHookSettings(CHAT_PORT),
     });
   } else if (isCodexFamily) {
     adapter = createCodexAdapter();
@@ -177,9 +198,16 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
       // Capture session/thread IDs for conversation resumption
       try {
         const obj = JSON.parse(line);
-        if (isClaudeFamily && !state.capturedClaudeSessionId && obj.session_id) {
+        // Only capture session_id from the system.init event (the conversation session).
+        // hook_started events carry a different, ephemeral process-level session_id
+        // that has no backing JSONL file and cannot be used with --resume.
+        if (isClaudeFamily && !state.capturedClaudeSessionId
+            && obj.type === 'system' && obj.subtype === 'init' && obj.session_id) {
           state.capturedClaudeSessionId = obj.session_id;
           console.log(`${TAG} Captured Claude session_id: ${state.capturedClaudeSessionId}`);
+          if (options.onClaudeSessionId) {
+            options.onClaudeSessionId(state.capturedClaudeSessionId);
+          }
         }
         if (isCodexFamily && !state.capturedCodexThreadId && obj.type === 'thread.started' && obj.thread_id) {
           state.capturedCodexThreadId = obj.thread_id;

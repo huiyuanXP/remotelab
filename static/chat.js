@@ -28,9 +28,12 @@
   const imgBtn = document.getElementById("imgBtn");
   const imgFileInput = document.getElementById("imgFileInput");
   const imgPreviewStrip = document.getElementById("imgPreviewStrip");
+  const fileAttachBtn = document.getElementById("fileAttachBtn");
+  const fileAttachInput = document.getElementById("fileAttachInput");
   const inlineToolSelect = document.getElementById("inlineToolSelect");
   const thinkingToggle = document.getElementById("thinkingToggle");
   const cancelBtn = document.getElementById("cancelBtn");
+  const quickReplies = document.getElementById("quickReplies");
   const tabSessions = document.getElementById("tabSessions");
   const tabProgress = document.getElementById("tabProgress");
   const progressPanel = document.getElementById("progressPanel");
@@ -41,6 +44,8 @@
   let sessionStatus = "idle";
   let reconnectTimer = null;
   let sessions = [];
+  let currentHistory = []; // raw events for current session (used by Recover)
+  let sessionContextTotal = 0; // latest total context tokens (input + cache)
   let pendingSummary = new Set(); // sessionIds awaiting summary generation
   let lastSidebarUpdatedAt = {}; // sessionId -> last known updatedAt
 
@@ -246,13 +251,17 @@
       case "history":
         clearMessages();
         if (msg.events && msg.events.length > 0) {
+          currentHistory = [...msg.events];
           for (const evt of msg.events) renderEvent(evt, false);
           scrollToBottom();
         }
         break;
 
       case "event":
-        if (msg.event) renderEvent(msg.event, true);
+        if (msg.event) {
+          currentHistory.push(msg.event);
+          renderEvent(msg.event, true);
+        }
         break;
 
       case "deleted":
@@ -297,8 +306,10 @@
     sendBtn.disabled = !hasSession;
     cancelBtn.style.display = isRunning && hasSession ? "flex" : "none";
     imgBtn.disabled = !hasSession;
+    fileAttachBtn.disabled = !hasSession;
     inlineToolSelect.disabled = !hasSession;
     thinkingToggle.disabled = !hasSession;
+    quickReplies.style.display = hasSession && !isRunning ? "flex" : "none";
   }
 
   // ---- Message rendering ----
@@ -307,6 +318,8 @@
     // Reset thinking block state
     inThinkingBlock = false;
     currentThinkingBlock = null;
+    currentHistory = [];
+    sessionContextTotal = 0;
   }
 
   function showEmpty() {
@@ -357,6 +370,9 @@
         break;
       case "plan_approval":
         renderPlanApproval(evt);
+        break;
+      case "session_error":
+        renderSessionError(evt);
         break;
     }
 
@@ -554,13 +570,130 @@
     messagesInner.appendChild(div);
   }
 
+  const CONTEXT_WINDOW = 200000; // claude-sonnet context window
+  const CONTEXT_WARN_THRESHOLD = 0.75; // show compact button at 75%
+
   function renderUsage(evt) {
-    const div = document.createElement("div");
-    div.className = "usage-info";
     const input = evt.inputTokens || 0;
     const output = evt.outputTokens || 0;
-    div.textContent = `${input.toLocaleString()} in · ${output.toLocaleString()} out`;
+    const cache = (evt.cacheCreationTokens || 0) + (evt.cacheReadTokens || 0);
+    const total = input + cache;
+    sessionContextTotal = total;
+    const pct = Math.min(total / CONTEXT_WINDOW, 1);
+
+    const div = document.createElement("div");
+    div.className = "usage-info";
+
+    const tokens = document.createElement("span");
+    tokens.textContent = `${total.toLocaleString()} in · ${output.toLocaleString()} out`;
+    div.appendChild(tokens);
+
+    if (pct >= CONTEXT_WARN_THRESHOLD) {
+      const bar = document.createElement("div");
+      bar.className = "context-bar";
+      const fill = document.createElement("div");
+      fill.className = "context-bar-fill" + (pct >= 0.9 ? " context-bar-danger" : "");
+      fill.style.width = `${Math.round(pct * 100)}%`;
+      bar.appendChild(fill);
+      div.appendChild(bar);
+
+      const compactBtn = document.createElement("button");
+      compactBtn.className = "compact-btn";
+      compactBtn.textContent = `Compact context (${Math.round(pct * 100)}%)`;
+      compactBtn.addEventListener("click", () => {
+        if (!currentSessionId) return;
+        const msg = { action: "send", text: "/compact" };
+        if (selectedTool) msg.tool = selectedTool;
+        msg.thinking = thinkingEnabled;
+        wsSend(msg);
+        compactBtn.disabled = true;
+        compactBtn.textContent = "Compacting…";
+      });
+      div.appendChild(compactBtn);
+    }
+
     messagesInner.appendChild(div);
+  }
+
+  function renderSessionError(evt) {
+    if (inThinkingBlock) finalizeThinkingBlock();
+    const card = document.createElement("div");
+    card.className = "interactive-card session-error-card";
+
+    const tag = document.createElement("span");
+    tag.className = "interactive-tag";
+    tag.textContent = "Session Error";
+    card.appendChild(tag);
+
+    const msg = document.createElement("p");
+    msg.className = "interactive-question";
+    msg.textContent = "The session could not be resumed. You can delete it or recover the conversation by replaying history into a new session.";
+    card.appendChild(msg);
+
+    const actions = document.createElement("div");
+    actions.className = "session-error-actions";
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "session-error-btn session-error-delete";
+    deleteBtn.textContent = "Delete session";
+    deleteBtn.addEventListener("click", () => {
+      if (!currentSessionId) return;
+      if (confirm("Delete this session?")) {
+        wsSend({ action: "delete", sessionId: currentSessionId });
+      }
+    });
+
+    const recoverBtn = document.createElement("button");
+    recoverBtn.className = "session-error-btn session-error-recover";
+    recoverBtn.textContent = "Recover conversation";
+    recoverBtn.addEventListener("click", () => recoverSession(recoverBtn));
+
+    actions.appendChild(deleteBtn);
+    actions.appendChild(recoverBtn);
+    card.appendChild(actions);
+    messagesInner.appendChild(card);
+  }
+
+  function recoverSession(btn) {
+    const currentSession = sessions.find((s) => s.id === currentSessionId);
+    if (!currentSession) return;
+
+    // Build a recovery prompt from the visible conversation history
+    const lines = ["[Previous conversation for context recovery — please review and confirm ready to continue:]", ""];
+    for (const e of currentHistory) {
+      if (e.type === "message" && e.role === "user" && e.content) {
+        lines.push(`[USER]: ${e.content}`);
+      } else if (e.type === "message" && e.role === "assistant" && e.content) {
+        lines.push(`[ASSISTANT]: ${e.content}`);
+      }
+    }
+    lines.push("", "[Please confirm you have reviewed the above and are ready to continue.]");
+    const recoveryPrompt = lines.join("\n");
+
+    if (btn) { btn.disabled = true; btn.textContent = "Recovering…"; }
+
+    // Create new session, attach, send recovery prompt
+    const tool = currentSession.tool || selectedTool;
+    const name = (currentSession.name || "").replace(/ \(recovered\)$/, "") + " (recovered)";
+    wsSend({ action: "create", folder: currentSession.folder, tool, name });
+
+    const handler = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === "session" && msg.session) {
+        ws.removeEventListener("message", handler);
+        attachSession(msg.session.id, msg.session);
+        wsSend({ action: "list" });
+        // Send the recovery prompt after attach completes (history loads first)
+        setTimeout(() => {
+          const m = { action: "send", text: recoveryPrompt };
+          if (tool) m.tool = tool;
+          m.thinking = thinkingEnabled;
+          wsSend(m);
+        }, 300);
+      }
+    };
+    ws.addEventListener("message", handler);
   }
 
   // ---- Interactive events (AskUserQuestion / ExitPlanMode passthrough) ----
@@ -579,27 +712,33 @@
     const questions = evt.questions;
     if (!Array.isArray(questions) || questions.length === 0) return;
 
-    for (const q of questions) {
-      const card = document.createElement("div");
-      card.className = "interactive-card question-card";
+    const card = document.createElement("div");
+    card.className = "interactive-card question-card";
+
+    // Per-question answer state: index -> selected labels (array for multi, single-element for single)
+    const answers = questions.map(() => []);
+
+    questions.forEach((q, qi) => {
+      const section = document.createElement("div");
+      section.className = "question-section";
 
       if (q.header) {
         const tag = document.createElement("span");
         tag.className = "interactive-tag";
         tag.textContent = q.header;
-        card.appendChild(tag);
+        section.appendChild(tag);
       }
 
       const qText = document.createElement("div");
       qText.className = "interactive-question";
       qText.textContent = q.question || "";
-      card.appendChild(qText);
+      section.appendChild(qText);
 
       const optionsWrap = document.createElement("div");
       optionsWrap.className = "interactive-options";
 
-      const options = q.options || [];
-      for (const opt of options) {
+      const optBtns = [];
+      for (const opt of (q.options || [])) {
         const btn = document.createElement("button");
         btn.className = "interactive-option-btn";
         const labelSpan = document.createElement("span");
@@ -613,42 +752,82 @@
           btn.appendChild(descSpan);
         }
         btn.addEventListener("click", () => {
-          card.querySelectorAll(".interactive-option-btn").forEach(b => b.disabled = true);
-          btn.classList.add("selected");
-          otherWrap.style.display = "none";
-          sendQuickReply(opt.label);
+          if (card.classList.contains("submitted")) return;
+          // Clear other input when option selected
+          const otherIn = section.querySelector(".interactive-other-input");
+          if (otherIn) otherIn.value = "";
+
+          if (q.multiSelect) {
+            btn.classList.toggle("selected");
+            const sel = [];
+            optBtns.forEach(b => { if (b.classList.contains("selected")) sel.push(b.querySelector(".option-label").textContent); });
+            answers[qi] = sel;
+          } else {
+            optBtns.forEach(b => b.classList.remove("selected"));
+            btn.classList.add("selected");
+            answers[qi] = [opt.label];
+          }
         });
+        optBtns.push(btn);
         optionsWrap.appendChild(btn);
       }
-      card.appendChild(optionsWrap);
+      section.appendChild(optionsWrap);
 
-      // "Other" free-text option
+      // "Other" free-text input
       const otherWrap = document.createElement("div");
       otherWrap.className = "interactive-other";
       const otherInput = document.createElement("input");
       otherInput.type = "text";
       otherInput.placeholder = "Other...";
       otherInput.className = "interactive-other-input";
-      const otherBtn = document.createElement("button");
-      otherBtn.className = "interactive-other-send";
-      otherBtn.textContent = "Send";
-      otherBtn.addEventListener("click", () => {
-        const val = otherInput.value.trim();
-        if (!val) return;
-        card.querySelectorAll(".interactive-option-btn").forEach(b => b.disabled = true);
-        otherInput.disabled = true;
-        otherBtn.disabled = true;
-        sendQuickReply(val);
-      });
-      otherInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") { e.preventDefault(); otherBtn.click(); }
+      otherInput.addEventListener("input", () => {
+        if (otherInput.value.trim()) {
+          optBtns.forEach(b => b.classList.remove("selected"));
+          answers[qi] = [];
+        }
       });
       otherWrap.appendChild(otherInput);
-      otherWrap.appendChild(otherBtn);
-      card.appendChild(otherWrap);
+      section.appendChild(otherWrap);
 
-      messagesInner.appendChild(card);
-    }
+      card.appendChild(section);
+    });
+
+    // Submit button
+    const submitWrap = document.createElement("div");
+    submitWrap.className = "question-submit-wrap";
+    const submitBtn = document.createElement("button");
+    submitBtn.className = "question-submit-btn";
+    submitBtn.textContent = "Confirm";
+    submitBtn.addEventListener("click", () => {
+      // Collect answers as { "question text": "selected answer" } for the hook
+      const answersObj = {};
+      let hasAnswer = false;
+      questions.forEach((q, qi) => {
+        const otherIn = card.querySelectorAll(".question-section")[qi]?.querySelector(".interactive-other-input");
+        const otherVal = otherIn?.value.trim();
+        let answer;
+        if (otherVal) {
+          answer = otherVal;
+        } else if (answers[qi].length > 0) {
+          answer = answers[qi].join(", ");
+        } else {
+          return; // skip unanswered
+        }
+        answersObj[q.question || ("Q" + (qi + 1))] = answer;
+        hasAnswer = true;
+      });
+      if (!hasAnswer) return;
+
+      card.classList.add("submitted");
+      submitBtn.disabled = true;
+      card.querySelectorAll(".interactive-option-btn").forEach(b => b.disabled = true);
+      card.querySelectorAll(".interactive-other-input").forEach(i => i.disabled = true);
+      wsSend({ action: "hook_response", toolUseId: evt.toolUseId, answers: answersObj });
+    });
+    submitWrap.appendChild(submitBtn);
+    card.appendChild(submitWrap);
+
+    messagesInner.appendChild(card);
   }
 
   function renderPlanApproval(evt) {
@@ -680,7 +859,7 @@
       rejectBtn.disabled = true;
       approveBtn.classList.add("selected");
       feedbackWrap.style.display = "none";
-      sendQuickReply("Plan approved, proceed with implementation.");
+      wsSend({ action: "hook_response", toolUseId: evt.toolUseId, decision: "allow" });
     });
 
     const rejectBtn = document.createElement("button");
@@ -713,7 +892,7 @@
       rejectBtn.classList.add("selected");
       feedbackInput.disabled = true;
       feedbackBtn.disabled = true;
-      sendQuickReply("Plan rejected: " + val);
+      wsSend({ action: "hook_response", toolUseId: evt.toolUseId, decision: "deny", reason: val });
     });
     feedbackInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); feedbackBtn.click(); }
@@ -879,6 +1058,7 @@
     msgInput.disabled = false;
     sendBtn.disabled = false;
     imgBtn.disabled = false;
+    fileAttachBtn.disabled = false;
     inlineToolSelect.disabled = false;
     thinkingToggle.disabled = false;
 
@@ -1052,6 +1232,41 @@
     imgFileInput.value = "";
   });
 
+  // ---- File attachment upload ----
+  fileAttachBtn.addEventListener("click", () => fileAttachInput.click());
+  fileAttachInput.addEventListener("change", async () => {
+    const files = Array.from(fileAttachInput.files);
+    fileAttachInput.value = "";
+    if (!files.length || !currentSessionId) return;
+
+    fileAttachBtn.disabled = true;
+    fileAttachBtn.textContent = "…";
+
+    for (const file of files) {
+      try {
+        const res = await fetch(
+          `/api/upload?name=${encodeURIComponent(file.name)}&sessionId=${encodeURIComponent(currentSessionId)}`,
+          { method: "POST", body: file }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(`Upload failed: ${err.error || res.statusText}`);
+          continue;
+        }
+        const data = await res.json();
+        // Append file reference into textarea so user can see and edit it
+        const ref = `\n📎 ${data.path}`;
+        msgInput.value = (msgInput.value + ref).trimStart();
+        autoResizeInput();
+      } catch (e) {
+        alert(`Upload failed: ${e.message}`);
+      }
+    }
+
+    fileAttachBtn.disabled = false;
+    fileAttachBtn.textContent = "📎";
+  });
+
   msgInput.addEventListener("paste", (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -1090,6 +1305,11 @@
   }
 
   cancelBtn.addEventListener("click", () => wsSend({ action: "cancel" }));
+
+  quickReplies.addEventListener("click", (e) => {
+    const btn = e.target.closest(".qr-btn");
+    if (btn && sessionStatus === "idle") sendQuickReply(btn.dataset.text);
+  });
 
   sendBtn.addEventListener("click", sendMessage);
   msgInput.addEventListener("keydown", (e) => {

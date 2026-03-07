@@ -3,7 +3,7 @@ import { isAuthenticated, parseCookies } from '../lib/auth.mjs';
 import {
   createSession, deleteSession, getSession, listSessions,
   subscribe, unsubscribe, sendMessage, cancelSession, getHistory,
-  renameSession,
+  renameSession, resolveHookRequest,
 } from './session-manager.mjs';
 
 /**
@@ -166,6 +166,19 @@ function handleMessage(ws, msg, ctx) {
         return;
       }
       cancelSession(sessionId);
+      break;
+    }
+
+    case 'hook_response': {
+      const sessionId = ctx.getAttached();
+      if (!sessionId) {
+        wsSend(ws, { type: 'error', message: 'Not attached to a session' });
+        return;
+      }
+      const ok = resolveHookRequest(sessionId, msg);
+      if (!ok) {
+        console.warn(`[ws] hook_response for session ${sessionId.slice(0,8)} but no pending hook`);
+      }
       break;
     }
 
