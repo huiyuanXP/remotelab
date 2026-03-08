@@ -10,7 +10,7 @@ import {
   getAuthSession,
 } from '../lib/auth.mjs';
 import { getAvailableTools, saveSimpleTool } from '../lib/tools.mjs';
-import { listSessions, listArchivedSessions, getSession, createSession, archiveSession, unarchiveSession } from './session-manager.mjs';
+import { listSessions, listArchivedSessions, getSession, getHistory, createSession, archiveSession, unarchiveSession } from './session-manager.mjs';
 import { appendEvent } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { getSidebarState } from './summarizer.mjs';
@@ -18,6 +18,7 @@ import { getPublicKey, addSubscription } from './push.mjs';
 import { getModelsForTool } from './models.mjs';
 import { getSettings, updateSettings } from './settings.mjs';
 import { listApps, getApp, getAppByShareToken, createApp, updateApp, deleteApp } from './apps.mjs';
+import { createShareSnapshot, getShareSnapshot } from './shares.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
   getClientIp, isRateLimited, recordFailedAttempt, clearFailedAttempts,
@@ -28,6 +29,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const chatTemplatePath = join(__dirname, '..', 'templates', 'chat.html');
 const loginTemplatePath = join(__dirname, '..', 'templates', 'login.html');
+const shareTemplatePath = join(__dirname, '..', 'templates', 'share.html');
 const staticDir = join(__dirname, '..', 'static');
 
 const staticMimeTypes = {
@@ -36,6 +38,7 @@ const staticMimeTypes = {
   'apple-touch-icon.png': 'image/png',
   'chat.js': 'application/javascript',
   'marked.min.js': 'application/javascript',
+  'share.js': 'application/javascript',
   'sw.js': 'application/javascript',
 };
 
@@ -44,9 +47,37 @@ function writeJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function setShareSnapshotHeaders(res, nonce) {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+    "connect-src 'none'",
+    `script-src 'self' 'nonce-${nonce}'`,
+    "style-src 'unsafe-inline'",
+    "img-src data: blob:",
+    "font-src 'none'",
+  ].join('; '));
+}
+
+function serializeJsonForScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/sessions' && (method === 'GET' || method === 'POST')) return true;
   if (pathname === '/api/sessions/archived' && method === 'GET') return true;
+  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/unarchive') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && method === 'DELETE') return true;
   if (pathname === '/api/models' && method === 'GET') return true;
@@ -207,6 +238,31 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (pathname.startsWith('/share/') && req.method === 'GET') {
+    const shareId = pathname.slice('/share/'.length);
+    const snapshot = getShareSnapshot(shareId);
+    if (!snapshot) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Shared snapshot not found');
+      return;
+    }
+    setShareSnapshotHeaders(res, nonce);
+    try {
+      const sharePage = readFileSync(shareTemplatePath, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      });
+      res.end(sharePage
+        .replace(/\{\{NONCE\}\}/g, nonce)
+        .replace(/\{\{SNAPSHOT_JSON\}\}/g, serializeJsonForScript(snapshot)));
+    } catch {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Failed to load share page');
+    }
+    return;
+  }
+
   // Auth required from here on
   if (!requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
@@ -225,6 +281,31 @@ export async function handleRequest(req, res) {
       : sessionList;
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ sessions: filtered }));
+    return;
+  }
+
+  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && req.method === 'POST') {
+    const parts = pathname.split('/').filter(Boolean);
+    const id = parts[2];
+    if (parts.length !== 4 || parts[0] !== 'api' || parts[1] !== 'sessions' || parts[3] !== 'share' || !id) {
+      writeJson(res, 400, { error: 'Invalid session share path' });
+      return;
+    }
+
+    const session = getSession(id);
+    if (!session) {
+      writeJson(res, 404, { error: 'Session not found' });
+      return;
+    }
+
+    const snapshot = createShareSnapshot(session, getHistory(id));
+    writeJson(res, 201, {
+      share: {
+        id: snapshot.id,
+        createdAt: snapshot.createdAt,
+        url: `/share/${snapshot.id}`,
+      },
+    });
     return;
   }
 

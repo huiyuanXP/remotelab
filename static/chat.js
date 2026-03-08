@@ -8,6 +8,7 @@
   const sidebarOverlay = document.getElementById("sidebarOverlay");
   const closeSidebar = document.getElementById("closeSidebar");
   const collapseBtn = document.getElementById("collapseBtn");
+  const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
   const sessionList = document.getElementById("sessionList");
   const newSessionBtn = document.getElementById("newSessionBtn");
   const messagesEl = document.getElementById("messages");
@@ -601,6 +602,73 @@
     }, 1400);
   }
 
+  function syncShareButton() {
+    if (!shareSnapshotBtn) return;
+    const visible = !visitorMode && !!currentSessionId;
+    shareSnapshotBtn.style.display = visible ? "" : "none";
+    if (!visible) {
+      shareSnapshotBtn.disabled = false;
+      window.clearTimeout(shareSnapshotBtn._copyResetTimer);
+      if (shareSnapshotBtn.dataset.originalLabel) {
+        shareSnapshotBtn.textContent = shareSnapshotBtn.dataset.originalLabel;
+      }
+    }
+  }
+
+  async function shareCurrentSessionSnapshot() {
+    if (!currentSessionId || visitorMode || !shareSnapshotBtn) return;
+
+    const currentSession = getCurrentSession();
+    shareSnapshotBtn.disabled = true;
+
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(currentSessionId)}/share`, {
+        method: "POST",
+      });
+
+      let payload = null;
+      try {
+        payload = await res.json();
+      } catch {}
+
+      const shareUrl = payload?.share?.url
+        ? new URL(payload.share.url, location.origin).toString()
+        : null;
+
+      if (!res.ok || !shareUrl) {
+        throw new Error(payload?.error || "Failed to create share link");
+      }
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: currentSession?.name || currentSession?.tool || "RemoteLab snapshot",
+            text: "Read-only RemoteLab session snapshot",
+            url: shareUrl,
+          });
+          updateCopyButtonLabel(shareSnapshotBtn, "Shared");
+          return;
+        } catch (err) {
+          if (err?.name === "AbortError") return;
+        }
+      }
+
+      try {
+        await copyText(shareUrl);
+        updateCopyButtonLabel(shareSnapshotBtn, "Copied");
+      } catch {
+        window.prompt("Copy share link", shareUrl);
+        updateCopyButtonLabel(shareSnapshotBtn, "Ready");
+      }
+    } catch (err) {
+      console.warn("[share] Failed to create snapshot:", err.message);
+      updateCopyButtonLabel(shareSnapshotBtn, "Failed");
+    } finally {
+      shareSnapshotBtn.disabled = false;
+      syncShareButton();
+    }
+  }
+
   function syncAddToolModal() {
     if (!providerPromptCode) return;
     syncQuickAddControls();
@@ -932,6 +1000,10 @@
     }
   });
 
+  if (shareSnapshotBtn) {
+    shareSnapshotBtn.addEventListener("click", shareCurrentSessionSnapshot);
+  }
+
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && addToolModal && !addToolModal.hidden) {
       closeAddToolModal();
@@ -1033,6 +1105,7 @@
         sortSessionsInPlace();
         renderSessionList();
         restoreOwnerSessionSelection();
+        syncShareButton();
         break;
 
       case "session":
@@ -1080,6 +1153,7 @@
           }
           renderSessionList();
           updateResumeButton();
+          syncShareButton();
         }
         break;
 
@@ -1116,9 +1190,12 @@
           currentSessionId = null;
           hasAttachedSession = false;
           clearMessages();
+          showEmpty();
+          updateStatus("connected", "idle");
         }
         renderSessionList();
         restoreOwnerSessionSelection();
+        syncShareButton();
         wsSend({ action: "list_archived" });
         break;
 
@@ -1212,6 +1289,7 @@
     thinkingToggle.disabled = !hasSession;
     effortSelect.disabled = !hasSession;
     updateResumeButton();
+    syncShareButton();
   }
 
   // ---- Message rendering ----
@@ -1227,6 +1305,7 @@
     messagesInner.appendChild(emptyState);
     inThinkingBlock = false;
     currentThinkingBlock = null;
+    syncShareButton();
   }
 
   function scrollToBottom() {
@@ -1804,6 +1883,7 @@
     renderSessionList();
     updateResumeButton();
     syncBrowserState();
+    syncShareButton();
   }
 
   // ---- Sidebar ----
@@ -2420,6 +2500,7 @@
     if (compactBtn) compactBtn.style.display = "none";
     if (dropToolsBtn) dropToolsBtn.style.display = "none";
     if (contextTokens) contextTokens.style.display = "none";
+    syncShareButton();
   }
 
   // ---- Init ----
@@ -2441,6 +2522,7 @@
     }
 
     syncAddToolModal();
+    syncShareButton();
     if (!visitorMode) {
       await fetchSettings();
       await loadInlineTools();

@@ -65,6 +65,15 @@ body {
   width: 32px; height: 32px;
 }
 .header-btn:hover { background: var(--bg-tertiary); color: var(--text); }
+.header-share-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 32px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-tertiary);
+  color: var(--text-secondary); font-size: 12px; font-weight: 600;
+  cursor: pointer; flex-shrink: 0;
+}
+.header-share-btn:hover { background: var(--bg-secondary); color: var(--text); border-color: var(--border-strong); }
+.header-share-btn:disabled { opacity: 0.7; cursor: wait; }
 .status-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);
   display: inline-block; flex-shrink: 0;
@@ -933,6 +942,7 @@ body.visitor-mode .header #menuBtn { display: none !important; }
 <div class="header">
   <button class="header-btn" id="menuBtn" title="Sessions">&#9776;</button>
   <h1 id="headerTitle">RemoteLab Chat</h1>
+  <button class="header-share-btn" id="shareSnapshotBtn" title="Create a read-only snapshot link" style="display:none">Share</button>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText">disconnected</span>
 </div>
