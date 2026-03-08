@@ -14,7 +14,9 @@ Control AI coding tools (Claude Code, Codex, Cline) from your phone mac or any o
 
 RemoteLab runs a lightweight web server on your **Mac or Linux server**. You point a Cloudflare tunnel at it, get an HTTPS URL, and from any browser (phone, tablet, whatever) you can open a chat interface that talks to Claude Code running on your machine.
 
-Your sessions persist across disconnects. History is kept on disk. Multiple folders, multiple sessions, running in parallel.
+Your sessions persist across disconnects. History is kept on disk. Multiple sessions can run in parallel.
+
+New sessions now start from `~` by default. For project-scoped work outside RemoteLab itself, tell the agent the repo path once and let it locate the relevant files.
 
 ### Get set up in 5 minutes — hand it to an AI
 
@@ -51,10 +53,14 @@ Open `https://[subdomain].[domain]/?token=YOUR_TOKEN` on your phone:
 
 ![Dashboard](docs/new-dashboard.png)
 
-- Create a session: pick a folder + AI tool
+- Create a session: pick an AI tool — sessions start from `~` by default
+- For non-RemoteLab projects, tell the agent the repo path once
 - Send messages — responses stream back in real time
 - Close the browser, come back later — session is still alive
 - Paste screenshots directly into the chat
+- Share a read-only snapshot link of the current session without exposing any other sessions
+
+Note: some screenshots/GIFs still show the older folder-picker flow during this transition. If you prefer that model, use [v0.1](https://github.com/Ninglo/remotelab/releases/tag/v0.1).
 
 ### Daily usage
 
@@ -128,6 +134,7 @@ remotelab --help               Show help
 | `~/.config/remotelab/auth.json` | Access token + password hash |
 | `~/.config/remotelab/chat-sessions.json` | Chat session metadata |
 | `~/.config/remotelab/chat-history/` | Per-session event logs (JSONL) |
+| `~/.config/remotelab/shared-snapshots/` | Immutable read-only session share snapshots |
 | `~/Library/Logs/chat-server.log` | Chat server stdout **(macOS)** |
 | `~/.local/share/remotelab/logs/chat-server.log` | Chat server stdout **(Linux)** |
 | `~/Library/Logs/cloudflared.log` | Tunnel stdout **(macOS)** |
