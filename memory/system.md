@@ -200,3 +200,8 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 ### Preference Slips Should Be Framed As Execution Failures, Not Memory Loss (2026-03-08)
 - When a user flags that a standing preference was broken, verify the memory record first and explicitly tell them whether the preference is still stored.
 - If the preference is present, describe the issue as a failure to follow stored instructions, apologize clearly, and restate the standing default so trust is repaired with evidence instead of vague reassurance.
+
+### Usage Metrics Should Normalize To Context Window Size (2026-03-10)
+- Provider usage fields are not directly comparable: Claude-style runtimes split cached prompt tokens into separate fields, while Codex-style runtimes report full prompt size in `input_tokens` and expose cached tokens only as a subset annotation.
+- The user-facing metric should therefore normalize to a canonical `contextTokens` value that represents the actual prompt/context window size loaded for the turn, not raw billable-token accounting.
+- Preserve provider-native raw `inputTokens` / `outputTokens` for debugging if needed, but label the UI around `context` so operators can judge compaction pressure and context-window saturation correctly.

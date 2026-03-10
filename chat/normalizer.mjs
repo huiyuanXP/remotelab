@@ -40,6 +40,15 @@ export function statusEvent(content) {
   return createEvent('status', { role: 'system', content });
 }
 
-export function usageEvent(inputTokens, outputTokens) {
-  return createEvent('usage', { role: 'system', inputTokens, outputTokens });
+export function usageEvent({
+  contextTokens = 0,
+  inputTokens = 0,
+  outputTokens = 0,
+} = {}) {
+  return createEvent('usage', {
+    role: 'system',
+    contextTokens,
+    inputTokens,
+    outputTokens,
+  });
 }

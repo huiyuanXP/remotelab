@@ -55,10 +55,13 @@ export function createCodexAdapter() {
 
         case 'turn.completed':
           if (obj.usage) {
-            events.push(usageEvent(
-              obj.usage.input_tokens || 0,
-              obj.usage.output_tokens || 0,
-            ));
+            // Codex reports the full prompt/context size in input_tokens.
+            // cached_input_tokens is a cache-hit subset annotation, not extra context.
+            events.push(usageEvent({
+              contextTokens: obj.usage.input_tokens || 0,
+              inputTokens: obj.usage.input_tokens || 0,
+              outputTokens: obj.usage.output_tokens || 0,
+            }));
           }
           events.push(statusEvent('completed'));
           break;

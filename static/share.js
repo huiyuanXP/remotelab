@@ -378,9 +378,11 @@
   function renderUsage(event) {
     const div = document.createElement("div");
     div.className = "usage-info";
-    const input = event.inputTokens || 0;
+    const contextSize = Number.isFinite(event.contextTokens)
+      ? event.contextTokens
+      : (event.inputTokens || 0);
     const output = event.outputTokens || 0;
-    div.textContent = `${input.toLocaleString()} in · ${output.toLocaleString()} out`;
+    div.textContent = `${contextSize.toLocaleString()} context · ${output.toLocaleString()} out`;
     messagesInner.appendChild(div);
   }
 

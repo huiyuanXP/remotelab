@@ -115,6 +115,9 @@ function sanitizeEvent(event) {
         id: event.id,
         timestamp: event.timestamp,
         role: event.role,
+        contextTokens: Number.isFinite(event.contextTokens)
+          ? event.contextTokens
+          : (Number.isFinite(event.inputTokens) ? event.inputTokens : 0),
         inputTokens: Number.isFinite(event.inputTokens) ? event.inputTokens : 0,
         outputTokens: Number.isFinite(event.outputTokens) ? event.outputTokens : 0,
       };

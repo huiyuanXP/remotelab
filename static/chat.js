@@ -1618,10 +1618,16 @@
     return "~" + Math.round(n / 1000) + "K";
   }
 
-  function updateContextDisplay(inputTokens) {
-    currentTokens = inputTokens;
-    if (inputTokens > 0 && currentSessionId) {
-      contextTokens.textContent = formatTokens(inputTokens);
+  function getContextTokens(evt) {
+    if (Number.isFinite(evt?.contextTokens)) return evt.contextTokens;
+    if (Number.isFinite(evt?.inputTokens)) return evt.inputTokens;
+    return 0;
+  }
+
+  function updateContextDisplay(contextSize) {
+    currentTokens = contextSize;
+    if (contextSize > 0 && currentSessionId) {
+      contextTokens.textContent = formatTokens(contextSize);
       contextTokens.style.display = "";
       compactBtn.style.display = "";
       dropToolsBtn.style.display = "";
@@ -1631,11 +1637,11 @@
   function renderUsage(evt) {
     const div = document.createElement("div");
     div.className = "usage-info";
-    const input = evt.inputTokens || 0;
+    const contextSize = getContextTokens(evt);
     const output = evt.outputTokens || 0;
-    div.textContent = `${input.toLocaleString()} in · ${output.toLocaleString()} out`;
+    div.textContent = `${contextSize.toLocaleString()} context · ${output.toLocaleString()} out`;
     messagesInner.appendChild(div);
-    updateContextDisplay(input);
+    updateContextDisplay(contextSize);
   }
 
   function esc(s) {
