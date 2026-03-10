@@ -20,6 +20,7 @@ Current examples:
 - `current/core-domain-contract.md`
 - `current/core-domain-implementation-mapping.md`
 - `current/core-domain-refactor-todo.md`
+- `current/core-domain-session-prompts.md`
 - `current/memory-activation-architecture.md`
 - `current/self-hosting-dev-restarts.md`
 

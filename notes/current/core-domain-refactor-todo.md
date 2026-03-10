@@ -7,6 +7,7 @@
 >
 > - `notes/current/core-domain-contract.md`
 > - `notes/current/core-domain-implementation-mapping.md`
+> - `notes/current/core-domain-session-prompts.md`
 >
 > This note is intentionally action-oriented.
 > It does not redefine the product model; it decomposes the work needed to move the codebase toward that model.
