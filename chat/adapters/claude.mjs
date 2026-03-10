@@ -16,7 +16,8 @@ import {
  */
 export function createClaudeAdapter() {
   // Track per-turn input tokens from assistant messages for accurate context display.
-  // Claude Code uses prompt caching, so the real context size is:
+  // Claude Code usage splits cache accounting across separate fields, so the
+  // canonical context-window size is:
   // input_tokens + cache_creation_input_tokens + cache_read_input_tokens
   let lastTurnInputTokens = 0;
 
@@ -112,7 +113,11 @@ export function createClaudeAdapter() {
               (u.cache_creation_input_tokens || 0) +
               (u.cache_read_input_tokens || 0)
             );
-            events.push(usageEvent(totalIn, u.output_tokens || 0));
+            events.push(usageEvent({
+              contextTokens: totalIn,
+              inputTokens: u.input_tokens || 0,
+              outputTokens: u.output_tokens || 0,
+            }));
           }
           events.push(statusEvent('completed'));
           break;

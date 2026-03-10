@@ -852,10 +852,13 @@ async function syncDetachedRun(sessionId, runId) {
       historyChanged = true;
     }
     const latestUsage = [...normalizedEvents].reverse().find((event) => event.type === 'usage');
-    if (latestUsage && Number.isInteger(latestUsage.inputTokens)) {
+    const contextInputTokens = Number.isInteger(latestUsage?.contextTokens)
+      ? latestUsage.contextTokens
+      : latestUsage?.inputTokens;
+    if (Number.isInteger(contextInputTokens)) {
       run = await updateRun(runId, (current) => ({
         ...current,
-        contextInputTokens: latestUsage.inputTokens,
+        contextInputTokens,
       })) || run;
     }
   }
