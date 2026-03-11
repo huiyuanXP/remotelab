@@ -41,6 +41,7 @@ When the system changes, update the matching surface instead of letting discussi
 - `cloudflare-email-worker.md` — email worker deployment notes
 - `feishu-bot-setup.md` — shareable operator + console setup flow for the RemoteLab Feishu connector
 - `github-auto-triage.md` — GitHub intake/auto-reply workflow
+- `remote-capability-monitor.md` — recurring competitor and adjacent-surface monitoring for remote agent control
 
 ## What Lives In `notes/`
 
