@@ -72,7 +72,6 @@ const staticMimeTypes = {
   'icon.svg': 'image/svg+xml',
   'apple-touch-icon.png': 'image/png',
   'chat.js': 'application/javascript',
-  'chat/session-state-model.js': 'application/javascript',
   'chat/bootstrap.js': 'application/javascript',
   'chat/session-http.js': 'application/javascript',
   'chat/tooling.js': 'application/javascript',
