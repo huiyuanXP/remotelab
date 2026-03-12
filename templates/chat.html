@@ -353,7 +353,10 @@ body {
 }
 .archived-section-header:hover { background: var(--bg-secondary); }
 .archived-label { flex: 1; }
-.archived-section-header .folder-chevron { transition: transform 0.15s; font-size: 10px; }
+.archived-section-header .folder-chevron {
+  transition: transform 0.15s; font-size: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .archived-section-header.collapsed .folder-chevron { transform: rotate(-90deg); }
 .archived-section-header.collapsed + .archived-items { display: none; }
 .archived-item { opacity: 0.65; }
