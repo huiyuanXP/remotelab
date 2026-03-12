@@ -247,10 +247,8 @@ function upsertSession(session) {
 
 async function fetchAppsList() {
   if (visitorMode) return [];
-  const data = await fetchJsonOrRedirect("/api/apps");
-  availableApps = Array.isArray(data.apps) ? data.apps : [];
   refreshAppCatalog();
-  return availableApps;
+  return appCatalog;
 }
 
 async function fetchSessionsList() {

@@ -14,16 +14,14 @@ const EVENT_FILE_WIDTH = 9;
 const BODY_FIELD_BY_TYPE = {
   message: 'content',
   reasoning: 'content',
-  template_context: 'content',
   tool_use: 'toolInput',
   tool_result: 'output',
 };
 const ALWAYS_EXTERNALIZE_TYPES = new Set(['reasoning']);
-const DEFERRED_INDEX_BODY_TYPES = new Set(['reasoning', 'template_context', 'tool_use', 'tool_result']);
+const DEFERRED_INDEX_BODY_TYPES = new Set(['reasoning', 'tool_use', 'tool_result']);
 const INLINE_BODY_LIMITS = {
   message: 64 * 1024,
   reasoning: 0,
-  template_context: 4096,
   tool_use: 2048,
   tool_result: 4096,
   status: 4096,
@@ -31,7 +29,6 @@ const INLINE_BODY_LIMITS = {
 const PREVIEW_LIMITS = {
   message: 1600,
   reasoning: 1600,
-  template_context: 1600,
   tool_use: 800,
   tool_result: 1200,
   status: 800,

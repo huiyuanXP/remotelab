@@ -68,20 +68,11 @@ function formatStatus(evt) {
   return `[System status]\n${content}`;
 }
 
-function formatTemplateContext(evt) {
-  const content = normalizeText(evt.content);
-  if (!content) return '';
-  const name = normalizeText(evt.templateName) || 'template';
-  return `[Applied template context: ${name}]\n${content}`;
-}
-
 function formatContinuationEvent(evt) {
   if (!evt || !evt.type) return '';
   switch (evt.type) {
     case 'message':
       return formatMessage(evt);
-    case 'template_context':
-      return formatTemplateContext(evt);
     case 'tool_use':
       return formatToolUse(evt);
     case 'tool_result':

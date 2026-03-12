@@ -37,10 +37,6 @@ const contextTokens = document.getElementById("contextTokens");
 const compactBtn = document.getElementById("compactBtn");
 const dropToolsBtn = document.getElementById("dropToolsBtn");
 const resumeBtn = document.getElementById("resumeBtn");
-const saveTemplateBtn = document.getElementById("saveTemplateBtn");
-const sessionTemplateRow = document.getElementById("sessionTemplateRow");
-const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
-const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
 const tabProgress = document.getElementById("tabProgress");
 const appFilterSelect = document.getElementById("appFilterSelect");
@@ -87,7 +83,6 @@ let sessionStatus = "idle";
 let reconnectTimer = null;
 let sessions = [];
 let appCatalog = [];
-let availableApps = [];
 let visitorMode = false;
 let visitorSessionId = null;
 let finishedUnread = new Set(); // sessionIds finished but not yet opened
@@ -342,7 +337,7 @@ function sortAppCatalogEntries(a, b) {
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 }
 
-function refreshAppCatalog(apps = availableApps) {
+function refreshAppCatalog(apps = []) {
   const next = new Map();
 
   next.set(DEFAULT_APP_ID, createAppCatalogEntry({ id: DEFAULT_APP_ID, name: DEFAULT_APP_NAME }));
@@ -379,10 +374,6 @@ function getAppCatalogEntry(appId) {
     appCatalog.find((entry) => entry.id === normalized)
     || createAppCatalogEntry({ id: normalized })
   );
-}
-
-function getTemplateApps() {
-  return availableApps.filter((app) => normalizeAppId(app?.id, { fallbackDefault: true }) !== DEFAULT_APP_ID);
 }
 
 function getEffectiveSessionAppId(session) {

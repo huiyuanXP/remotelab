@@ -642,7 +642,6 @@ function renderImagePreviews() {
   imgPreviewStrip.innerHTML = "";
   if (pendingImages.length === 0) {
     imgPreviewStrip.classList.remove("has-images");
-    if (typeof syncInputHeightForLayout === "function") syncInputHeightForLayout();
     return;
   }
   imgPreviewStrip.classList.add("has-images");
@@ -663,7 +662,6 @@ function renderImagePreviews() {
     item.appendChild(removeBtn);
     imgPreviewStrip.appendChild(item);
   });
-  if (typeof syncInputHeightForLayout === "function") syncInputHeightForLayout();
 }
 
 imgBtn.addEventListener("click", () => imgFileInput.click());

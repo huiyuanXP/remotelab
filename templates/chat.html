@@ -636,8 +636,16 @@ body {
 .input-resize-handle:hover .input-resize-pill { background: var(--border-strong); }
 .input-resize-handle:active .input-resize-pill { background: var(--text-muted); }
 
-/* Manual resize keeps the textarea as the single height authority */
-.input-area.is-resized .input-row textarea { max-height: none; }
+/* Resized state: textarea fills the explicit height */
+.input-area.is-resized { display: flex; flex-direction: column; }
+.input-area.is-resized .input-wrapper {
+  flex: 1; display: flex; flex-direction: column; min-height: 0;
+}
+.input-area.is-resized .input-config-row { flex-shrink: 0; }
+.input-area.is-resized .input-row { flex: 1; min-height: 0; align-items: stretch; }
+.input-area.is-resized .input-row textarea { flex: 1; max-height: none; }
+.input-area.is-resized .send-btn,
+.input-area.is-resized .cancel-btn { align-self: flex-end; }
 .input-wrapper {
   background: var(--bg);
   border: 1.5px solid var(--border-strong);
@@ -703,43 +711,6 @@ body {
 }
 .input-config-row .img-btn:active { background: var(--bg-tertiary); }
 .input-config-row .img-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.session-template-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--border);
-}
-.session-template-row[hidden] { display: none !important; }
-.session-template-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.session-template-select {
-  min-width: 0;
-  flex: 1;
-  padding: 4px 8px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  outline: none;
-  cursor: pointer;
-  font-family: inherit;
-}
-.session-template-select:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.session-template-status {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
 .input-row {
   display: flex; align-items: flex-end; gap: 8px;
   padding: 8px 10px 8px 14px;
@@ -1144,7 +1115,6 @@ body.visitor-mode .header #menuBtn { display: none !important; }
             <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
             <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
             <button class="img-btn" id="imgBtn" disabled title="Attach image">&#128247;</button>
-            <button class="compact-btn" id="saveTemplateBtn" type="button" disabled>Save template</button>
           </div>
           <div class="input-config-group right">
             <span id="contextTokens" style="display:none"></span>
@@ -1152,13 +1122,6 @@ body.visitor-mode .header #menuBtn { display: none !important; }
             <button class="compact-btn" id="compactBtn" style="display:none" title="Ask model to summarize conversation, then reset context">Compact</button>
             <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)">Drop tools</button>
           </div>
-        </div>
-        <div class="session-template-row" id="sessionTemplateRow" hidden>
-          <span class="session-template-label">Template</span>
-          <select class="session-template-select" id="sessionTemplateSelect" disabled>
-            <option value="">Apply a saved template…</option>
-          </select>
-          <span class="session-template-status" id="sessionTemplateStatus"></span>
         </div>
         <div class="input-row">
           <input type="file" id="imgFileInput" accept="image/*" multiple hidden>

@@ -59,162 +59,16 @@ msgInput.addEventListener("keydown", (e) => {
   }
 });
 
-// ---- Composer height ----
-const INPUT_MIN_LINES = 3;
-const INPUT_AUTO_MAX_LINES = 10;
-const INPUT_MANUAL_MIN_H = 100;
-const INPUT_MAX_VIEWPORT_RATIO = 0.72;
-const INPUT_HEIGHT_STORAGE_KEY = "msgInputHeight";
-const LEGACY_INPUT_AREA_HEIGHT_STORAGE_KEY = "inputAreaHeight";
-
-let isResizingInput = false;
-let resizeStartY = 0;
-let resizeStartInputH = 0;
-
-function getInputLineHeight() {
-  return parseFloat(getComputedStyle(msgInput).lineHeight) || 24;
-}
-
-function getAutoInputMinH() {
-  return getInputLineHeight() * INPUT_MIN_LINES;
-}
-
-function getAutoInputMaxH() {
-  return getInputLineHeight() * INPUT_AUTO_MAX_LINES;
-}
-
-function getInputChromeH() {
-  if (!inputArea?.getBoundingClientRect || !msgInput?.getBoundingClientRect) {
-    return 0;
-  }
-  const areaH = inputArea.getBoundingClientRect().height || 0;
-  const inputH = msgInput.getBoundingClientRect().height || 0;
-  return Math.max(0, areaH - inputH);
-}
-
-function getManualInputMaxH() {
-  const viewportMax = Math.floor(window.innerHeight * INPUT_MAX_VIEWPORT_RATIO);
-  return Math.max(INPUT_MANUAL_MIN_H, viewportMax - getInputChromeH());
-}
-
-function clampInputHeight(height, { manual = false } = {}) {
-  const minH = getAutoInputMinH();
-  const maxH = manual
-    ? Math.max(minH, getManualInputMaxH())
-    : Math.max(minH, getAutoInputMaxH());
-  return Math.min(Math.max(height, minH), maxH);
-}
-
-function isManualInputHeightActive() {
-  return inputArea.classList.contains("is-resized");
-}
-
-function setManualInputHeight(height, { persist = true } = {}) {
-  const newH = clampInputHeight(height, { manual: true });
-  msgInput.style.height = newH + "px";
-  inputArea.classList.add("is-resized");
-  if (persist) {
-    localStorage.setItem(INPUT_HEIGHT_STORAGE_KEY, String(newH));
-    localStorage.removeItem(LEGACY_INPUT_AREA_HEIGHT_STORAGE_KEY);
-  }
-  return newH;
-}
-
+// Auto-resize textarea: 3 lines default, 10 lines max
 function autoResizeInput() {
-  if (isManualInputHeightActive()) return;
+  if (inputArea.classList.contains("is-resized")) return;
   msgInput.style.height = "auto";
-  const newH = clampInputHeight(msgInput.scrollHeight);
+  const lineH = parseFloat(getComputedStyle(msgInput).lineHeight) || 24;
+  const minH = lineH * 3;
+  const maxH = lineH * 10;
+  const newH = Math.min(Math.max(msgInput.scrollHeight, minH), maxH);
   msgInput.style.height = newH + "px";
 }
-
-function restoreSavedInputHeight() {
-  const savedInputH = localStorage.getItem(INPUT_HEIGHT_STORAGE_KEY);
-  if (savedInputH) {
-    const height = parseInt(savedInputH, 10);
-    if (Number.isFinite(height) && height > 0) {
-      setManualInputHeight(height, { persist: false });
-      return;
-    }
-    localStorage.removeItem(INPUT_HEIGHT_STORAGE_KEY);
-  }
-
-  const legacyInputAreaH = localStorage.getItem(LEGACY_INPUT_AREA_HEIGHT_STORAGE_KEY);
-  if (legacyInputAreaH) {
-    const legacyHeight = parseInt(legacyInputAreaH, 10);
-    if (Number.isFinite(legacyHeight) && legacyHeight > 0) {
-      const migratedHeight = Math.max(
-        getAutoInputMinH(),
-        legacyHeight - getInputChromeH(),
-      );
-      setManualInputHeight(migratedHeight);
-      return;
-    }
-    localStorage.removeItem(LEGACY_INPUT_AREA_HEIGHT_STORAGE_KEY);
-  }
-
-  autoResizeInput();
-}
-
-function syncInputHeightForLayout() {
-  if (!isManualInputHeightActive()) {
-    autoResizeInput();
-    return;
-  }
-
-  const currentHeight = parseFloat(msgInput.style.height);
-  if (Number.isFinite(currentHeight) && currentHeight > 0) {
-    setManualInputHeight(currentHeight, { persist: false });
-    return;
-  }
-
-  const savedInputH = parseInt(
-    localStorage.getItem(INPUT_HEIGHT_STORAGE_KEY) || "",
-    10,
-  );
-  if (Number.isFinite(savedInputH) && savedInputH > 0) {
-    setManualInputHeight(savedInputH, { persist: false });
-    return;
-  }
-
-  inputArea.classList.remove("is-resized");
-  autoResizeInput();
-}
-
-function onInputResizeStart(e) {
-  isResizingInput = true;
-  resizeStartY = e.touches ? e.touches[0].clientY : e.clientY;
-  resizeStartInputH = msgInput.getBoundingClientRect().height || getAutoInputMinH();
-  document.addEventListener("mousemove", onInputResizeMove);
-  document.addEventListener("touchmove", onInputResizeMove, { passive: false });
-  document.addEventListener("mouseup", onInputResizeEnd);
-  document.addEventListener("touchend", onInputResizeEnd);
-  e.preventDefault();
-}
-
-function onInputResizeMove(e) {
-  if (!isResizingInput) return;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const dy = resizeStartY - clientY;
-  setManualInputHeight(resizeStartInputH + dy);
-  e.preventDefault();
-}
-
-function onInputResizeEnd() {
-  isResizingInput = false;
-  document.removeEventListener("mousemove", onInputResizeMove);
-  document.removeEventListener("touchmove", onInputResizeMove);
-  document.removeEventListener("mouseup", onInputResizeEnd);
-  document.removeEventListener("touchend", onInputResizeEnd);
-}
-
-if (inputResizeHandle) {
-  inputResizeHandle.addEventListener("mousedown", onInputResizeStart);
-  inputResizeHandle.addEventListener("touchstart", onInputResizeStart, { passive: false });
-}
-
-window.addEventListener("resize", syncInputHeightForLayout);
-window.visualViewport?.addEventListener("resize", syncInputHeightForLayout);
-
 // ---- Draft persistence ----
 function saveDraft() {
   if (!currentSessionId) return;
@@ -241,7 +95,7 @@ msgInput.addEventListener("input", () => {
   saveDraft();
 });
 // Set initial height
-requestAnimationFrame(() => restoreSavedInputHeight());
+requestAnimationFrame(() => autoResizeInput());
 
 // ---- Pending message protection ----
 // Saves sent message to localStorage until server confirms receipt.

@@ -14,7 +14,6 @@ import {
 } from '../lib/auth.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import {
-  applyAppTemplateToSession,
   cancelActiveRun,
   compactSession,
   createSession,
@@ -27,7 +26,6 @@ import {
   listSessions,
   renameSession,
   resumeInterruptedSession,
-  saveSessionAsTemplate,
   sendMessage,
   setSessionArchived,
   submitHttpMessage,
@@ -640,85 +638,6 @@ export async function handleRequest(req, res) {
         return;
       }
       writeJson(res, 200, { ok: true, session: await getSession(sessionId) });
-      return;
-    }
-
-    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'apply-template') {
-      if (authSession?.role === 'visitor') {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return;
-      }
-      if (!requireSessionAccess(res, authSession, sessionId)) return;
-      let body;
-      try { body = await readBody(req, 10240); } catch {
-        writeJson(res, 400, { error: 'Bad request' });
-        return;
-      }
-      let payload;
-      try { payload = JSON.parse(body); } catch {
-        writeJson(res, 400, { error: 'Invalid request body' });
-        return;
-      }
-      const appId = typeof payload?.appId === 'string' ? payload.appId.trim() : '';
-      if (!appId) {
-        writeJson(res, 400, { error: 'appId is required' });
-        return;
-      }
-      const session = await getSession(sessionId);
-      if (!session) {
-        writeJson(res, 404, { error: 'Session not found' });
-        return;
-      }
-      if (session.status === 'running') {
-        writeJson(res, 409, { error: 'Session is running' });
-        return;
-      }
-      if ((session.messageCount || 0) > 0) {
-        writeJson(res, 409, { error: 'Templates can only be applied before the first message' });
-        return;
-      }
-      const updated = await applyAppTemplateToSession(sessionId, appId);
-      if (!updated) {
-        writeJson(res, 409, { error: 'Unable to apply template' });
-        return;
-      }
-      writeJson(res, 200, { session: updated });
-      return;
-    }
-
-    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'save-template') {
-      if (authSession?.role === 'visitor') {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return;
-      }
-      if (!requireSessionAccess(res, authSession, sessionId)) return;
-      let body = '';
-      try { body = await readBody(req, 10240); } catch {
-        writeJson(res, 400, { error: 'Bad request' });
-        return;
-      }
-      let payload = {};
-      if (body) {
-        try { payload = JSON.parse(body); } catch {
-          writeJson(res, 400, { error: 'Invalid request body' });
-          return;
-        }
-      }
-      const session = await getSession(sessionId);
-      if (!session) {
-        writeJson(res, 404, { error: 'Session not found' });
-        return;
-      }
-      if (session.status === 'running') {
-        writeJson(res, 409, { error: 'Session is running' });
-        return;
-      }
-      const app = await saveSessionAsTemplate(sessionId, typeof payload?.name === 'string' ? payload.name.trim() : '');
-      if (!app) {
-        writeJson(res, 409, { error: 'Unable to save template' });
-        return;
-      }
-      writeJson(res, 201, { app });
       return;
     }
 

@@ -49,7 +49,7 @@ import {
 } from './runs.mjs';
 import { spawnDetachedRunner } from './runner-supervisor.mjs';
 import { dispatchSessionEmailCompletionTargets, sanitizeEmailCompletionTargets } from '../lib/agent-mail-completion-targets.mjs';
-import { createApp, getApp, normalizeAppId, resolveEffectiveAppId } from './apps.mjs';
+import { normalizeAppId, resolveEffectiveAppId } from './apps.mjs';
 import {
   createSerialTaskQueue,
   ensureDir,
@@ -862,30 +862,6 @@ function buildPreparedContinuationContext(prepared, previousTool, effectiveTool)
   return full;
 }
 
-function buildSavedTemplateContextContent(prepared) {
-  if (!prepared) return '';
-
-  const summary = typeof prepared.summary === 'string' ? prepared.summary.trim() : '';
-  const continuationBody = typeof prepared.continuationBody === 'string'
-    ? prepared.continuationBody.trim()
-    : '';
-  const parts = [];
-
-  if (summary) {
-    parts.push(`[Conversation summary]\n\n${summary}`);
-  }
-  if (continuationBody) {
-    parts.push(continuationBody);
-  }
-
-  return parts.join('\n\n---\n\n').trim();
-}
-
-async function sessionHasTemplateContextEvent(sessionId) {
-  const history = await loadHistory(sessionId, { includeBodies: false });
-  return history.some((event) => event?.type === 'template_context');
-}
-
 function isPreparedForkContextCurrent(prepared, snapshot, contextHead) {
   if (!prepared) return false;
 
@@ -1662,170 +1638,6 @@ async function updateSessionTool(id, tool) {
     broadcastSessionInvalidation(id);
   }
   return enrichSessionMeta(result.meta);
-}
-
-async function applySessionAppMetadata(id, app, extra = {}) {
-  const result = await mutateSessionMeta(id, (session) => {
-    let changed = false;
-    const nextAppId = resolveEffectiveAppId(app?.id);
-    const nextAppName = typeof app?.name === 'string' ? app.name.trim() : '';
-    const nextSystemPrompt = typeof app?.systemPrompt === 'string' ? app.systemPrompt : '';
-    const nextTool = typeof app?.tool === 'string' ? app.tool.trim() : '';
-
-    if (session.appId !== nextAppId) {
-      session.appId = nextAppId;
-      changed = true;
-    }
-
-    if (nextAppName) {
-      if (session.appName !== nextAppName) {
-        session.appName = nextAppName;
-        changed = true;
-      }
-    } else if (session.appName) {
-      delete session.appName;
-      changed = true;
-    }
-
-    if (nextSystemPrompt) {
-      if (session.systemPrompt !== nextSystemPrompt) {
-        session.systemPrompt = nextSystemPrompt;
-        changed = true;
-      }
-    } else if (session.systemPrompt) {
-      delete session.systemPrompt;
-      changed = true;
-    }
-
-    if (nextTool && session.tool !== nextTool) {
-      session.tool = nextTool;
-      changed = true;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(extra, 'templateAppId')) {
-      const templateAppId = typeof extra.templateAppId === 'string' ? extra.templateAppId.trim() : '';
-      if (templateAppId) {
-        if (session.templateAppId !== templateAppId) {
-          session.templateAppId = templateAppId;
-          changed = true;
-        }
-      } else if (session.templateAppId) {
-        delete session.templateAppId;
-        changed = true;
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(extra, 'templateAppName')) {
-      const templateAppName = typeof extra.templateAppName === 'string' ? extra.templateAppName.trim() : '';
-      if (templateAppName) {
-        if (session.templateAppName !== templateAppName) {
-          session.templateAppName = templateAppName;
-          changed = true;
-        }
-      } else if (session.templateAppName) {
-        delete session.templateAppName;
-        changed = true;
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(extra, 'templateAppliedAt')) {
-      const templateAppliedAt = typeof extra.templateAppliedAt === 'string' ? extra.templateAppliedAt.trim() : '';
-      if (templateAppliedAt) {
-        if (session.templateAppliedAt !== templateAppliedAt) {
-          session.templateAppliedAt = templateAppliedAt;
-          changed = true;
-        }
-      } else if (session.templateAppliedAt) {
-        delete session.templateAppliedAt;
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      session.updatedAt = nowIso();
-    }
-    return changed;
-  });
-
-  if (!result.meta) return null;
-  if (result.changed) {
-    broadcastSessionInvalidation(id);
-  }
-  return enrichSessionMeta(result.meta);
-}
-
-export async function saveSessionAsTemplate(sessionId, name = '') {
-  const session = await getSession(sessionId);
-  if (!session) return null;
-  if (session.visitorId) return null;
-  if (session.status === 'running') return null;
-
-  const [snapshot, contextHead] = await Promise.all([
-    getHistorySnapshot(sessionId),
-    getContextHead(sessionId),
-  ]);
-  const prepared = await getOrPrepareForkContext(sessionId, snapshot, contextHead);
-  const templateContent = buildSavedTemplateContextContent(prepared);
-
-  if (!templateContent && !(session.systemPrompt || '').trim()) {
-    return null;
-  }
-
-  return createApp({
-    name: name || `Template - ${session.name || 'Session'}`,
-    systemPrompt: session.systemPrompt || '',
-    welcomeMessage: '',
-    skills: [],
-    tool: session.tool || 'codex',
-    templateContext: templateContent
-      ? {
-          content: templateContent,
-          sourceSessionId: session.id,
-          sourceSessionName: session.name || '',
-          updatedAt: nowIso(),
-        }
-      : null,
-  });
-}
-
-export async function applyAppTemplateToSession(sessionId, appId) {
-  const session = await getSession(sessionId);
-  if (!session) return null;
-  if (session.visitorId) return null;
-  if (session.status === 'running') return null;
-  if ((session.messageCount || 0) > 0) return null;
-
-  const app = await getApp(appId);
-  if (!app) return null;
-
-  if (await sessionHasTemplateContextEvent(sessionId)) {
-    return null;
-  }
-
-  if (!app.templateContext?.content && !(app.systemPrompt || '').trim()) {
-    return null;
-  }
-
-  const appliedAt = nowIso();
-  const updatedSession = await applySessionAppMetadata(sessionId, app, {
-    templateAppId: app.id,
-    templateAppName: app.name || '',
-    templateAppliedAt: appliedAt,
-  });
-  if (!updatedSession) return null;
-
-  if (app.templateContext?.content) {
-    await appendEvent(sessionId, {
-      type: 'template_context',
-      templateName: app.name || 'Template',
-      appId: app.id,
-      content: app.templateContext.content,
-      timestamp: Date.now(),
-    });
-    await clearForkContext(sessionId);
-  }
-
-  return getSession(sessionId);
 }
 
 export async function submitHttpMessage(sessionId, text, images, options = {}) {
