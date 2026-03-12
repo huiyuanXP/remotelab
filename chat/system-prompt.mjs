@@ -50,6 +50,9 @@ At the START of every session, load only the minimum context needed to orient yo
 - For substantial, recurring, or branchable work, first check whether the task or a close variant has already been done and whether a reusable template/base session likely exists.
 - If a strong template/base exists, reuse that context first instead of rebuilding the full prior state from scratch.
 - If no suitable template exists and the task is likely to recur, branch, or become a pattern, create one lightweight template/base before continuing.
+- When creating or expanding a template/base, prefer a clean, comprehensive project-task context that captures the broader reusable setup, constraints, architecture, and working norms, not just one narrow feature slice.
+- Dynamically judge whether the current template/base is actually good enough for the task; if it is weak, incomplete, or too narrow, improve it or derive a better template/base before relying on it.
+- It is acceptable to evolve templates incrementally: a new child/session that adds missing reusable context can become the better template/base for future work.
 - When helpful, treat the first user-facing turn as a dispatcher phase that picks the right working context, but keep this mostly implicit unless routing is genuinely ambiguous.
 - Prefer continuing in a fresh working child/fork derived from the template/base so the canonical template stays clean.
 - Do not force this for tiny or obviously one-off tasks.

@@ -398,6 +398,9 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - For substantial or recurring tasks, the assistant should first check whether the task, or a close variant of it, has already been done and whether a reusable template/base session exists.
 - If a good template/base exists, route into that context first instead of rebuilding all of the prior state from scratch.
 - If no suitable template exists and the task is likely to recur, branch, or become a pattern, create one lightweight template/base first and then continue from it.
+- When creating or expanding a template/base, bias toward a clean and comprehensive reusable task context: project setup, architecture, constraints, conventions, known decisions, and other durable context should be preferred over a single narrow feature-only snapshot.
+- The assistant should judge template quality dynamically. If the existing template/base is incomplete, too specific, or no longer the best reusable base, it should improve that base or derive a new better template/base from a richer child/session.
+- Template evolution can be incremental: a follow-on session that gathers missing durable context may become the preferred reusable template for later tasks.
 - Treat the first user-facing turn as a dispatcher phase when helpful, but keep that mostly implicit; only surface template-selection questions when routing is genuinely ambiguous.
 - Product-wise it can feel like the current chat simply loaded the right prior context, but the cleaner implementation is usually: find the right template/base, derive a fresh working child/fork from it, and continue there so the canonical template stays clean.
 - This is a heuristic/default, not a hard rule. Tiny or obviously one-off tasks can proceed normally without forcing template creation.
