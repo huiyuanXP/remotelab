@@ -5,6 +5,7 @@ function sendMessage(existingRequestId) {
   if ((!text && pendingImages.length === 0) || !currentSessionId || currentSession?.archived) return;
 
   const requestId = existingRequestId || createRequestId();
+  const sessionId = currentSessionId;
 
   // Protect the message: save to localStorage before anything else
   const pendingTimestamp = savePendingMessage(text, requestId);
@@ -35,7 +36,20 @@ function sendMessage(existingRequestId) {
   if (sessionTemplateRow) {
     sessionTemplateRow.hidden = true;
   }
-  dispatchAction(msg);
+  markSessionSendInFlight(sessionId);
+  void dispatchAction(msg).then((ok) => {
+    const changed = finishSessionSendAttempt(sessionId, ok);
+    if (!ok && sessionId === currentSessionId) {
+      clearOptimisticMessage();
+      const pending = getPendingMessage(sessionId);
+      if (pending) {
+        renderPendingRecovery(pending);
+      }
+    }
+    if (changed || !ok) {
+      refreshSessionAttentionUi(sessionId);
+    }
+  });
   msgInput.value = "";
   clearDraft();
   autoResizeInput();
@@ -387,6 +401,7 @@ requestAnimationFrame(() => restoreSavedInputHeight());
 // Prevents message loss on refresh, network failure, or server crash.
 function savePendingMessage(text, requestId) {
   if (!currentSessionId) return;
+  clearSessionSendFailed(currentSessionId);
   const timestamp = Date.now();
   localStorage.setItem(
     `pending_msg_${currentSessionId}`,
@@ -395,7 +410,10 @@ function savePendingMessage(text, requestId) {
   return timestamp;
 }
 function clearPendingMessage(sessionId) {
-  localStorage.removeItem(`pending_msg_${sessionId || currentSessionId}`);
+  const targetId = sessionId || currentSessionId;
+  if (!targetId) return false;
+  localStorage.removeItem(`pending_msg_${targetId}`);
+  return clearSessionSendFailed(targetId);
 }
 function getPendingMessage(sessionId) {
   const raw = localStorage.getItem(
@@ -451,6 +469,7 @@ function clearOptimisticMessage() {
 }
 
 function renderPendingRecovery(pending) {
+  document.getElementById("pending-msg-recovery")?.remove();
   const wrap = document.createElement("div");
   wrap.className = "msg-user";
   wrap.id = "pending-msg-recovery";
@@ -473,7 +492,10 @@ function renderPendingRecovery(pending) {
   retryBtn.className = "msg-retry-btn";
   retryBtn.onclick = () => {
     wrap.remove();
-    clearPendingMessage();
+    const changed = clearPendingMessage();
+    if (changed) {
+      refreshSessionAttentionUi();
+    }
     msgInput.value = pending.text;
     sendMessage(pending.requestId);
   };
@@ -485,7 +507,10 @@ function renderPendingRecovery(pending) {
     msgInput.value = pending.text;
     autoResizeInput();
     wrap.remove();
-    clearPendingMessage();
+    const changed = clearPendingMessage();
+    if (changed) {
+      refreshSessionAttentionUi();
+    }
     msgInput.focus();
   };
 
@@ -494,7 +519,10 @@ function renderPendingRecovery(pending) {
   discardBtn.className = "msg-discard-btn";
   discardBtn.onclick = () => {
     wrap.remove();
-    clearPendingMessage();
+    const changed = clearPendingMessage();
+    if (changed) {
+      refreshSessionAttentionUi();
+    }
   };
 
   actions.appendChild(retryBtn);
@@ -505,6 +533,13 @@ function renderPendingRecovery(pending) {
   wrap.appendChild(bubble);
   messagesInner.appendChild(wrap);
   scrollToBottom();
+}
+
+function isPendingMessageEntryStale(pending) {
+  if (!pending) return false;
+  const timestamp = Number(pending.timestamp);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return true;
+  return Date.now() - timestamp >= PENDING_MESSAGE_STALE_MS;
 }
 
 function checkPendingMessage(historyEvents) {
@@ -522,9 +557,23 @@ function checkPendingMessage(historyEvents) {
       (lastUserMsg.content === pending.text &&
         lastUserMsg.timestamp >= pending.timestamp - 5000))
   ) {
-    clearPendingMessage();
+    const changed = clearPendingMessage();
+    if (changed) {
+      refreshSessionAttentionUi();
+    }
     return;
   }
+
+  if (!isPendingMessageEntryStale(pending)) {
+    const changed = clearSessionSendFailed(currentSessionId);
+    if (changed) {
+      refreshSessionAttentionUi();
+    }
+    return;
+  }
+
+  markSessionSendFailed(currentSessionId);
+  refreshSessionAttentionUi();
 
   // Show the pending message with recovery actions
   renderPendingRecovery(pending);

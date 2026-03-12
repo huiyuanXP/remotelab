@@ -155,11 +155,17 @@ async function dispatchAction(msg) {
             ...(msg.thinking ? { thinking: true } : {}),
           }),
         });
-        if (data?.queued) {
-          clearPendingMessage();
-          clearOptimisticMessage();
+        const changed = clearPendingMessage();
+        clearOptimisticMessage();
+        if (changed) {
+          refreshSessionAttentionUi();
         }
-        await refreshCurrentSession();
+        try {
+          await refreshCurrentSession();
+        } catch (error) {
+          console.warn("Session refresh after send failed:", error?.message || error);
+          refreshCurrentSession().catch(() => {});
+        }
         return true;
       }
       case "apply_template": {
@@ -224,12 +230,10 @@ function getCurrentSession() {
   return sessions.find((s) => s.id === currentSessionId) || null;
 }
 
-function normalizeSessionStatus(incomingStatus, previousStatus) {
-  if (incomingStatus !== "idle") return incomingStatus;
-  if (previousStatus === "running" || previousStatus === "done") {
-    return "done";
-  }
-  return "idle";
+function normalizeSessionStatus(incomingStatus) {
+  return incomingStatus === "running" || incomingStatus === "interrupted"
+    ? incomingStatus
+    : "idle";
 }
 
 function updateResumeButton() {
@@ -265,7 +269,7 @@ function handleWsMessage(msg) {
 
 // ---- Status ----
 function updateStatus(connState, sessState, renameState, archived = false) {
-  const queuedCount = getCurrentSession()?.queuedMessageCount || 0;
+  const session = getCurrentSession();
   if (connState === "disconnected") {
     statusDot.className = "status-dot";
     statusText.textContent = "Reconnecting…";
@@ -278,32 +282,32 @@ function updateStatus(connState, sessState, renameState, archived = false) {
   }
   sessionStatus = sessState;
   const isRunning = sessState === "running";
-  const isDone = sessState === "done";
-  const isInterrupted = sessState === "interrupted";
-  const isRenaming = renameState === "pending";
-  const renameFailed = renameState === "failed";
-  const queuedLabel = queuedCount > 0 ? ` · ${queuedCount} queued` : "";
-  if (isRunning) {
-    statusDot.className = "status-dot running";
-    statusText.textContent = archived ? `running${queuedLabel} · archived` : `running${queuedLabel}`;
-  } else if (isDone) {
-    statusDot.className = archived ? "status-dot" : "status-dot done";
-    statusText.textContent = archived ? "archived" : `done${queuedLabel}`;
-  } else if (isInterrupted) {
-    statusDot.className = archived ? "status-dot" : "status-dot interrupted";
-    statusText.textContent = archived ? "archived" : `interrupted${queuedLabel}`;
-  } else if (isRenaming) {
-    statusDot.className = "status-dot renaming";
-    statusText.textContent = "renaming…";
-  } else if (renameFailed) {
-    statusDot.className = "status-dot rename-failed";
-    statusText.textContent = "rename failed";
-  } else if (archived) {
+  const visualStatus = getSessionVisualStatus({
+    ...(session || {}),
+    id: session?.id || currentSessionId,
+    status: sessState,
+    renameState,
+    archived,
+  });
+  const showArchivedOnly = archived && [
+    "idle",
+    "unread",
+    "interrupted",
+    "archived",
+  ].includes(visualStatus.key);
+  if (showArchivedOnly) {
     statusDot.className = "status-dot";
     statusText.textContent = "archived";
+  } else if (visualStatus.label) {
+    statusDot.className = visualStatus.dotClass
+      ? `status-dot ${visualStatus.dotClass}`
+      : "status-dot";
+    statusText.textContent = archived
+      ? `${visualStatus.label} · archived`
+      : visualStatus.label;
   } else {
     statusDot.className = "status-dot";
-    statusText.textContent = currentSessionId ? `idle${queuedLabel}` : "connected";
+    statusText.textContent = currentSessionId ? "idle" : "connected";
   }
   const hasSession = !!currentSessionId;
   msgInput.disabled = !hasSession || archived;

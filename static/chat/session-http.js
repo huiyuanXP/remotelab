@@ -209,16 +209,18 @@ function reconcilePendingMessageState(event) {
   if (optimistic) optimistic.remove();
   const pending = getPendingMessage();
   if (pending && (!pending.requestId || pending.requestId === event.requestId)) {
-    clearPendingMessage();
+    const changed = clearPendingMessage();
+    if (changed) {
+      refreshSessionAttentionUi();
+    }
   }
 }
 
 function normalizeSessionRecord(session, previous = null) {
   const normalized = {
-    ...(previous || {}),
     ...session,
     appId: getEffectiveSessionAppId(session),
-    status: normalizeSessionStatus(session.status, previous?.status),
+    status: normalizeSessionStatus(session.status),
   };
   if (!Object.prototype.hasOwnProperty.call(session || {}, "queuedMessages")) {
     if ((session?.queuedMessageCount || 0) > 0 && Array.isArray(previous?.queuedMessages)) {
@@ -226,6 +228,9 @@ function normalizeSessionRecord(session, previous = null) {
     } else {
       delete normalized.queuedMessages;
     }
+  }
+  if (typeof maybeUpdateSessionUnreadState === "function") {
+    maybeUpdateSessionUnreadState(normalized, previous);
   }
   return normalized;
 }
@@ -259,6 +264,7 @@ async function fetchSessionsList() {
   const previousMap = new Map(sessions.map((session) => [session.id, session]));
   sessions = (data.sessions || []).map((session) => normalizeSessionRecord(session, previousMap.get(session.id) || null));
   sortSessionsInPlace();
+  pruneStoredSessionAttentionState(sessions.map((session) => session.id));
   refreshAppCatalog();
   renderSessionList();
   if (currentSessionId && !sessions.some((session) => session.id === currentSessionId)) {
@@ -278,7 +284,7 @@ function applyAttachedSessionState(id, session) {
   contextTokens.style.display = "none";
   compactBtn.style.display = "none";
   dropToolsBtn.style.display = "none";
-  finishedUnread.delete(id);
+  markSessionSeen(session);
 
   const displayName = getSessionDisplayName(session);
   headerTitle.textContent = displayName;
