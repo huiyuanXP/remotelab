@@ -147,6 +147,12 @@ async function main() {
     assert.ok(!page.text.includes('/marked.min.js?v='), 'chat page should let marked.min.js use normal revalidation');
     assert.ok(!page.text.includes('/manifest.json?v='), 'chat page should let manifest use normal revalidation');
 
+    const manifest = await request(port, 'GET', '/manifest.json');
+    assert.equal(manifest.status, 200, 'manifest should load');
+    const manifestJson = JSON.parse(manifest.text);
+    assert.equal(manifestJson.display, 'standalone', 'manifest should still advertise standalone install mode');
+    assert.equal('orientation' in manifestJson, false, 'manifest should not force an orientation policy in the installed PWA shell');
+
     const apps = await request(port, 'GET', '/api/apps');
     assert.equal(apps.status, 200, 'owner apps endpoint should be available');
     assert.match(apps.text, /"id":"chat"/);

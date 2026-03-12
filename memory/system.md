@@ -389,6 +389,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - A low-risk fix is to add a dedicated read-only capture route that reuses sanitized session rendering but lets the whole document scroll naturally; this preserves the main app-shell UX while giving mobile users a screenshot-friendly surface.
 - In the capture view copy, explicitly tell users that if Android still does not show `Capture more`, they should open that route in Chrome instead of the installed PWA shell.
 
+### Installed PWAs Should Avoid A Manifest Orientation Policy Unless They Intend To Override Device Rotation (2026-03-12)
+- In Android, rotation issues that appear only in the installed PWA shell but not in a normal browser tab are often caused by the web app manifest, not by chat UI layout code.
+- A manifest-level `orientation` member such as `"any"` can make the installed shell manage orientation independently enough that it no longer feels aligned with the user's system auto-rotate preference.
+- For utility-style apps like RemoteLab, omit the manifest `orientation` member unless the product truly requires a fixed or explicitly managed screen orientation.
+
 ### IM Connectors Should Ack Fast And Finish In Background (2026-03-10)
 - Chat-platform event subscriptions often require handlers to finish within a few seconds and may retry on timeout, so do not hold the provider callback open while waiting for a full agent run.
 - For local-first agent products, a provider's long-connection / SDK event mode can be the fastest connector path because it avoids public webhook setup, signature verification, and payload decryption.
