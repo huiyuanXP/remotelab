@@ -44,6 +44,7 @@ function renderMessage(evt) {
       if (!rendered.trim()) return;
       div.innerHTML = rendered;
       enhanceCodeBlocks(div);
+      enhanceRenderedContentLinks(div);
     }
     appendMessageTimestamp(div, evt.timestamp, "msg-assistant-time");
     messagesInner.appendChild(div);
@@ -133,8 +134,13 @@ function renderFileChange(evt) {
   const div = document.createElement("div");
   div.className = "file-card";
   const kind = evt.changeType || "edit";
-  div.innerHTML = `<span class="file-path">${esc(evt.filePath || "")}</span>
+  const filePath = evt.filePath || "";
+  const pathMarkup = filePath && isLikelyLocalEditorHref(filePath)
+    ? `<a class="file-path" href="${esc(filePath)}">${esc(filePath)}</a>`
+    : `<span class="file-path">${esc(filePath)}</span>`;
+  div.innerHTML = `${pathMarkup}
     <span class="change-type ${kind}">${kind}</span>`;
+  enhanceRenderedContentLinks(div);
   container.appendChild(div);
 }
 

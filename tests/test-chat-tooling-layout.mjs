@@ -204,3 +204,5 @@ assert.equal(desktopHarness.focusCalls[0]?.preventScroll, true, 'desktop focus s
 desktopHarness.body.classList.add('keyboard-open');
 desktopHarness.mq.dispatch(true);
 assert.equal(desktopHarness.body.classList.contains('keyboard-open'), false, 'desktop breakpoint changes should clear any stale mobile keyboard state');
+
+console.log('test-chat-tooling-layout: ok');

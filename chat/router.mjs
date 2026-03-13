@@ -32,6 +32,7 @@ import {
   setSessionArchived,
   setSessionPinned,
   submitHttpMessage,
+  updateSessionRuntimePreferences,
 } from './session-manager.mjs';
 import { appendEvent, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
@@ -777,6 +778,7 @@ export async function handleRequest(req, res) {
       writeJson(res, 400, { error: 'Invalid session path' });
       return;
     }
+    if (!requireSessionAccess(res, authSession, sessionId)) return;
     let body;
     try { body = await readBody(req, 10240); } catch {
       writeJson(res, 400, { error: 'Bad request' });
@@ -789,12 +791,32 @@ export async function handleRequest(req, res) {
     }
     const hasArchivedPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'archived');
     const hasPinnedPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'pinned');
+    const hasToolPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'tool');
+    const hasModelPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'model');
+    const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
+    const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
     if (hasArchivedPatch && typeof patch.archived !== 'boolean') {
       writeJson(res, 400, { error: 'archived must be a boolean' });
       return;
     }
     if (hasPinnedPatch && typeof patch.pinned !== 'boolean') {
       writeJson(res, 400, { error: 'pinned must be a boolean' });
+      return;
+    }
+    if (hasToolPatch && typeof patch.tool !== 'string') {
+      writeJson(res, 400, { error: 'tool must be a string' });
+      return;
+    }
+    if (hasModelPatch && typeof patch.model !== 'string') {
+      writeJson(res, 400, { error: 'model must be a string' });
+      return;
+    }
+    if (hasEffortPatch && typeof patch.effort !== 'string') {
+      writeJson(res, 400, { error: 'effort must be a string' });
+      return;
+    }
+    if (hasThinkingPatch && typeof patch.thinking !== 'boolean') {
+      writeJson(res, 400, { error: 'thinking must be a boolean' });
       return;
     }
     let session = null;
@@ -806,6 +828,14 @@ export async function handleRequest(req, res) {
     }
     if (hasPinnedPatch) {
       session = await setSessionPinned(sessionId, patch.pinned) || session;
+    }
+    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch) {
+      session = await updateSessionRuntimePreferences(sessionId, {
+        ...(hasToolPatch ? { tool: patch.tool } : {}),
+        ...(hasModelPatch ? { model: patch.model } : {}),
+        ...(hasEffortPatch ? { effort: patch.effort } : {}),
+        ...(hasThinkingPatch ? { thinking: patch.thinking } : {}),
+      }) || session;
     }
     if (!session) {
       session = await getSession(sessionId);

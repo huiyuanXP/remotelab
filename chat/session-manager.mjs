@@ -3,6 +3,7 @@ import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { CHAT_IMAGES_DIR } from '../lib/config.mjs';
+import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
   appendEvent,
@@ -44,6 +45,7 @@ import {
   listRunIds,
   materializeRunSpoolLine,
   readRunSpoolDelta,
+  readRunSpoolRecords,
   requestRunCancel,
   runDir,
   updateRun,
@@ -175,6 +177,9 @@ function deriveRunFailureReasonFromResult(run, result) {
   if (typeof result.error === 'string' && result.error.trim()) {
     return result.error.trim();
   }
+  if (typeof run?.failureReason === 'string' && run.failureReason.trim()) {
+    return run.failureReason.trim();
+  }
   if (result.cancelled === true) {
     return null;
   }
@@ -185,6 +190,40 @@ function deriveRunFailureReasonFromResult(run, result) {
     return `Process exited with code ${result.exitCode}`;
   }
   return run?.failureReason || null;
+}
+
+function clipFailurePreview(text, maxChars = 280) {
+  if (typeof text !== 'string') return '';
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(1, maxChars - 3)).trimEnd()}...`;
+}
+
+async function collectRunOutputPreview(runId, maxLines = 3) {
+  const records = await readRunSpoolRecords(runId);
+  if (!Array.isArray(records) || records.length === 0) return '';
+
+  const lines = [];
+  for (const record of records) {
+    if (!record || !['stdout', 'stderr', 'error'].includes(record.stream)) continue;
+    const line = clipFailurePreview(await materializeRunSpoolLine(runId, record));
+    if (!line) continue;
+    lines.push(line);
+  }
+
+  return lines.slice(-maxLines).join(' | ');
+}
+
+async function deriveStructuredRuntimeFailureReason(runId, previewText = '') {
+  const preview = clipFailurePreview(previewText) || await collectRunOutputPreview(runId);
+  if (preview && /(请登录|登录超时|auth|authentication|sso|sign in|login)/i.test(preview)) {
+    return `Provider requires interactive login before RemoteLab can use it: ${preview}`;
+  }
+  if (preview) {
+    return `Provider exited without emitting structured events: ${preview}`;
+  }
+  return 'Provider exited without emitting structured events';
 }
 
 function generateId() {
@@ -1283,6 +1322,11 @@ async function findLatestAssistantMessageForRun(sessionId, runId) {
 }
 
 async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}) {
+  const toolDefinition = await getToolDefinitionAsync(effectiveTool);
+  const promptMode = toolDefinition?.promptMode === 'bare-user'
+    ? 'bare-user'
+    : 'default';
+  const flattenPrompt = toolDefinition?.flattenPrompt === true;
   const hasResume = !options.freshThread && (!!session.claudeSessionId || !!session.codexThreadId);
   let continuationContext = '';
   let contextToolIndex = '';
@@ -1305,23 +1349,31 @@ async function buildPrompt(sessionId, session, text, previousTool, effectiveTool
   }
 
   let actualText = text;
-  if (continuationContext) {
-    actualText = `${continuationContext}\n\n---\n\nCurrent user message:\n${text}`;
-  } else if (!hasResume) {
-    actualText = `User message:\n${text}`;
-  }
-
-  if (!hasResume) {
-    const systemContext = await buildSystemContext();
-    let preamble = systemContext;
-    if (session.systemPrompt) {
-      preamble += `\n\n---\n\nApp instructions (follow these for this session):\n${session.systemPrompt}`;
+  if (promptMode === 'default') {
+    if (continuationContext) {
+      actualText = `${continuationContext}\n\n---\n\nCurrent user message:\n${text}`;
+    } else if (!hasResume) {
+      actualText = `User message:\n${text}`;
     }
-    actualText = `${preamble}\n\n---\n\n${actualText}`;
+
+    if (!hasResume) {
+      const systemContext = await buildSystemContext();
+      let preamble = systemContext;
+      if (session.systemPrompt) {
+        preamble += `\n\n---\n\nApp instructions (follow these for this session):\n${session.systemPrompt}`;
+      }
+      actualText = `${preamble}\n\n---\n\n${actualText}`;
+    }
+
+    if (session.visitorId) {
+      actualText = `${actualText}\n\n---\n\n${VISITOR_TURN_GUARDRAIL}`;
+    }
+  } else if (flattenPrompt) {
+    actualText = actualText.replace(/\s+/g, ' ').trim();
   }
 
-  if (session.visitorId) {
-    actualText = `${actualText}\n\n---\n\n${VISITOR_TURN_GUARDRAIL}`;
+  if (flattenPrompt && promptMode === 'default') {
+    actualText = actualText.replace(/\s+/g, ' ').trim();
   }
 
   return actualText;
@@ -1706,15 +1758,21 @@ async function syncDetachedRun(sessionId, runId) {
     ? await readRunSpoolDelta(runId, { startOffset: consumedByteOffset })
     : await readRunSpoolDelta(runId, { skipLines: consumedLineCount });
   const spoolRecords = spoolDelta.records || [];
+  const consumedNormalizedEventCount = Number.isInteger(run.normalizedEventCount)
+    ? run.normalizedEventCount
+    : 0;
   let historyChanged = false;
   let sessionChanged = false;
+  let nextNormalizedEventCount = consumedNormalizedEventCount;
+  let runtimeInvocation = null;
 
   if (spoolRecords.length > 0) {
-    const { adapter } = await createToolInvocation(manifest.tool, '', {
+    runtimeInvocation = await createToolInvocation(manifest.tool, '', {
       model: manifest.options?.model,
       effort: manifest.options?.effort,
       thinking: manifest.options?.thinking,
     });
+    const { adapter } = runtimeInvocation;
     const events = [];
     for (const record of spoolRecords) {
       if (record.stream !== 'stdout') continue;
@@ -1724,6 +1782,7 @@ async function syncDetachedRun(sessionId, runId) {
     }
     events.push(...adapter.flush());
     const normalizedEvents = normalizeRunEvents(run, events);
+    nextNormalizedEventCount += normalizedEvents.length;
     if (normalizedEvents.length > 0) {
       await appendEvents(sessionId, normalizedEvents);
       historyChanged = true;
@@ -1754,11 +1813,13 @@ async function syncDetachedRun(sessionId, runId) {
   if (
     nextNormalizedLineCount !== consumedLineCount
     || nextNormalizedByteOffset !== consumedByteOffset
+    || nextNormalizedEventCount !== consumedNormalizedEventCount
   ) {
     run = await updateRun(runId, (current) => ({
       ...current,
       normalizedLineCount: nextNormalizedLineCount,
       normalizedByteOffset: nextNormalizedByteOffset,
+      normalizedEventCount: nextNormalizedEventCount,
       lastNormalizedAt: nowIso(),
     })) || run;
   }
@@ -1767,12 +1828,45 @@ async function syncDetachedRun(sessionId, runId) {
     sessionChanged = await persistResumeIds(sessionId, run.claudeSessionId, run.codexThreadId) || sessionChanged;
   }
 
+  if (!runtimeInvocation) {
+    runtimeInvocation = await createToolInvocation(manifest.tool, '', {
+      model: manifest.options?.model,
+      effort: manifest.options?.effort,
+      thinking: manifest.options?.thinking,
+    });
+  }
+
+  const isStructuredRuntime = runtimeInvocation.isClaudeFamily || runtimeInvocation.isCodexFamily;
+  const result = await getRunResult(runId);
+  const inferredState = deriveRunStateFromResult(run, result);
+  const completedAt = typeof result?.completedAt === 'string' && result.completedAt
+    ? result.completedAt
+    : null;
+  const previewFromDelta = spoolRecords
+    .filter((record) => ['stdout', 'stderr', 'error'].includes(record.stream))
+    .map((record) => typeof record?.line === 'string' ? clipFailurePreview(record.line) : '')
+    .filter(Boolean)
+    .slice(-3)
+    .join(' | ');
+  const zeroStructuredOutputReason = (
+    isStructuredRuntime
+    && inferredState === 'completed'
+    && nextNormalizedEventCount === 0
+  )
+    ? await deriveStructuredRuntimeFailureReason(runId, previewFromDelta)
+    : null;
+
+  if (zeroStructuredOutputReason) {
+    run = await updateRun(runId, (current) => ({
+      ...current,
+      state: 'failed',
+      completedAt,
+      result,
+      failureReason: zeroStructuredOutputReason,
+    })) || run;
+  }
+
   if (!isTerminalRunState(run.state)) {
-    const result = await getRunResult(runId);
-    const inferredState = deriveRunStateFromResult(run, result);
-    const completedAt = typeof result?.completedAt === 'string' && result.completedAt
-      ? result.completedAt
-      : null;
     if (inferredState && completedAt) {
       run = await updateRun(runId, (current) => ({
         ...current,
@@ -2178,6 +2272,74 @@ async function applySessionAppMetadata(id, app, extra = {}) {
   return enrichSessionMeta(result.meta);
 }
 
+export async function updateSessionRuntimePreferences(id, patch = {}) {
+  const hasToolPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'tool');
+  const hasModelPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'model');
+  const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
+  const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
+  if (!hasToolPatch && !hasModelPatch && !hasEffortPatch && !hasThinkingPatch) {
+    return getSession(id);
+  }
+
+  const nextTool = hasToolPatch && typeof patch.tool === 'string'
+    ? patch.tool.trim()
+    : '';
+  let toolChanged = false;
+
+  const result = await mutateSessionMeta(id, (session) => {
+    let changed = false;
+
+    if (hasToolPatch && nextTool && session.tool !== nextTool) {
+      session.tool = nextTool;
+      toolChanged = true;
+      changed = true;
+    }
+
+    if (hasModelPatch) {
+      const nextModel = typeof patch.model === 'string' ? patch.model.trim() : '';
+      if ((session.model || '') !== nextModel) {
+        session.model = nextModel;
+        changed = true;
+      }
+    }
+
+    if (hasEffortPatch) {
+      const nextEffort = typeof patch.effort === 'string' ? patch.effort.trim() : '';
+      if ((session.effort || '') !== nextEffort) {
+        session.effort = nextEffort;
+        changed = true;
+      }
+    }
+
+    if (hasThinkingPatch) {
+      const nextThinking = patch.thinking === true;
+      if (session.thinking !== nextThinking) {
+        session.thinking = nextThinking;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      session.updatedAt = nowIso();
+    }
+    return changed;
+  });
+
+  if (!result.meta) return null;
+  if (!result.changed) {
+    return enrichSessionMeta(result.meta);
+  }
+
+  if (toolChanged) {
+    await clearPersistedResumeIds(id);
+  }
+  broadcastSessionInvalidation(id);
+  if (!result.meta.visitorId) {
+    broadcastSessionsInvalidation();
+  }
+  return enrichSessionMeta(result.meta);
+}
+
 export async function saveSessionAsTemplate(sessionId, name = '') {
   const session = await getSession(sessionId);
   if (!session) return null;
@@ -2255,7 +2417,6 @@ export async function applyAppTemplateToSession(sessionId, appId) {
 
   return getSession(sessionId);
 }
-
 export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const requestId = typeof options.requestId === 'string' ? options.requestId.trim() : '';
   if (!requestId) {

@@ -197,19 +197,46 @@ function updateThinkingUI() {
 }
 updateThinkingUI();
 
+function getAttachedSessionToolPreferences(toolId = selectedTool) {
+  const session = getCurrentSession();
+  if (!session || !toolId || session.tool !== toolId) return null;
+  return {
+    hasModel: Object.prototype.hasOwnProperty.call(session, "model"),
+    model: typeof session.model === "string" ? session.model : "",
+    hasEffort: Object.prototype.hasOwnProperty.call(session, "effort"),
+    effort: typeof session.effort === "string" ? session.effort : "",
+    hasThinking: Object.prototype.hasOwnProperty.call(session, "thinking"),
+    thinking: session.thinking === true,
+  };
+}
+
+function persistCurrentSessionToolPreferences() {
+  if (visitorMode || !currentSessionId || !selectedTool) return;
+  const payload = {
+    action: "session_preferences",
+    sessionId: currentSessionId,
+    tool: selectedTool,
+    model: selectedModel || "",
+    effort: selectedEffort || "",
+    thinking: currentToolReasoningKind === "toggle" ? thinkingEnabled : false,
+  };
+  dispatchAction(payload);
+}
+
 thinkingToggle.addEventListener("click", () => {
   thinkingEnabled = !thinkingEnabled;
   localStorage.setItem("thinkingEnabled", thinkingEnabled);
   updateThinkingUI();
   queueRuntimeSelectionSync();
+  persistCurrentSessionToolPreferences();
 });
 
 effortSelect.addEventListener("change", () => {
   selectedEffort = effortSelect.value;
   if (selectedTool) localStorage.setItem(`selectedEffort_${selectedTool}`, selectedEffort);
   queueRuntimeSelectionSync();
+  persistCurrentSessionToolPreferences();
 });
-
 // ---- Inline tool select ----
 function slugifyToolValue(value) {
   const normalized = String(value || "")
@@ -614,6 +641,7 @@ inlineToolSelect.addEventListener("change", async () => {
   localStorage.setItem("selectedTool", selectedTool);
   await loadModelsForCurrentTool();
   queueRuntimeSelectionSync();
+  persistCurrentSessionToolPreferences();
 });
 
 // ---- Model select ----
@@ -647,6 +675,7 @@ async function loadModelsForCurrentTool() {
     return;
   }
   try {
+    const sessionPreferences = getAttachedSessionToolPreferences(selectedTool);
     const data = await fetchJsonOrRedirect(`/api/models?tool=${encodeURIComponent(selectedTool)}`);
     currentToolModels = data.models || [];
     currentToolReasoningKind =
@@ -674,7 +703,7 @@ async function loadModelsForCurrentTool() {
     // Restore saved model for this tool
     const savedModel = localStorage.getItem(`selectedModel_${selectedTool}`) || "";
     const defaultModel = data.defaultModel || "";
-    selectedModel = savedModel;
+    selectedModel = sessionPreferences?.hasModel ? sessionPreferences.model : savedModel;
     if (selectedModel && currentToolModels.some((m) => m.id === selectedModel)) {
       inlineModelSelect.value = selectedModel;
     } else if (defaultModel && currentToolModels.some((m) => m.id === defaultModel)) {
@@ -697,7 +726,9 @@ async function loadModelsForCurrentTool() {
         effortSelect.appendChild(opt);
       }
 
-      selectedEffort = localStorage.getItem(`selectedEffort_${selectedTool}`) || "";
+      selectedEffort = sessionPreferences?.hasEffort
+        ? sessionPreferences.effort
+        : (localStorage.getItem(`selectedEffort_${selectedTool}`) || "");
       const currentModelData = currentToolModels.find((m) => m.id === selectedModel);
       if (selectedEffort && currentToolEffortLevels.includes(selectedEffort)) {
         effortSelect.value = selectedEffort;
@@ -721,6 +752,10 @@ async function loadModelsForCurrentTool() {
       thinkingToggle.style.display = "";
       effortSelect.style.display = "none";
       selectedEffort = null;
+      if (sessionPreferences?.hasThinking) {
+        thinkingEnabled = sessionPreferences.thinking;
+      }
+      updateThinkingUI();
     } else {
       thinkingToggle.style.display = "none";
       effortSelect.style.display = "none";
@@ -749,6 +784,7 @@ inlineModelSelect.addEventListener("change", () => {
     }
   }
   queueRuntimeSelectionSync();
+  persistCurrentSessionToolPreferences();
 });
 
 addToolNameInput.addEventListener("input", () => {

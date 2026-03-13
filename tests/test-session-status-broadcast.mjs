@@ -107,10 +107,22 @@ const ownerSessionA = await createSession(tempHome, 'fake-codex', 'Owner A', {
   group: 'Tests',
   description: 'Owner invalidation test A',
 });
+assert.equal(
+  ownerWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
+  true,
+  'creating an owner session should invalidate the owner session list',
+);
+ownerWs.messages = [];
+
 await createSession(tempHome, 'fake-codex', 'Owner B', {
   group: 'Tests',
   description: 'Owner invalidation test B',
 });
+assert.equal(
+  ownerWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
+  true,
+  'creating another owner session should also invalidate the owner session list',
+);
 ownerWs.messages = [];
 
 const ownerOutcome = await submitHttpMessage(ownerSessionA.id, 'Say hello', [], {

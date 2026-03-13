@@ -93,6 +93,14 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Background one-shot model calls (for example session auto-naming or sidebar summarization) must reuse the triggering turn's provider/model/reasoning config. Hardcoding those paths to Claude creates hidden availability bugs on Codex-only installs.
 - Claude Code and Codex do NOT emit the same raw JSON protocol, but both can be normalized into the same internal event stream. The parser boundary should therefore be runtime-family-specific, while the UI/session layer consumes the normalized events.
 
+### Private CLI Providers Need A Wrapper Escape Hatch (2026-03-12)
+- A local JSON/simple provider that stores only a single `command` cannot directly express CLI integrations that require a fixed subcommand or bootstrap argv, such as `mc --code`.
+- The lowest-friction private-integration path is a tiny local wrapper executable that normalizes the real invocation into one stable command, then bind that wrapper to an existing runtime family in local provider/tool config.
+- Treat "binary resolves on PATH" and "provider auth/session is actually ready" as separate checks. A private CLI can look available to the picker while still failing every run until its local login/token state exists.
+- Some private Claude-flavored CLIs are not truly drop-in compatible with RemoteLab's default multiline preamble. `mc --code` accepted short single-line prompts but misbehaved on multiline prompts, emitted only raw stderr/stdout, and left RemoteLab with zero normalized events.
+- Local provider config therefore needs lightweight prompt-shaping controls, not just `command`/`runtimeFamily`. A practical minimum is `promptMode: "bare-user"` plus `flattenPrompt: true` so a brittle private CLI can receive only the user text in a single line.
+- When a structured runtime exits with code 0 but produces zero normalized events, surface the raw output as a run failure instead of silently marking it completed. That makes provider-contract breaks debuggable immediately.
+
 ### Cross-Provider Session Continuity Needs A History Handoff (2026-03-06)
 - Provider-native resume IDs (`claudeSessionId`, `codexThreadId`) preserve context only within the same runtime family; clearing them on tool switch without another handoff silently drops the session's prior context.
 - Once providers already normalize their raw output into a shared event history, the first turn of any fresh provider thread should inject a transcript reconstructed from that normalized history.
@@ -249,6 +257,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Long-lived background processes are optional. Many "active agent" behaviors are better modeled as re-triggerable one-shot runs that resume from persisted provider state when a trigger fires.
 - A clean split is: control plane for auth/API/WebSocket/event replay, runtime manager for session leases/spawn-resume-cancel/watchers, and one durable store shared by both.
 - Optimize product promises around logical continuity (no lost work, replayable events, resumable runs) rather than transport continuity (the socket never dropped), because restarts and mobile-network churn make transport loss normal.
+
+### External Connectors Should Prefer HTTP-Truth + Thin Invalidation Over Broker-Owned Worker State (2026-03-12)
+- If a connector bridge server starts owning per-client inflight leases, busy flags, and retry semantics, connector availability leaks into the server's correctness model and failure analysis becomes much harder.
+- A cleaner long-term shape is: persist canonical session/run/event history in the control plane, let connectors authenticate and fetch the session list / event deltas over HTTP, and keep WebSocket or SSE as a push-only invalidation hint rather than the authoritative delivery channel.
+- The right concurrency boundary is usually keyed: same external thread or same session stays serialized, while different sessions can progress independently. Do not collapse that into either "whole machine single-flight" or "everything fully parallel".
 
 ### Async File Stores Need Keyed Serialization (2026-03-10)
 - When a Node app moves append-only session/run storage from sync FS calls to async FS calls, preserve correctness with a per-entity serialization queue (`sessionId`, `runId`, or similar) instead of firing writes concurrently.
@@ -422,3 +435,8 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Chat-platform event subscriptions often require handlers to finish within a few seconds and may retry on timeout, so do not hold the provider callback open while waiting for a full agent run.
 - For local-first agent products, a provider's long-connection / SDK event mode can be the fastest connector path because it avoids public webhook setup, signature verification, and payload decryption.
 - A reliable pattern is: receive event -> dedupe / enqueue immediately -> acknowledge the provider -> run the canonical session/message/run flow in background -> publish the final assistant reply afterward.
+
+### Desktop-Only Local File Links Should Stay Client-Side (2026-03-12)
+- In RemoteLab-style remote UIs, local absolute file links are fundamentally a desktop operator workflow; mobile users can understand that they are unsupported.
+- Prefer rewriting these links client-side to `vscode://file/...` for desktop-capable browsers, and degrade on mobile/visitor surfaces by disabling the link with a clear tooltip.
+- Avoid adding server routes that execute `code --goto` on the host just to make phone-originated clicks work; that adds auth and execution surface area for a scenario the product does not need to support.

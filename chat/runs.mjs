@@ -146,6 +146,7 @@ function mergeRunRecords(current, proposed) {
   merged.toolProcessId = pickDefined(proposed?.toolProcessId, current?.toolProcessId);
   merged.normalizedLineCount = pickMaxInt(current?.normalizedLineCount, proposed?.normalizedLineCount, 0);
   merged.normalizedByteOffset = pickMaxInt(current?.normalizedByteOffset, proposed?.normalizedByteOffset, 0);
+  merged.normalizedEventCount = pickMaxInt(current?.normalizedEventCount, proposed?.normalizedEventCount, 0);
   merged.contextInputTokens = pickMaxInt(current?.contextInputTokens, proposed?.contextInputTokens, null);
   merged.contextWindowTokens = pickMaxInt(current?.contextWindowTokens, proposed?.contextWindowTokens, null);
 
@@ -181,6 +182,9 @@ export function createRunRecord(input = {}) {
       : 0,
     normalizedByteOffset: Number.isInteger(input.normalizedByteOffset)
       ? input.normalizedByteOffset
+      : 0,
+    normalizedEventCount: Number.isInteger(input.normalizedEventCount)
+      ? input.normalizedEventCount
       : 0,
     finalizedAt: input.finalizedAt || null,
     lastNormalizedAt: input.lastNormalizedAt || null,

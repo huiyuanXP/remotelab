@@ -183,6 +183,11 @@ try {
     const source = await createSession(port, 'Template source');
     const run = await submitMessage(port, source.id, 'req-source-template', 'Generate the reusable template context');
     await waitForRunTerminal(port, run.id);
+    await waitFor(async () => {
+      const detail = await request(port, 'GET', `/api/sessions/${source.id}`);
+      if (detail.status !== 200) return false;
+      return Number(detail.json.session?.messageCount || 0) >= 2;
+    }, 'source session history sync');
 
     const saved = await request(port, 'POST', `/api/sessions/${source.id}/save-template`, {
       name: 'Saved via HTTP',
