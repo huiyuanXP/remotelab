@@ -20,6 +20,7 @@ import {
 } from './history.mjs';
 import { messageEvent, statusEvent } from './normalizer.mjs';
 import {
+  triggerSessionBoardLayoutSuggestion,
   triggerSessionLabelSuggestion,
   triggerSessionWorkflowStateSuggestion,
 } from './summarizer.mjs';
@@ -72,6 +73,12 @@ import {
   mutateSessionMeta,
   withSessionsMetaMutation,
 } from './session-meta-store.mjs';
+import {
+  getBoardPlacement,
+  loadBoardLayout,
+  replaceBoardLayout,
+  summarizeBoardLayout,
+} from './session-board-layout.mjs';
 import { dispatchSessionEmailCompletionTargets, sanitizeEmailCompletionTargets } from '../lib/agent-mail-completion-targets.mjs';
 import {
   DEFAULT_APP_ID,
@@ -833,6 +840,7 @@ async function enrichSessionMeta(meta) {
   const snapshot = await getHistorySnapshot(meta.id);
   const queuedCount = getFollowUpQueueCount(meta);
   const runActivity = await resolveSessionRunActivity(meta);
+  const boardPlacement = await getBoardPlacement(meta.id);
   const { followUpQueue, recentFollowUpRequestIds, activeRunId, activeRun, ...rest } = meta;
   const sourceId = resolveSessionSourceId(meta);
   return {
@@ -853,6 +861,7 @@ async function enrichSessionMeta(meta) {
       run: runActivity.run,
       queuedCount,
     }),
+    ...(boardPlacement ? { board: boardPlacement } : {}),
   };
 }
 
@@ -1583,6 +1592,109 @@ function scheduleSessionWorkflowStateSuggestion(session, run) {
   return true;
 }
 
+function chooseBoardLayoutAnchorSession(sessions, preferredSessionId = '') {
+  const preferred = sessions.find((session) => session.id === preferredSessionId && session.tool);
+  if (preferred) return preferred;
+  return sessions.find((session) => session.tool) || null;
+}
+
+async function applySuggestedBoardLayout(sourceSessionId, activeSessions, suggestion) {
+  const sessionIds = activeSessions
+    .map((session) => session?.id)
+    .filter(Boolean);
+  const result = await replaceBoardLayout(suggestion, {
+    sessionIds,
+    sourceSessionId,
+  });
+  if (result.changed) {
+    broadcastSessionsInvalidation();
+  }
+  return result.layout;
+}
+
+export async function getSessionBoardLayout() {
+  return summarizeBoardLayout(await loadBoardLayout());
+}
+
+export async function rebuildSessionBoardLayout({
+  sessionId = '',
+  tool = '',
+  model,
+  effort,
+  thinking = false,
+} = {}) {
+  const activeSessions = await listSessions({ includeVisitor: true, includeArchived: false });
+  if (activeSessions.length === 0) {
+    return {
+      ok: false,
+      skipped: 'no_sessions',
+      board: summarizeBoardLayout(await loadBoardLayout()),
+    };
+  }
+
+  const anchorSession = chooseBoardLayoutAnchorSession(activeSessions, sessionId);
+  if (!anchorSession) {
+    return {
+      ok: false,
+      skipped: 'no_tool',
+      board: summarizeBoardLayout(await loadBoardLayout()),
+    };
+  }
+
+  const [currentHistory, existingBoardLayout] = await Promise.all([
+    loadHistory(anchorSession.id, { includeBodies: true }),
+    loadBoardLayout(),
+  ]);
+
+  const suggestion = await triggerSessionBoardLayoutSuggestion({
+    id: anchorSession.id,
+    folder: anchorSession.folder,
+    name: anchorSession.name || '',
+    group: anchorSession.group || '',
+    description: anchorSession.description || '',
+    tool: tool || anchorSession.tool,
+    model: model || anchorSession.model || undefined,
+    effort: effort || anchorSession.effort || undefined,
+    thinking,
+    currentHistory,
+    activeSessions,
+    existingBoardLayout,
+  });
+
+  if (!suggestion?.ok || !suggestion.boardLayout) {
+    return {
+      ok: false,
+      error: suggestion?.error || 'Board layout suggestion failed',
+      board: summarizeBoardLayout(existingBoardLayout),
+    };
+  }
+
+  const board = await applySuggestedBoardLayout(anchorSession.id, activeSessions, suggestion.boardLayout);
+  return {
+    ok: true,
+    sourceSessionId: anchorSession.id,
+    board: summarizeBoardLayout(board),
+  };
+}
+
+function scheduleSessionBoardLayoutSuggestion(session, run) {
+  if (!session?.id || !run || session.archived || isInternalSession(session)) {
+    return false;
+  }
+
+  rebuildSessionBoardLayout({
+    sessionId: session.id,
+    tool: run.tool || session.tool,
+    model: run.model || session.model || undefined,
+    effort: run.effort || session.effort || undefined,
+    thinking: false,
+  }).catch((error) => {
+    console.error(`[board-layout] Failed to rebuild board layout from ${session.id?.slice(0, 8)}: ${error.message}`);
+  });
+
+  return true;
+}
+
 function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
   const live = ensureLiveSession(sessionId);
   if (live.earlyTitlePromise) {
@@ -1859,6 +1971,7 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
   queueSessionCompletionTargets(latestSession, finalizedRun, manifest);
   if (!manifest?.internalOperation) {
     scheduleSessionWorkflowStateSuggestion(latestSession, finalizedRun);
+    scheduleSessionBoardLayoutSuggestion(latestSession, finalizedRun);
   }
 
   const needsRename = isSessionAutoRenamePending(latestSession);

@@ -24,8 +24,10 @@ import {
   getHistory,
   getRunState,
   getSession,
+  getSessionBoardLayout,
   getSessionEventsAfter,
   listSessions,
+  rebuildSessionBoardLayout,
   renameSession,
   saveSessionAsTemplate,
   sendMessage,
@@ -756,6 +758,8 @@ function serializeJsonForScript(value) {
 
 function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/sessions' && (method === 'GET' || method === 'POST')) return true;
+  if (pathname === '/api/board' && method === 'GET') return true;
+  if (pathname === '/api/board/rebuild' && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/fork') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && method === 'PATCH') return true;
@@ -1046,16 +1050,40 @@ export async function handleRequest(req, res) {
   if (sessionGetRoute?.kind === 'list') {
     const includeVisitor = authSession?.role === 'owner'
       && ['1', 'true', 'yes'].includes(String(parsedUrl.query.includeVisitor || '').toLowerCase());
-    const sessionList = await listSessions({
-      includeVisitor,
-      appId: typeof parsedUrl.query.appId === 'string' ? parsedUrl.query.appId : '',
-      sourceId: typeof parsedUrl.query.sourceId === 'string' ? parsedUrl.query.sourceId : '',
-    });
+    const [sessionList, board] = await Promise.all([
+      listSessions({
+        includeVisitor,
+        appId: typeof parsedUrl.query.appId === 'string' ? parsedUrl.query.appId : '',
+        sourceId: typeof parsedUrl.query.sourceId === 'string' ? parsedUrl.query.sourceId : '',
+      }),
+      getSessionBoardLayout(),
+    ]);
     const folderFilter = parsedUrl.query.folder;
     const filtered = folderFilter
       ? sessionList.filter((session) => session.folder === folderFilter)
       : sessionList;
-    writeJsonCached(req, res, { sessions: filtered });
+    writeJsonCached(req, res, { sessions: filtered, board });
+    return;
+  }
+
+  if (pathname === '/api/board' && req.method === 'GET') {
+    writeJsonCached(req, res, { board: await getSessionBoardLayout() });
+    return;
+  }
+
+  if (pathname === '/api/board/rebuild' && req.method === 'POST') {
+    let body = {};
+    try {
+      const raw = await readBody(req, 10240);
+      body = raw ? JSON.parse(raw) : {};
+    } catch {
+      body = {};
+    }
+
+    const result = await rebuildSessionBoardLayout({
+      sessionId: typeof body?.sessionId === 'string' ? body.sessionId : '',
+    });
+    writeJson(res, 200, result);
     return;
   }
 
@@ -1923,6 +1951,11 @@ export async function handleRequest(req, res) {
       if (typeof payload.name === 'string') {
         updates.name = payload.name;
       }
+      if (Object.prototype.hasOwnProperty.call(payload, 'shareVisitorId')) {
+        updates.shareVisitorId = typeof payload.shareVisitorId === 'string'
+          ? payload.shareVisitorId.trim()
+          : '';
+      }
       if (Object.prototype.hasOwnProperty.call(payload, 'appIds')) {
         const apps = await resolveTemplateApps(payload.appIds);
         if (apps.length === 0) {
@@ -1965,8 +1998,12 @@ export async function handleRequest(req, res) {
       return;
     }
     const id = pathname.split('/').pop();
+    const user = await getUser(id);
     const ok = await deleteUser(id);
     if (ok) {
+      if (user?.shareVisitorId) {
+        await deleteVisitor(user.shareVisitorId).catch(() => false);
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
     } else {

@@ -267,6 +267,7 @@ let hasAttachedSession = false;
 let sessionStatus = "idle";
 let reconnectTimer = null;
 let sessions = [];
+let sessionBoardLayout = null;
 let sessionAppCatalog = [];
 let availableApps = [];
 let availableUsers = [];
@@ -364,18 +365,18 @@ function getSessionVisualStatus(session, options = {}) {
 
 function getSessionBoardColumns() {
   return typeof sessionStateModel.getBoardColumns === "function"
-    ? sessionStateModel.getBoardColumns()
+    ? sessionStateModel.getBoardColumns(sessionBoardLayout, getActiveSessions())
     : [];
 }
 
 function getSessionBoardColumn(session) {
   return typeof sessionStateModel.getSessionBoardColumn === "function"
-    ? sessionStateModel.getSessionBoardColumn(session)
+    ? sessionStateModel.getSessionBoardColumn(session, sessionBoardLayout, getActiveSessions())
     : {
-      key: "parked",
-      label: "Parked",
-      title: "Paused work",
-      emptyText: "No parked sessions",
+      key: "unassigned",
+      label: "Unassigned",
+      title: "Sessions that are not yet arranged by the board model.",
+      emptyText: "Nothing here yet",
     };
 }
 
@@ -852,9 +853,12 @@ function getSessionCountForUser(scope = activeUserFilter) {
   return activeSessions.filter((session) => session?.userId === scope).length;
 }
 
-function syncSidebarFiltersVisibility(showingSessions = true) {
+function syncSidebarFiltersVisibility(showingSessions = null) {
   if (!sidebarFilters) return;
-  const visible = showingSessions && !visitorMode;
+  const resolvedShowingSessions = typeof showingSessions === "boolean"
+    ? showingSessions
+    : (typeof activeTab === "string" ? activeTab === "sessions" : true);
+  const visible = resolvedShowingSessions && !visitorMode;
   sidebarFilters.classList.toggle("hidden", !visible);
 }
 

@@ -1,32 +1,13 @@
 "use strict";
 
 (function attachRemoteLabSessionStateModel(root) {
-  const boardColumns = [
-    {
-      key: "parked",
-      label: "Parked",
-      title: "Paused or parked work that is not currently waiting on the user.",
-      emptyText: "No parked sessions",
-    },
-    {
-      key: "running",
-      label: "Running",
-      title: "Sessions actively executing, compacting, or draining queued follow-ups.",
-      emptyText: "No running sessions",
-    },
-    {
-      key: "waiting_user",
-      label: "Waiting",
-      title: "Sessions blocked on user input, approval, files, or manual validation.",
-      emptyText: "Nothing waiting for you",
-    },
-    {
-      key: "done",
-      label: "Done",
-      title: "Sessions whose current task looks complete.",
-      emptyText: "No completed sessions",
-    },
-  ];
+  const defaultBoardColumn = {
+    key: "unassigned",
+    label: "Unassigned",
+    title: "Sessions that are not yet arranged by the board model.",
+    emptyText: "Nothing here yet",
+    order: 0,
+  };
 
   const workflowPrioritySpecs = {
     high: {
@@ -118,6 +99,65 @@
     const stamp = session?.lastEventAt || session?.updatedAt || session?.created || "";
     const time = new Date(stamp).getTime();
     return Number.isFinite(time) ? time : 0;
+  }
+
+  function normalizeBoardColumnKey(value) {
+    return typeof value === "string"
+      ? value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+      : "";
+  }
+
+  function normalizeBoardLayout(layout, sessions = []) {
+    const rawColumns = Array.isArray(layout?.columns) ? layout.columns : [];
+    const sessionList = Array.isArray(sessions) ? sessions : [];
+    const columns = [];
+    const seenKeys = new Set();
+
+    for (const entry of rawColumns) {
+      const key = normalizeBoardColumnKey(entry?.key || entry?.label);
+      const label = typeof entry?.label === "string" && entry.label.trim()
+        ? entry.label.trim()
+        : "";
+      if (!key || !label || seenKeys.has(key)) continue;
+      columns.push({
+        key,
+        label,
+        title: typeof entry?.description === "string" && entry.description.trim()
+          ? entry.description.trim()
+          : (typeof entry?.title === "string" ? entry.title.trim() : ""),
+        emptyText: typeof entry?.emptyText === "string" && entry.emptyText.trim()
+          ? entry.emptyText.trim()
+          : `No sessions in ${label}`,
+        order: Number.isInteger(entry?.order) ? entry.order : columns.length * 10,
+      });
+      seenKeys.add(key);
+    }
+
+    for (const session of sessionList) {
+      const key = normalizeBoardColumnKey(session?.board?.columnKey || session?.board?.columnLabel);
+      const label = typeof session?.board?.columnLabel === "string" && session.board.columnLabel.trim()
+        ? session.board.columnLabel.trim()
+        : "";
+      if (!key || !label || seenKeys.has(key)) continue;
+      columns.push({
+        key,
+        label,
+        title: "",
+        emptyText: `No sessions in ${label}`,
+        order: Number.isInteger(session?.board?.columnOrder) ? session.board.columnOrder : columns.length * 10,
+      });
+      seenKeys.add(key);
+    }
+
+    if (columns.length === 0) {
+      return [{ ...defaultBoardColumn }];
+    }
+
+    columns.sort((a, b) => (
+      (Number.isInteger(a.order) ? a.order : 9999) - (Number.isInteger(b.order) ? b.order : 9999)
+      || a.label.localeCompare(b.label)
+    ));
+    return columns;
   }
 
   function normalizeSessionActivity(session) {
@@ -233,40 +273,32 @@
     return getSessionStatusSummary(session, options).primary;
   }
 
-  function getBoardColumns() {
-    return boardColumns.map((column) => ({ ...column }));
+  function getBoardColumns(layout, sessions = []) {
+    return normalizeBoardLayout(layout, sessions).map((column) => ({ ...column }));
   }
 
-  function getSessionBoardColumn(session) {
-    if (isSessionBusy(session)) {
-      return boardColumns[1];
-    }
-
-    const workflowState = normalizeSessionWorkflowState(session?.workflowState || "");
-    if (workflowState === "waiting_user") {
-      return boardColumns[2];
-    }
-    if (workflowState === "done") {
-      return boardColumns[3];
-    }
-    return boardColumns[0];
+  function getSessionBoardColumn(session, layout, sessions = []) {
+    const columns = getBoardColumns(layout, sessions);
+    const requestedKey = normalizeBoardColumnKey(session?.board?.columnKey || session?.board?.columnLabel);
+    return columns.find((column) => column.key === requestedKey) || columns[0] || { ...defaultBoardColumn };
   }
 
   function getSessionBoardPriority(session) {
-    const explicitPriority = getWorkflowPriorityInfo(session?.workflowPriority);
+    const explicitPriority = getWorkflowPriorityInfo(session?.board?.priority || session?.workflowPriority);
     if (explicitPriority) return explicitPriority;
-
-    const boardColumn = getSessionBoardColumn(session);
-    if (boardColumn.key === "waiting_user") {
-      return getWorkflowPriorityInfo("high");
-    }
-    if (boardColumn.key === "done") {
-      return getWorkflowPriorityInfo("low");
-    }
     return getWorkflowPriorityInfo("medium");
   }
 
+  function getSessionBoardOrder(session) {
+    return Number.isInteger(session?.board?.order)
+      ? session.board.order
+      : 9999;
+  }
+
   function compareBoardSessions(a, b) {
+    const boardOrderDiff = getSessionBoardOrder(a) - getSessionBoardOrder(b);
+    if (boardOrderDiff) return boardOrderDiff;
+
     const priorityDiff = (getSessionBoardPriority(b)?.rank || 0) - (getSessionBoardPriority(a)?.rank || 0);
     if (priorityDiff) return priorityDiff;
 
@@ -288,6 +320,7 @@
     getBoardColumns,
     getSessionBoardColumn,
     getSessionBoardPriority,
+    getSessionBoardOrder,
     compareBoardSessions,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

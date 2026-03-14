@@ -416,6 +416,24 @@ async function deleteAppRecord(appId) {
   await fetchAppsList();
 }
 
+async function createVisitorRecord(payload = {}) {
+  const data = await fetchJsonOrRedirect("/api/visitors", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return data.visitor || null;
+}
+
+async function updateVisitorRecord(visitorId, payload = {}) {
+  const data = await fetchJsonOrRedirect(`/api/visitors/${encodeURIComponent(visitorId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return data.visitor || null;
+}
+
 async function fetchUsersList() {
   if (visitorMode) return [];
   const data = await fetchJsonOrRedirect("/api/users");
@@ -460,6 +478,7 @@ async function deleteUserRecord(userId) {
 async function fetchSessionsList() {
   if (visitorMode) return [];
   const data = await fetchJsonOrRedirect('/api/sessions?includeVisitor=1');
+  sessionBoardLayout = data.board || null;
   const previousMap = new Map(sessions.map((session) => [session.id, session]));
   sessions = (data.sessions || []).map((session) => normalizeSessionRecord(session, previousMap.get(session.id) || null));
   hasLoadedSessions = true;
