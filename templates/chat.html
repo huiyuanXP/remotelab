@@ -468,8 +468,124 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.board-card-next {
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.45;
+}
+.board-task-project {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 .board-card-empty {
   padding: 8px 2px;
+}
+.task-board-detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 10px 16px;
+  display: grid;
+  gap: 12px;
+}
+.task-board-detail-header {
+  display: grid;
+  gap: 10px;
+}
+.task-board-back-btn {
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.task-board-back-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.task-board-detail-title-wrap {
+  display: grid;
+  gap: 4px;
+}
+.task-board-detail-project {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.task-board-detail-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+}
+.task-board-detail-summary {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.task-board-detail-cards {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+.task-board-detail-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+.task-board-detail-card-title,
+.task-board-detail-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.task-board-detail-body,
+.task-board-detail-next,
+.task-board-detail-meta,
+.task-board-detail-muted {
+  font-size: 12px;
+  line-height: 1.55;
+}
+.task-board-detail-body,
+.task-board-detail-next {
+  color: var(--text-secondary);
+}
+.task-board-detail-meta,
+.task-board-detail-muted {
+  color: var(--text-muted);
+}
+.task-board-note-input {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.task-board-note-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+.task-board-detail-sessions {
+  display: grid;
+  gap: 10px;
+}
+.task-board-detail-sessions .board-scroller {
+  padding: 0;
 }
 .settings-section {
   border-top: 1px solid var(--border);

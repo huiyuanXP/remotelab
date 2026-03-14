@@ -206,6 +206,30 @@ function buildJsonCacheKey(url) {
   }
 }
 
+const SESSION_LIST_URL = "/api/sessions?includeVisitor=1";
+const SESSION_LIST_REFS_URL = "/api/sessions?includeVisitor=1&view=refs";
+
+function getCachedJsonEntry(url) {
+  return jsonResponseCache.get(buildJsonCacheKey(url)) || null;
+}
+
+function getCachedJsonEtag(url) {
+  return getCachedJsonEntry(url)?.etag || "";
+}
+
+function getSessionSummaryUrl(sessionId) {
+  return `/api/sessions/${encodeURIComponent(sessionId)}?view=summary`;
+}
+
+function createSessionRefsMap(refs) {
+  const map = new Map();
+  for (const ref of Array.isArray(refs) ? refs : []) {
+    if (!ref?.id) continue;
+    map.set(ref.id, typeof ref.summaryEtag === "string" ? ref.summaryEtag : "");
+  }
+  return map;
+}
+
 async function fetchJsonOrRedirect(url, options = {}) {
   const requestOptions = { ...options };
   const revalidate = requestOptions.revalidate !== false;
@@ -347,6 +371,13 @@ function normalizeSessionRecord(session, previous = null) {
     ...session,
     appId: getEffectiveSessionAppId(session),
   };
+  if (typeof session?.summaryEtag === "string" && session.summaryEtag) {
+    normalized.summaryEtag = session.summaryEtag;
+  } else if (typeof previous?.summaryEtag === "string" && previous.summaryEtag) {
+    normalized.summaryEtag = previous.summaryEtag;
+  } else {
+    delete normalized.summaryEtag;
+  }
   if (!Object.prototype.hasOwnProperty.call(session || {}, "queuedMessages")) {
     if (queueCount > 0 && Array.isArray(previous?.queuedMessages)) {
       normalized.queuedMessages = previous.queuedMessages;
@@ -370,6 +401,84 @@ function upsertSession(session) {
   sortSessionsInPlace();
   refreshAppCatalog();
   return normalized;
+}
+
+function getCachedSessionSummary(sessionId, previous = null) {
+  const cached = getCachedJsonEntry(getSessionSummaryUrl(sessionId));
+  if (!cached?.data?.session?.id) return null;
+  return normalizeSessionRecord(
+    {
+      ...cached.data.session,
+      ...(cached.etag ? { summaryEtag: cached.etag } : {}),
+    },
+    previous,
+  );
+}
+
+function applySessionListState(nextSessions, { board = null, taskBoard = null } = {}) {
+  sessionBoardLayout = board;
+  taskBoardState = taskBoard;
+  sessions = Array.isArray(nextSessions) ? nextSessions : [];
+  hasLoadedSessions = true;
+  refreshAppCatalog();
+  renderSessionList();
+  if (currentSessionId && !sessions.some((session) => session.id === currentSessionId)) {
+    currentSessionId = null;
+    hasAttachedSession = false;
+    clearMessages();
+    showEmpty();
+    restoreDraft();
+  }
+  return sessions;
+}
+
+async function fetchSessionSummary(sessionId) {
+  const url = getSessionSummaryUrl(sessionId);
+  const data = await fetchJsonOrRedirect(url);
+  const summaryEtag = getCachedJsonEtag(url);
+  return upsertSession(summaryEtag ? { ...data.session, summaryEtag } : data.session);
+}
+
+async function hydrateSessionSummaries(sessionIds = []) {
+  const queue = [...new Set(
+    (Array.isArray(sessionIds) ? sessionIds : [])
+      .filter((sessionId) => sessionId && (!hasAttachedSession || sessionId !== currentSessionId)),
+  )];
+  if (queue.length === 0) return [];
+
+  const refreshed = [];
+  const batchSize = 6;
+  let needsRender = false;
+
+  for (let index = 0; index < queue.length; index += batchSize) {
+    const batch = queue.slice(index, index + batchSize);
+    const results = await Promise.all(batch.map(async (sessionId) => {
+      try {
+        return await fetchSessionSummary(sessionId);
+      } catch (error) {
+        if (error?.message === "Session not found") {
+          const nextSessions = sessions.filter((session) => session.id !== sessionId);
+          if (nextSessions.length !== sessions.length) {
+            sessions = nextSessions;
+            refreshAppCatalog();
+            needsRender = true;
+          }
+          return null;
+        }
+        throw error;
+      }
+    }));
+    if (results.some(Boolean)) {
+      refreshed.push(...results.filter(Boolean));
+      needsRender = true;
+    }
+    if (needsRender) {
+      renderSessionList();
+      needsRender = false;
+    }
+  }
+
+  return refreshed;
 }
 
 async function fetchAppsList() {
@@ -477,21 +586,77 @@ async function deleteUserRecord(userId) {
 
 async function fetchSessionsList() {
   if (visitorMode) return [];
-  const data = await fetchJsonOrRedirect('/api/sessions?includeVisitor=1');
-  sessionBoardLayout = data.board || null;
   const previousMap = new Map(sessions.map((session) => [session.id, session]));
-  sessions = (data.sessions || []).map((session) => normalizeSessionRecord(session, previousMap.get(session.id) || null));
-  hasLoadedSessions = true;
-  sortSessionsInPlace();
-  refreshAppCatalog();
-  renderSessionList();
-  if (currentSessionId && !sessions.some((session) => session.id === currentSessionId)) {
-    currentSessionId = null;
-    hasAttachedSession = false;
-    clearMessages();
-    showEmpty();
-    restoreDraft();
+
+  if (!hasLoadedSessions) {
+    const data = await fetchJsonOrRedirect(SESSION_LIST_URL);
+    const refsMap = createSessionRefsMap(data.sessionRefs);
+    const nextSessions = (data.sessions || []).map((session) => normalizeSessionRecord(
+      refsMap.has(session.id)
+        ? { ...session, summaryEtag: refsMap.get(session.id) }
+        : session,
+      previousMap.get(session.id) || null,
+    ));
+    return applySessionListState(nextSessions, {
+      board: data.board || null,
+      taskBoard: data.taskBoard || null,
+    });
   }
+
+  const data = await fetchJsonOrRedirect(SESSION_LIST_REFS_URL);
+  const refs = Array.isArray(data.sessionRefs) ? data.sessionRefs : [];
+  const nextSessions = [];
+  const staleIds = [];
+  const staleSummaryEtags = new Map();
+  const seenIds = new Set();
+
+  for (const ref of refs) {
+    const sessionId = typeof ref?.id === "string" ? ref.id : "";
+    if (!sessionId || seenIds.has(sessionId)) continue;
+    seenIds.add(sessionId);
+
+    const summaryEtag = typeof ref?.summaryEtag === "string" ? ref.summaryEtag : "";
+    const previous = previousMap.get(sessionId) || null;
+    const cachedSummary = getCachedSessionSummary(sessionId, previous);
+
+    if (previous?.summaryEtag && previous.summaryEtag === summaryEtag) {
+      nextSessions.push(previous);
+      continue;
+    }
+
+    if (cachedSummary?.summaryEtag && cachedSummary.summaryEtag === summaryEtag) {
+      nextSessions.push(cachedSummary);
+      continue;
+    }
+
+    if (previous) {
+      nextSessions.push(previous);
+    } else if (cachedSummary) {
+      nextSessions.push(cachedSummary);
+    } else {
+      nextSessions.push(normalizeSessionRecord({ id: sessionId }, null));
+    }
+    staleIds.push(sessionId);
+    if (summaryEtag) {
+      staleSummaryEtags.set(sessionId, summaryEtag);
+    }
+  }
+
+  applySessionListState(nextSessions, {
+    board: data.board || null,
+    taskBoard: data.taskBoard || null,
+  });
+
+  if (hasAttachedSession && currentSessionId && staleIds.includes(currentSessionId)) {
+    await refreshCurrentSession().catch(() => {});
+    const current = sessions.find((session) => session.id === currentSessionId);
+    const refreshedSummaryEtag = staleSummaryEtags.get(currentSessionId);
+    if (current && refreshedSummaryEtag) {
+      current.summaryEtag = refreshedSummaryEtag;
+    }
+  }
+
+  await hydrateSessionSummaries(staleIds);
   return sessions;
 }
 
@@ -629,7 +794,7 @@ async function refreshSidebarSession(sessionId) {
   }
   const request = (async () => {
     try {
-      const session = await fetchSessionState(sessionId);
+      const session = await fetchSessionSummary(sessionId);
       if (session) {
         renderSessionList();
       }

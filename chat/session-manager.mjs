@@ -22,6 +22,7 @@ import { messageEvent, statusEvent } from './normalizer.mjs';
 import {
   triggerSessionBoardLayoutSuggestion,
   triggerSessionLabelSuggestion,
+  triggerSessionTaskBoardSuggestion,
   triggerSessionWorkflowStateSuggestion,
 } from './summarizer.mjs';
 import { sendCompletionPush } from './push.mjs';
@@ -79,6 +80,12 @@ import {
   replaceBoardLayout,
   summarizeBoardLayout,
 } from './session-board-layout.mjs';
+import {
+  getTaskBoardStateForSessions,
+  getTaskForSession,
+  replaceTaskBoardState,
+  summarizeTaskBoardState,
+} from './task-board-state.mjs';
 import { dispatchSessionEmailCompletionTargets, sanitizeEmailCompletionTargets } from '../lib/agent-mail-completion-targets.mjs';
 import {
   DEFAULT_APP_ID,
@@ -835,12 +842,22 @@ function getSessionPinSortRank(meta) {
   return meta?.pinned === true ? 1 : 0;
 }
 
-async function enrichSessionMeta(meta) {
+async function resolveVisibleTaskBoardState(sessionMetas = null) {
+  const sourceMetas = Array.isArray(sessionMetas)
+    ? sessionMetas
+    : await reconcileSessionsMetaList(await loadSessionsMeta());
+  const activeSessions = sourceMetas.filter((session) => shouldExposeSession(session) && !session.archived);
+  return getTaskBoardStateForSessions(activeSessions);
+}
+
+async function enrichSessionMeta(meta, options = {}) {
+  const taskBoardState = options?.taskBoardState || await resolveVisibleTaskBoardState();
   const live = liveSessions.get(meta.id);
   const snapshot = await getHistorySnapshot(meta.id);
   const queuedCount = getFollowUpQueueCount(meta);
   const runActivity = await resolveSessionRunActivity(meta);
   const boardPlacement = await getBoardPlacement(meta.id);
+  const task = getTaskForSession(taskBoardState, meta.id);
   const { followUpQueue, recentFollowUpRequestIds, activeRunId, activeRun, ...rest } = meta;
   const sourceId = resolveSessionSourceId(meta);
   return {
@@ -862,12 +879,13 @@ async function enrichSessionMeta(meta) {
       queuedCount,
     }),
     ...(boardPlacement ? { board: boardPlacement } : {}),
+    ...(task ? { task } : {}),
   };
 }
 
 async function enrichSessionMetaForClient(meta, options = {}) {
   if (!meta) return null;
-  const session = await enrichSessionMeta(meta);
+  const session = await enrichSessionMeta(meta, options);
   if (options.includeQueuedMessages) {
     session.queuedMessages = getFollowUpQueue(meta).map(serializeQueuedFollowUp);
   }
@@ -1612,8 +1630,23 @@ async function applySuggestedBoardLayout(sourceSessionId, activeSessions, sugges
   return result.layout;
 }
 
+async function applySuggestedTaskBoardState(sourceSessionId, activeSessions, suggestion) {
+  const result = await replaceTaskBoardState(suggestion, {
+    sessions: activeSessions,
+    sourceSessionId,
+  });
+  if (result.changed) {
+    broadcastSessionsInvalidation();
+  }
+  return result.state;
+}
+
 export async function getSessionBoardLayout() {
   return summarizeBoardLayout(await loadBoardLayout());
+}
+
+export async function getTaskBoardState() {
+  return summarizeTaskBoardState(await resolveVisibleTaskBoardState());
 }
 
 export async function rebuildSessionBoardLayout({
@@ -1677,6 +1710,67 @@ export async function rebuildSessionBoardLayout({
   };
 }
 
+export async function rebuildTaskBoardState({
+  sessionId = '',
+  tool = '',
+  model,
+  effort,
+  thinking = false,
+} = {}) {
+  const activeSessions = await listSessions({ includeVisitor: true, includeArchived: false });
+  if (activeSessions.length === 0) {
+    return {
+      ok: false,
+      skipped: 'no_sessions',
+      taskBoard: summarizeTaskBoardState(await resolveVisibleTaskBoardState()),
+    };
+  }
+
+  const anchorSession = chooseBoardLayoutAnchorSession(activeSessions, sessionId);
+  if (!anchorSession) {
+    return {
+      ok: false,
+      skipped: 'no_tool',
+      taskBoard: summarizeTaskBoardState(await resolveVisibleTaskBoardState()),
+    };
+  }
+
+  const [currentHistory, existingTaskBoard] = await Promise.all([
+    loadHistory(anchorSession.id, { includeBodies: true }),
+    resolveVisibleTaskBoardState(),
+  ]);
+
+  const suggestion = await triggerSessionTaskBoardSuggestion({
+    id: anchorSession.id,
+    folder: anchorSession.folder,
+    name: anchorSession.name || '',
+    group: anchorSession.group || '',
+    description: anchorSession.description || '',
+    tool: tool || anchorSession.tool,
+    model: model || anchorSession.model || undefined,
+    effort: effort || anchorSession.effort || undefined,
+    thinking,
+    currentHistory,
+    activeSessions,
+    existingTaskBoard,
+  });
+
+  if (!suggestion?.ok || !suggestion.taskBoard) {
+    return {
+      ok: false,
+      error: suggestion?.error || 'Task board suggestion failed',
+      taskBoard: summarizeTaskBoardState(existingTaskBoard),
+    };
+  }
+
+  const taskBoard = await applySuggestedTaskBoardState(anchorSession.id, activeSessions, suggestion.taskBoard);
+  return {
+    ok: true,
+    sourceSessionId: anchorSession.id,
+    taskBoard: summarizeTaskBoardState(taskBoard),
+  };
+}
+
 function scheduleSessionBoardLayoutSuggestion(session, run) {
   if (!session?.id || !run || session.archived || isInternalSession(session)) {
     return false;
@@ -1690,6 +1784,24 @@ function scheduleSessionBoardLayoutSuggestion(session, run) {
     thinking: false,
   }).catch((error) => {
     console.error(`[board-layout] Failed to rebuild board layout from ${session.id?.slice(0, 8)}: ${error.message}`);
+  });
+
+  return true;
+}
+
+function scheduleSessionTaskBoardSuggestion(session, run) {
+  if (!session?.id || !run || session.archived || isInternalSession(session)) {
+    return false;
+  }
+
+  rebuildTaskBoardState({
+    sessionId: session.id,
+    tool: run.tool || session.tool,
+    model: run.model || session.model || undefined,
+    effort: run.effort || session.effort || undefined,
+    thinking: false,
+  }).catch((error) => {
+    console.error(`[task-board] Failed to rebuild task board from ${session.id?.slice(0, 8)}: ${error.message}`);
   });
 
   return true;
@@ -1971,6 +2083,7 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
   queueSessionCompletionTargets(latestSession, finalizedRun, manifest);
   if (!manifest?.internalOperation) {
     scheduleSessionWorkflowStateSuggestion(latestSession, finalizedRun);
+    scheduleSessionTaskBoardSuggestion(latestSession, finalizedRun);
     scheduleSessionBoardLayoutSuggestion(latestSession, finalizedRun);
   }
 
@@ -2203,6 +2316,7 @@ export async function startDetachedRunObservers() {
 
 export async function listSessions({ includeVisitor = false, includeArchived = true, appId = '', sourceId = '', includeQueuedMessages = false } = {}) {
   const metas = await reconcileSessionsMetaList(await loadSessionsMeta());
+  const taskBoardState = await resolveVisibleTaskBoardState(metas);
   const normalizedAppId = normalizeAppId(appId);
   const normalizedSourceId = normalizeAppId(sourceId);
   const filtered = metas
@@ -2215,13 +2329,15 @@ export async function listSessions({ includeVisitor = false, includeArchived = t
       getSessionPinSortRank(b) - getSessionPinSortRank(a)
       || getSessionSortTime(b) - getSessionSortTime(a)
     ));
-  return Promise.all(filtered.map((meta) => enrichSessionMetaForClient(meta, { includeQueuedMessages })));
+  return Promise.all(filtered.map((meta) => enrichSessionMetaForClient(meta, { includeQueuedMessages, taskBoardState })));
 }
 
 export async function getSession(id, options = {}) {
-  const meta = await reconcileSessionMeta(await findSessionMeta(id));
+  const metas = await reconcileSessionsMetaList(await loadSessionsMeta());
+  const taskBoardState = await resolveVisibleTaskBoardState(metas);
+  const meta = await reconcileSessionMeta(metas.find((entry) => entry.id === id) || await findSessionMeta(id));
   if (!meta) return null;
-  return enrichSessionMetaForClient(meta, options);
+  return enrichSessionMetaForClient(meta, { ...options, taskBoardState });
 }
 
 export async function getSessionEventsAfter(sessionId, afterSeq = 0, options = {}) {

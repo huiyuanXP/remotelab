@@ -25,9 +25,11 @@ import {
   getRunState,
   getSession,
   getSessionBoardLayout,
+  getTaskBoardState,
   getSessionEventsAfter,
   listSessions,
   rebuildSessionBoardLayout,
+  rebuildTaskBoardState,
   renameSession,
   saveSessionAsTemplate,
   sendMessage,
@@ -649,6 +651,10 @@ function writeJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function createJsonBody(value) {
+  return JSON.stringify(value);
+}
+
 function createEtag(value) {
   return `"${createHash('sha1').update(value).digest('hex')}"`;
 }
@@ -705,11 +711,26 @@ function writeJsonCached(req, res, payload, {
   writeCachedResponse(req, res, {
     statusCode,
     contentType: 'application/json',
-    body: JSON.stringify(payload),
+    body: createJsonBody(payload),
     cacheControl,
     vary,
     headers,
   });
+}
+
+function createSessionSummaryPayload(session) {
+  return { session };
+}
+
+function createSessionSummaryEtag(session) {
+  return createEtag(createJsonBody(createSessionSummaryPayload(session)));
+}
+
+function createSessionSummaryRef(session) {
+  return {
+    id: session.id,
+    summaryEtag: createSessionSummaryEtag(session),
+  };
 }
 
 function writeFileCached(req, res, contentType, body, {
@@ -802,6 +823,8 @@ function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/sessions' && (method === 'GET' || method === 'POST')) return true;
   if (pathname === '/api/board' && method === 'GET') return true;
   if (pathname === '/api/board/rebuild' && method === 'POST') return true;
+  if (pathname === '/api/task-board' && method === 'GET') return true;
+  if (pathname === '/api/task-board/rebuild' && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/fork') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && method === 'PATCH') return true;
@@ -1096,19 +1119,28 @@ export async function handleRequest(req, res) {
   if (sessionGetRoute?.kind === 'list') {
     const includeVisitor = authSession?.role === 'owner'
       && ['1', 'true', 'yes'].includes(String(parsedUrl.query.includeVisitor || '').toLowerCase());
-    const [sessionList, board] = await Promise.all([
+    const view = typeof parsedUrl.query.view === 'string'
+      ? String(parsedUrl.query.view || '').trim().toLowerCase()
+      : '';
+    const [sessionList, board, taskBoard] = await Promise.all([
       listSessions({
         includeVisitor,
         appId: typeof parsedUrl.query.appId === 'string' ? parsedUrl.query.appId : '',
         sourceId: typeof parsedUrl.query.sourceId === 'string' ? parsedUrl.query.sourceId : '',
       }),
       getSessionBoardLayout(),
+      getTaskBoardState(),
     ]);
     const folderFilter = parsedUrl.query.folder;
     const filtered = folderFilter
       ? sessionList.filter((session) => session.folder === folderFilter)
       : sessionList;
-    writeJsonCached(req, res, { sessions: filtered, board });
+    const sessionRefs = filtered.map(createSessionSummaryRef);
+    if (view === 'refs') {
+      writeJsonCached(req, res, { sessionRefs, board, taskBoard });
+      return;
+    }
+    writeJsonCached(req, res, { sessions: filtered, sessionRefs, board, taskBoard });
     return;
   }
 
@@ -1133,10 +1165,34 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (pathname === '/api/task-board' && req.method === 'GET') {
+    writeJsonCached(req, res, { taskBoard: await getTaskBoardState() });
+    return;
+  }
+
+  if (pathname === '/api/task-board/rebuild' && req.method === 'POST') {
+    let body = {};
+    try {
+      const raw = await readBody(req, 10240);
+      body = raw ? JSON.parse(raw) : {};
+    } catch {
+      body = {};
+    }
+
+    const result = await rebuildTaskBoardState({
+      sessionId: typeof body?.sessionId === 'string' ? body.sessionId : '',
+    });
+    writeJson(res, 200, result);
+    return;
+  }
+
   if (sessionGetRoute?.kind === 'detail') {
     const { sessionId } = sessionGetRoute;
     if (!requireSessionAccess(res, authSession, sessionId)) return;
-    const session = await getSession(sessionId, { includeQueuedMessages: true });
+    const view = typeof parsedUrl.query.view === 'string'
+      ? String(parsedUrl.query.view || '').trim().toLowerCase()
+      : '';
+    const session = await getSession(sessionId, { includeQueuedMessages: view !== 'summary' });
     if (!session) {
       writeJson(res, 404, { error: 'Session not found' });
       return;

@@ -43,7 +43,7 @@ function makeElement() {
   };
 }
 
-function createFetchResponse(body, { status = 200, etag = '"etag-sidebar-refresh"' } = {}) {
+function createFetchResponse(body, { status = 200, etag = '"etag-default"', url = 'http://127.0.0.1/' } = {}) {
   const headers = new Map([
     ['content-type', 'application/json; charset=utf-8'],
     ['etag', etag],
@@ -52,7 +52,7 @@ function createFetchResponse(body, { status = 200, etag = '"etag-sidebar-refresh
     status,
     ok: status >= 200 && status < 300,
     redirected: false,
-    url: 'http://127.0.0.1/api/sessions/sidebar-target?view=summary',
+    url,
     headers: {
       get(name) {
         return headers.get(String(name).toLowerCase()) || null;
@@ -65,8 +65,8 @@ function createFetchResponse(body, { status = 200, etag = '"etag-sidebar-refresh
 }
 
 function createContext() {
-  const renderCalls = [];
   const fetchCalls = [];
+  const renderCalls = [];
   const context = {
     console,
     URL,
@@ -76,8 +76,8 @@ function createContext() {
     Math,
     Date,
     JSON,
-    renderCalls,
     fetchCalls,
+    renderCalls,
     navigator: {},
     Notification: function Notification() {},
     atob(value) {
@@ -108,24 +108,38 @@ function createContext() {
     pendingNavigationState: null,
     activeTab: 'sessions',
     visitorMode: false,
+    visitorSessionId: null,
     currentSessionId: 'current-session',
     hasAttachedSession: true,
+    hasLoadedSessions: true,
     sessions: [
       {
         id: 'current-session',
         name: 'Current session',
         status: 'idle',
-        updatedAt: '2026-03-12T09:00:00.000Z',
+        updatedAt: '2026-03-12T09:30:00.000Z',
         appId: 'chat',
+        summaryEtag: '"etag-current"',
       },
       {
-        id: 'sidebar-target',
-        name: 'Old sidebar name',
+        id: 'changed-session',
+        name: 'Old changed session',
         status: 'idle',
-        updatedAt: '2026-03-12T08:00:00.000Z',
+        updatedAt: '2026-03-12T08:30:00.000Z',
         appId: 'chat',
+        summaryEtag: '"etag-changed-old"',
+      },
+      {
+        id: 'unchanged-session',
+        name: 'Stable session',
+        status: 'idle',
+        updatedAt: '2026-03-12T07:30:00.000Z',
+        appId: 'chat',
+        summaryEtag: '"etag-unchanged"',
       },
     ],
+    sessionBoardLayout: null,
+    taskBoardState: null,
     jsonResponseCache: new Map(),
     renderedEventState: {
       sessionId: null,
@@ -198,17 +212,34 @@ function createContext() {
     },
     switchTab() {},
     applyNavigationState() {},
-    fetch: async (url, options = {}) => {
-      fetchCalls.push({ url: String(url), headers: options.headers });
-      if (String(url) === '/api/sessions/sidebar-target?view=summary') {
+    fetch: async (url) => {
+      fetchCalls.push(String(url));
+      if (String(url) === '/api/sessions?includeVisitor=1&view=refs') {
+        return createFetchResponse({
+          sessionRefs: [
+            { id: 'current-session', summaryEtag: '"etag-current"' },
+            { id: 'changed-session', summaryEtag: '"etag-changed-new"' },
+            { id: 'unchanged-session', summaryEtag: '"etag-unchanged"' },
+          ],
+          board: null,
+          taskBoard: null,
+        }, {
+          etag: '"etag-refs"',
+          url: 'http://127.0.0.1/api/sessions?includeVisitor=1&view=refs',
+        });
+      }
+      if (String(url) === '/api/sessions/changed-session?view=summary') {
         return createFetchResponse({
           session: {
-            id: 'sidebar-target',
-            name: 'Fresh sidebar name',
+            id: 'changed-session',
+            name: 'Fresh changed session',
             status: 'running',
             updatedAt: '2026-03-12T10:00:00.000Z',
             appId: 'chat',
           },
+        }, {
+          etag: '"etag-changed-new"',
+          url: 'http://127.0.0.1/api/sessions/changed-session?view=summary',
         });
       }
       throw new Error(`Unexpected fetch: ${url}`);
@@ -223,12 +254,23 @@ function createContext() {
 const context = createContext();
 vm.runInNewContext(sessionHttpSource, context, { filename: 'static/chat/session-http.js' });
 
-await context.refreshSidebarSession('sidebar-target');
+await context.fetchSessionsList();
 
-assert.equal(context.fetchCalls.length, 1, 'sidebar refresh should fetch session summary once');
-assert.equal(context.renderCalls.length, 1, 'sidebar refresh should rerender the session list for non-current sessions');
-assert.equal(context.sessions[0].id, 'sidebar-target', 'sidebar refresh should allow updated sessions to move to the top');
-assert.equal(context.sessions[0].name, 'Fresh sidebar name', 'sidebar refresh should replace stale session metadata');
-assert.equal(context.sessions[0].status, 'running', 'sidebar refresh should expose the refreshed status immediately');
+assert.deepEqual(
+  context.fetchCalls,
+  [
+    '/api/sessions?includeVisitor=1&view=refs',
+    '/api/sessions/changed-session?view=summary',
+  ],
+  'incremental session refresh should fetch refs plus only changed summaries',
+);
+assert.equal(context.sessions[0].id, 'changed-session', 'changed session should resort to the top after hydration');
+assert.equal(context.sessions[0].name, 'Fresh changed session', 'changed summary hydration should replace stale metadata');
+assert.equal(context.sessions[0].summaryEtag, '"etag-changed-new"', 'changed summary hydration should store the fresh summary tag');
+assert.equal(
+  context.sessions.find((session) => session.id === 'unchanged-session')?.name,
+  'Stable session',
+  'unchanged sessions should be reused from memory without a summary refetch',
+);
 
-console.log('test-session-http-sidebar-refresh: ok');
+console.log('test-session-http-ref-hydration: ok');

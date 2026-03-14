@@ -131,6 +131,11 @@ function formatActiveBoardSessionsForPrompt(sessions, currentSessionId) {
     if (session.appName) parts.push(`app=${JSON.stringify(session.appName)}`);
     const activity = describeSessionActivity(session);
     if (activity) parts.push(`activity=${JSON.stringify(activity)}`);
+    if (session.task?.id) {
+      parts.push(`taskId=${JSON.stringify(session.task.id)}`);
+      if (session.task.title) parts.push(`taskTitle=${JSON.stringify(session.task.title)}`);
+      if (session.task.projectLabel) parts.push(`taskProject=${JSON.stringify(session.task.projectLabel)}`);
+    }
     if (session.board?.columnLabel) {
       parts.push(`board=${JSON.stringify(`${session.board.columnLabel} @ ${session.board.order ?? 0}`)}`);
     }
@@ -156,6 +161,48 @@ function formatExistingBoardLayoutForPrompt(layout) {
       .map((placement) => `${placement.sessionId}${placement.priority ? `(${placement.priority})` : ''}`);
     lines.push(`- ${column.label} [${column.key}]${placed.length > 0 ? `: ${placed.join(', ')}` : ''}`);
   }
+  return lines.join('\n');
+}
+
+function formatExistingTaskBoardForPrompt(state) {
+  const columns = Array.isArray(state?.columns) ? state.columns : [];
+  const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
+  const assignments = Array.isArray(state?.assignments) ? state.assignments : [];
+  const placements = Array.isArray(state?.placements) ? state.placements : [];
+  if (columns.length === 0 && tasks.length === 0) return '';
+
+  const lines = [];
+  if (columns.length > 0) {
+    lines.push('Columns:');
+    for (const column of columns) {
+      const placedTaskIds = placements
+        .filter((placement) => placement.columnKey === column.key)
+        .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+        .map((placement) => `${placement.taskId}${placement.priority ? `(${placement.priority})` : ''}`);
+      lines.push(`- ${column.label} [${column.key}]${placedTaskIds.length > 0 ? `: ${placedTaskIds.join(', ')}` : ''}`);
+    }
+  }
+
+  if (tasks.length > 0) {
+    lines.push('Tasks:');
+    for (const task of tasks) {
+      if (!task?.id) continue;
+      const relatedSessions = assignments
+        .filter((assignment) => assignment.taskId === task.id)
+        .map((assignment) => assignment.sessionId);
+      const parts = [
+        `id=${task.id}`,
+        `title=${JSON.stringify(task.title || '(untitled)')}`,
+      ];
+      if (task.projectLabel) parts.push(`project=${JSON.stringify(task.projectLabel)}`);
+      if (task.priority) parts.push(`priority=${JSON.stringify(task.priority)}`);
+      if (task.boardSummary) parts.push(`summary=${JSON.stringify(clipPromptText(task.boardSummary, 180))}`);
+      if (task.nextAction) parts.push(`next=${JSON.stringify(clipPromptText(task.nextAction, 120))}`);
+      if (relatedSessions.length > 0) parts.push(`sessions=${JSON.stringify(relatedSessions.join(', '))}`);
+      lines.push(`- ${parts.join(' | ')}`);
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -272,6 +319,17 @@ export function triggerSessionBoardLayoutSuggestion(sessionMeta, options = {}) {
   console.log(`[board-layout] triggerSessionBoardLayoutSuggestion called for session ${sessionMeta.id?.slice(0, 8)}`);
   return runSessionBoardLayoutSuggestion(sessionMeta, options).catch((err) => {
     console.error(`[board-layout] Session board layout suggestion error for ${sessionMeta.id?.slice(0, 8)}: ${err.message}`);
+    return {
+      ok: false,
+      error: err.message,
+    };
+  });
+}
+
+export function triggerSessionTaskBoardSuggestion(sessionMeta, options = {}) {
+  console.log(`[task-board] triggerSessionTaskBoardSuggestion called for session ${sessionMeta.id?.slice(0, 8)}`);
+  return runSessionTaskBoardSuggestion(sessionMeta, options).catch((err) => {
+    console.error(`[task-board] Session task board suggestion error for ${sessionMeta.id?.slice(0, 8)}: ${err.message}`);
     return {
       ok: false,
       error: err.message,
@@ -602,6 +660,119 @@ async function runSessionBoardLayoutSuggestion(sessionMeta, _options = {}) {
     boardLayout: {
       columns: boardResult.columns,
       placements: boardResult.placements,
+    },
+  };
+}
+
+async function runSessionTaskBoardSuggestion(sessionMeta, _options = {}) {
+  const {
+    id: sessionId,
+    folder,
+    name,
+    group,
+    description,
+    currentHistory,
+    activeSessions,
+    existingTaskBoard,
+  } = sessionMeta;
+
+  const historyText = formatHistoryForPrompt(Array.isArray(currentHistory) ? currentHistory : []);
+  const sessionsText = formatActiveBoardSessionsForPrompt(activeSessions, sessionId);
+  if (!sessionsText.trim()) {
+    return {
+      ok: false,
+      skipped: 'no_sessions',
+    };
+  }
+
+  const prompt = [
+    'You are arranging the RemoteLab owner task board above sessions.',
+    'This task board is a derived UI lens. The durable truth remains sessions, but you cluster related sessions into stable tasks/workstreams.',
+    'Your job is to help the owner recover context quickly across projects and know what deserves attention before drilling into a task.',
+    'Important principles:',
+    '- The primary card unit is a task/workstream, not a project. Project is only a light label.',
+    '- Reuse an existing task when the current session clearly belongs to the same continuing effort.',
+    '- Create a new task only when the work is meaningfully different enough that the owner would want a separate card.',
+    '- Prefer stable task ids and stable columns. Reuse them when they still fit.',
+    '- Every active session must belong to exactly one task.',
+    '- A task may contain multiple sessions.',
+    '- Use the current session full history to understand the live topic. Other sessions only have metadata, so be conservative when merging unrelated work.',
+    '- Use a compact left-to-right board that makes attention and progress obvious at a glance.',
+    '- Prioritize context recovery and attention guidance over exhaustive detail.',
+    '- Outer board summaries should say where the task stands now, not just restate a title.',
+    '- Inner working summaries should capture goal, progress, blockers, and the likely next edge.',
+    '',
+    `Current anchor session folder: ${folder}`,
+    `Current anchor session name: ${name || '(unnamed)'}`,
+    normalizeSessionGroup(group || '') ? `Current anchor session group: ${normalizeSessionGroup(group || '')}` : '',
+    normalizeSessionDescription(description || '') ? `Current anchor session description: ${normalizeSessionDescription(description || '')}` : '',
+    '',
+    'Current anchor session full history:',
+    historyText || '(no history available)',
+    '',
+    'All active sessions metadata:',
+    sessionsText,
+    '',
+    formatExistingTaskBoardForPrompt(existingTaskBoard)
+      ? `Existing task board:\n${formatExistingTaskBoardForPrompt(existingTaskBoard)}`
+      : '',
+    '',
+    'Respond with ONLY valid JSON using exactly this shape:',
+    '{',
+    '  "columns": [',
+    '    { "key": "focus_now", "label": "Focus now", "order": 10, "description": "Optional short description" }',
+    '  ],',
+    '  "tasks": [',
+    '    {',
+    '      "id": "stable_task_id",',
+    '      "title": "Specific task title",',
+    '      "projectLabel": "Short project/domain label",',
+    '      "boardSummary": "1-2 sentence summary for the outer board",',
+    '      "workingSummary": "Short working-memory summary for the inner detail view",',
+    '      "nextAction": "One short next step",',
+    '      "priority": "high"',
+    '    }',
+    '  ],',
+    '  "assignments": [',
+    '    { "sessionId": "exact-session-id", "taskId": "stable_task_id" }',
+    '  ],',
+    '  "placements": [',
+    '    { "taskId": "stable_task_id", "columnKey": "focus_now", "order": 10, "priority": "high", "reason": "short reason" }',
+    '  ]',
+    '}',
+    'Rules for JSON output:',
+    '- Use exact session ids from the provided metadata.',
+    '- Include every active session exactly once in assignments.',
+    '- Include every returned task exactly once in placements.',
+    '- Use only "high", "medium", or "low" for priority.',
+    '- Use integer order values; lower order means earlier from left to right for columns and top to bottom for cards.',
+    '- Keep titles compact and stable. Keep summaries short but concrete.',
+    '- No markdown. No explanation outside JSON.',
+  ].filter((line) => line !== '').join('\n');
+
+  const modelText = await runToolJsonPrompt(sessionMeta, prompt);
+  const taskBoardResult = parseJsonObject(modelText);
+  if (
+    !taskBoardResult
+    || !Array.isArray(taskBoardResult.columns)
+    || !Array.isArray(taskBoardResult.tasks)
+    || !Array.isArray(taskBoardResult.assignments)
+    || !Array.isArray(taskBoardResult.placements)
+  ) {
+    console.error(`[task-board] Unexpected task board output for ${sessionId.slice(0, 8)}: ${modelText.slice(0, 200)}`);
+    return {
+      ok: false,
+      error: `Unexpected model output: ${modelText.slice(0, 200)}`,
+    };
+  }
+
+  return {
+    ok: true,
+    taskBoard: {
+      columns: taskBoardResult.columns,
+      tasks: taskBoardResult.tasks,
+      assignments: taskBoardResult.assignments,
+      placements: taskBoardResult.placements,
     },
   };
 }
