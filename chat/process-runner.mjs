@@ -135,6 +135,7 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
       dangerouslySkipPermissions: true,
       resume: options.claudeSessionId,
       thinking: options.thinking,
+      model: options.model,
       hookSettingsJson: buildHookSettings(CHAT_PORT),
     });
   } else if (isCodexFamily) {

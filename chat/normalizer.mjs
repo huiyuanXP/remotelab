@@ -55,3 +55,7 @@ export function questionEvent(questions, toolUseId) {
 export function planApprovalEvent(plan, allowedPrompts, toolUseId) {
   return createEvent('plan_approval', { role: 'assistant', plan, allowedPrompts, toolUseId });
 }
+
+export function compactEvent(oldSessionId, newSessionId, summary) {
+  return createEvent('compact', { role: 'system', oldSessionId, newSessionId, summary });
+}

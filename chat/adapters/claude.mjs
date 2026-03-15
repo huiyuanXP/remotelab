@@ -179,9 +179,10 @@ export function buildClaudeArgs(prompt, options = {}) {
     args.push('--settings', options.hookSettingsJson);
   }
 
-  // Thinking: Claude Code enables extended thinking automatically on supported models.
-  // When thinking is requested, we use a model that supports it.
-  if (options.thinking) {
+  // Model selection: explicit model takes priority; fall back to sonnet for thinking mode.
+  if (options.model) {
+    args.push('--model', options.model);
+  } else if (options.thinking) {
     args.push('--model', 'sonnet');
   }
 

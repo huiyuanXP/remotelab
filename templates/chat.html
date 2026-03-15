@@ -457,6 +457,30 @@ body {
 .compact-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
 .compact-btn:disabled { opacity: 0.5; cursor: default; }
 
+/* Compact divider */
+.compact-divider {
+  text-align: center; margin: 16px 0; padding: 10px;
+  border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border);
+  background: var(--bg-secondary);
+}
+.compact-divider-text {
+  font-size: 12px; color: var(--text-muted); font-style: italic;
+}
+.compact-summary-details {
+  margin-top: 6px; text-align: left;
+}
+.compact-summary-details summary {
+  font-size: 11px; color: var(--text-secondary); cursor: pointer;
+  text-align: center;
+}
+.compact-summary-pre {
+  font-size: 11px; color: var(--text-secondary);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 200px; overflow-y: auto;
+  margin: 6px 0 0; padding: 8px;
+  background: var(--bg-tertiary); border-radius: 6px;
+}
+
 /* Session error card */
 .session-error-card { border-color: var(--error-bg); }
 .session-error-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -683,8 +707,9 @@ body {
 .tool-select {
   padding: 3px 7px; background: transparent; border: 1px solid var(--border);
   border-radius: 5px; color: var(--text-secondary); font-size: 12px; outline: none;
-  max-width: 130px; cursor: pointer; font-family: inherit;
+  max-width: 130px; min-width: 0; flex-shrink: 1; cursor: pointer; font-family: inherit;
 }
+.tool-select option { background: var(--bg); color: var(--text); }
 .tool-select:focus { border-color: var(--border-strong); }
 .thinking-toggle {
   padding: 3px 9px; background: transparent; border: 1px solid var(--border);
@@ -834,6 +859,7 @@ body {
         <div class="img-preview-strip" id="imgPreviewStrip"></div>
         <div class="input-config-row">
           <select class="tool-select" id="inlineToolSelect" disabled></select>
+          <select class="tool-select" id="inlineModelSelect" disabled></select>
           <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
           <button class="img-btn" id="imgBtn" disabled title="Attach image">&#128247;</button>
           <button class="img-btn" id="fileAttachBtn" disabled title="Attach file">&#128206;</button>

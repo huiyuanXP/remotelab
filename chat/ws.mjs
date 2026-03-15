@@ -3,7 +3,7 @@ import { isAuthenticated, parseCookies } from '../lib/auth.mjs';
 import {
   createSession, deleteSession, getSession, listSessions,
   subscribe, unsubscribe, sendMessage, cancelSession, getHistory,
-  renameSession, resolveHookRequest,
+  renameSession, resolveHookRequest, compactSession,
 } from './session-manager.mjs';
 
 /**
@@ -155,6 +155,7 @@ function handleMessage(ws, msg, ctx) {
       sendMessage(sessionId, msg.text.trim(), msg.images, {
         tool: msg.tool || undefined,
         thinking: !!msg.thinking,
+        model: msg.model || undefined,
       });
       break;
     }
@@ -166,6 +167,19 @@ function handleMessage(ws, msg, ctx) {
         return;
       }
       cancelSession(sessionId);
+      break;
+    }
+
+    case 'compact': {
+      const sessionId = ctx.getAttached();
+      if (!sessionId) {
+        wsSend(ws, { type: 'error', message: 'Not attached to a session' });
+        return;
+      }
+      compactSession(sessionId).catch(err => {
+        console.error(`[ws] Manual compact failed: ${err.message}`);
+        wsSend(ws, { type: 'error', message: `Compact failed: ${err.message}` });
+      });
       break;
     }
 

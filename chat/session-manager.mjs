@@ -1,11 +1,11 @@
 import { randomBytes } from 'crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
-import { CHAT_SESSIONS_FILE, CHAT_IMAGES_DIR } from '../lib/config.mjs';
+import { CHAT_SESSIONS_FILE, CHAT_IMAGES_DIR, AUTO_COMPACT_THRESHOLD, CONTEXT_WINDOW_SIZE } from '../lib/config.mjs';
 import { spawnTool } from './process-runner.mjs';
 import { loadHistory, appendEvent } from './history.mjs';
-import { messageEvent, statusEvent } from './normalizer.mjs';
-import { triggerSummary, removeSidebarEntry } from './summarizer.mjs';
+import { messageEvent, statusEvent, compactEvent } from './normalizer.mjs';
+import { triggerSummary, removeSidebarEntry, generateCompactSummary } from './summarizer.mjs';
 
 const MIME_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
 
@@ -115,7 +115,7 @@ export function getSession(id) {
   };
 }
 
-export function createSession(folder, tool, name = '') {
+export function createSession(folder, tool, name = '', options = {}) {
   const id = generateId();
   const session = {
     id,
@@ -124,6 +124,9 @@ export function createSession(folder, tool, name = '') {
     name: name || '',
     created: new Date().toISOString(),
   };
+  if (options.continuedFrom) {
+    session.continuedFrom = options.continuedFrom;
+  }
 
   const metas = loadSessionsMeta();
   metas.push(session);
@@ -298,6 +301,14 @@ export function sendMessage(sessionId, text, images, options = {}) {
     });
     // Trigger async sidebar summary (non-blocking, does not affect session flow)
     triggerSummary({ id: sessionId, folder: session.folder, name: session.name || '' });
+
+    // Auto-compact: if context is near limit, trigger compaction
+    if (code === 0 && shouldAutoCompact(sessionId)) {
+      console.log(`[session-mgr] Context threshold reached for ${sessionId.slice(0,8)}, auto-compacting`);
+      compactSession(sessionId).catch(err => {
+        console.error(`[session-mgr] Auto-compact failed for ${sessionId.slice(0,8)}: ${err.message}`);
+      });
+    }
   };
 
   const spawnOptions = {};
@@ -315,6 +326,9 @@ export function sendMessage(sessionId, text, images, options = {}) {
   }
   if (options.thinking) {
     spawnOptions.thinking = true;
+  }
+  if (options.model) {
+    spawnOptions.model = options.model;
   }
   // Register Claude's session_id → our sessionId mapping when Claude announces itself
   spawnOptions.onClaudeSessionId = (claudeSessionId) => {
@@ -351,6 +365,93 @@ export function cancelSession(sessionId) {
  */
 export function getHistory(sessionId) {
   return loadHistory(sessionId);
+}
+
+// ---- Auto-compact ----
+
+/**
+ * Check if a session's context usage exceeds the auto-compact threshold.
+ */
+function shouldAutoCompact(sessionId) {
+  const events = loadHistory(sessionId);
+  // Find the last usage event
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i].type === 'usage') {
+      const u = events[i];
+      const total = (u.inputTokens || 0) + (u.cacheCreationTokens || 0) + (u.cacheReadTokens || 0);
+      return total >= CONTEXT_WINDOW_SIZE * AUTO_COMPACT_THRESHOLD;
+    }
+  }
+  return false;
+}
+
+/**
+ * Auto-compact a session: generate summary, create new session, seamlessly switch listeners.
+ */
+export async function compactSession(sessionId) {
+  const session = getSession(sessionId);
+  if (!session) throw new Error('Session not found');
+
+  console.log(`[session-mgr] Starting compact for session ${sessionId.slice(0,8)}`);
+
+  // Broadcast compacting status to listeners
+  const compactingEvt = statusEvent('Compacting context...');
+  appendEvent(sessionId, compactingEvt);
+  broadcast(sessionId, { type: 'event', event: compactingEvt });
+
+  // Generate summary
+  const summary = await generateCompactSummary(sessionId, session.folder);
+  console.log(`[session-mgr] Compact summary generated (${summary.length} chars)`);
+
+  // Determine continued name
+  const match = session.name?.match(/\(continued(?: (\d+))?\)$/);
+  let newName;
+  if (match) {
+    const n = match[1] ? parseInt(match[1], 10) + 1 : 2;
+    newName = session.name.replace(/\(continued(?: \d+)?\)$/, `(continued ${n})`);
+  } else {
+    newName = `${session.name || session.folder.split('/').pop()} (continued)`;
+  }
+
+  // Create new session
+  const newSession = createSession(session.folder, session.tool, newName, { continuedFrom: sessionId });
+  console.log(`[session-mgr] Created continuation session ${newSession.id.slice(0,8)}`);
+
+  // Record compact events in both sessions
+  const summaryExcerpt = summary.slice(0, 200) + (summary.length > 200 ? '...' : '');
+  const oldEvt = compactEvent(sessionId, newSession.id, summaryExcerpt);
+  appendEvent(sessionId, oldEvt);
+
+  const newEvt = compactEvent(sessionId, newSession.id, summaryExcerpt);
+  appendEvent(newSession.id, newEvt);
+
+  // Transfer listeners from old session to new session
+  const oldLive = liveSessions.get(sessionId);
+  const listeners = oldLive ? new Set(oldLive.listeners) : new Set();
+
+  // Set up new session in liveSessions
+  let newLive = liveSessions.get(newSession.id);
+  if (!newLive) {
+    newLive = { status: 'idle', runner: null, listeners: new Set() };
+    liveSessions.set(newSession.id, newLive);
+  }
+  for (const ws of listeners) {
+    newLive.listeners.add(ws);
+  }
+
+  // Broadcast compact switch to all listeners (on old session, before detach)
+  broadcast(sessionId, { type: 'compact', oldSessionId: sessionId, newSessionId: newSession.id });
+
+  // Send the summary as the first message to the new session
+  const summaryPrompt = [
+    '[Context compaction — this is a continuation of a previous conversation. Here is the summary of what we\'ve been working on:]',
+    '',
+    summary,
+    '',
+    '[Please acknowledge you\'ve reviewed the above context and confirm you\'re ready to continue. Then wait for the user\'s next instruction.]',
+  ].join('\n');
+
+  sendMessage(newSession.id, summaryPrompt, undefined, { tool: session.tool });
 }
 
 /**

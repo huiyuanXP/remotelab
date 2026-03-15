@@ -31,6 +31,7 @@
   const fileAttachBtn = document.getElementById("fileAttachBtn");
   const fileAttachInput = document.getElementById("fileAttachInput");
   const inlineToolSelect = document.getElementById("inlineToolSelect");
+  const inlineModelSelect = document.getElementById("inlineModelSelect");
   const thinkingToggle = document.getElementById("thinkingToggle");
   const cancelBtn = document.getElementById("cancelBtn");
   const quickReplies = document.getElementById("quickReplies");
@@ -50,6 +51,7 @@
   let lastSidebarUpdatedAt = {}; // sessionId -> last known updatedAt
 
   let selectedTool = localStorage.getItem("selectedTool") || null;
+  let selectedModel = localStorage.getItem("selectedModel") || "";
   // Default thinking to enabled; only disable if explicitly set to 'false'
   let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
   let sidebarCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
@@ -168,6 +170,37 @@
     localStorage.setItem("selectedTool", selectedTool);
   });
 
+  // ---- Inline model select ----
+  const CLAUDE_MODELS = [
+    { id: "sonnet", name: "Sonnet" },
+    { id: "opus", name: "Opus" },
+    { id: "haiku", name: "Haiku" },
+    { id: "sonnet[1m]", name: "Sonnet 1M" },
+    { id: "opus[1m]", name: "Opus 1M" },
+  ];
+
+  function loadInlineModels() {
+    inlineModelSelect.innerHTML = "";
+    for (const m of CLAUDE_MODELS) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name;
+      inlineModelSelect.appendChild(opt);
+    }
+    if (selectedModel && CLAUDE_MODELS.some((m) => m.id === selectedModel)) {
+      inlineModelSelect.value = selectedModel;
+    } else {
+      selectedModel = CLAUDE_MODELS[0].id;
+      inlineModelSelect.value = selectedModel;
+      localStorage.setItem("selectedModel", selectedModel);
+    }
+  }
+
+  inlineModelSelect.addEventListener("change", () => {
+    selectedModel = inlineModelSelect.value;
+    localStorage.setItem("selectedModel", selectedModel);
+  });
+
   // ---- WebSocket ----
   function connect() {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -274,6 +307,26 @@
         renderSessionList();
         break;
 
+      case "compact":
+        // Server says: session compacted, switch to new session
+        if (msg.newSessionId && msg.oldSessionId === currentSessionId) {
+          console.log(`[compact] Switching from ${msg.oldSessionId.slice(0,8)} to ${msg.newSessionId.slice(0,8)}`);
+          // Refresh session list, then attach to new session
+          wsSend({ action: "list" });
+          const compactHandler = (ev) => {
+            let m; try { m = JSON.parse(ev.data); } catch { return; }
+            if (m.type === "sessions") {
+              ws.removeEventListener("message", compactHandler);
+              sessions = m.sessions || [];
+              renderSessionList();
+              const newSess = sessions.find(s => s.id === msg.newSessionId);
+              if (newSess) attachSession(newSess.id, newSess);
+            }
+          };
+          ws.addEventListener("message", compactHandler);
+        }
+        break;
+
       case "error":
         console.error("WS error:", msg.message);
         break;
@@ -308,6 +361,7 @@
     imgBtn.disabled = !hasSession;
     fileAttachBtn.disabled = !hasSession;
     inlineToolSelect.disabled = !hasSession;
+    inlineModelSelect.disabled = !hasSession;
     thinkingToggle.disabled = !hasSession;
     quickReplies.style.display = hasSession && !isRunning ? "flex" : "none";
   }
@@ -373,6 +427,9 @@
         break;
       case "session_error":
         renderSessionError(evt);
+        break;
+      case "compact":
+        renderCompactDivider(evt);
         break;
     }
 
@@ -602,10 +659,7 @@
       compactBtn.textContent = `Compact context (${Math.round(pct * 100)}%)`;
       compactBtn.addEventListener("click", () => {
         if (!currentSessionId) return;
-        const msg = { action: "send", text: "/compact" };
-        if (selectedTool) msg.tool = selectedTool;
-        msg.thinking = thinkingEnabled;
-        wsSend(msg);
+        wsSend({ action: "compact" });
         compactBtn.disabled = true;
         compactBtn.textContent = "Compacting…";
       });
@@ -613,6 +667,27 @@
     }
 
     messagesInner.appendChild(div);
+  }
+
+  function renderCompactDivider(evt) {
+    if (inThinkingBlock) finalizeThinkingBlock();
+    const div = document.createElement("div");
+    div.className = "compact-divider";
+    div.innerHTML = '<span class="compact-divider-text">Context compacted &mdash; conversation continues in a new session</span>';
+    if (evt.summary) {
+      const details = document.createElement("details");
+      details.className = "compact-summary-details";
+      const summaryEl = document.createElement("summary");
+      summaryEl.textContent = "View summary";
+      details.appendChild(summaryEl);
+      const pre = document.createElement("pre");
+      pre.className = "compact-summary-pre";
+      pre.textContent = evt.summary;
+      details.appendChild(pre);
+      div.appendChild(details);
+    }
+    messagesInner.appendChild(div);
+    scrollToBottom();
   }
 
   function renderSessionError(evt) {
@@ -702,6 +777,7 @@
     if (!currentSessionId) return;
     const msg = { action: "send", text };
     if (selectedTool) msg.tool = selectedTool;
+    msg.model = selectedModel;
     msg.thinking = thinkingEnabled;
     wsSend(msg);
   }
@@ -1060,6 +1136,7 @@
     imgBtn.disabled = false;
     fileAttachBtn.disabled = false;
     inlineToolSelect.disabled = false;
+    inlineModelSelect.disabled = false;
     thinkingToggle.disabled = false;
 
     if (session?.tool && toolsList.some((t) => t.id === session.tool)) {
@@ -1289,6 +1366,7 @@
     if ((!text && pendingImages.length === 0) || !currentSessionId) return;
     const msg = { action: "send", text: text || "(image)" };
     if (selectedTool) msg.tool = selectedTool;
+    msg.model = selectedModel;
     msg.thinking = thinkingEnabled;
     if (pendingImages.length > 0) {
       msg.images = pendingImages.map((img) => ({
@@ -1482,5 +1560,6 @@
   themeBtn.addEventListener("click", toggleTheme);
   initResponsiveLayout();
   loadInlineTools();
+  loadInlineModels();
   connect();
 })();

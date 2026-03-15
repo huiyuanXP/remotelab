@@ -297,7 +297,7 @@ export async function handleRequest(req, res) {
     return;
   }
 
-  if (pathname === '/api/sidebar' && req.method === 'GET') {
+if (pathname === '/api/sidebar' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getSidebarState()));
     return;

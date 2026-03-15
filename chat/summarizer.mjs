@@ -224,6 +224,107 @@ export function getSidebarState() {
   return loadSidebarState();
 }
 
+/**
+ * Generate a comprehensive conversation summary for context compaction.
+ * Returns the summary text string.
+ */
+export async function generateCompactSummary(sessionId, folder) {
+  const allEvents = loadHistory(sessionId);
+  if (allEvents.length === 0) throw new Error('No history to summarize');
+
+  const lines = [];
+  for (const evt of allEvents) {
+    switch (evt.type) {
+      case 'message':
+        if (evt.role === 'user') {
+          lines.push(`USER: ${(evt.content || '').slice(0, 300)}`);
+        } else if (evt.role === 'assistant') {
+          lines.push(`ASSISTANT: ${(evt.content || '').slice(0, 500)}`);
+        }
+        break;
+      case 'file_change':
+        lines.push(`FILE ${(evt.changeType || 'changed').toUpperCase()}: ${evt.filePath}`);
+        break;
+      case 'tool_use':
+        lines.push(`TOOL: ${evt.toolName}`);
+        break;
+    }
+  }
+
+  // Cap the formatted history to ~40K chars to stay within prompt limits
+  let historyText = lines.join('\n');
+  if (historyText.length > 40000) {
+    historyText = historyText.slice(-40000);
+  }
+
+  const prompt = [
+    'You are summarizing a coding conversation for context transfer.',
+    `The conversation happened in folder: ${folder}`,
+    '',
+    'Full conversation:',
+    historyText,
+    '',
+    'Create a comprehensive summary that includes:',
+    '1. OBJECTIVE: What the user is trying to accomplish',
+    '2. PROGRESS: What has been done so far (files created/modified, key decisions)',
+    '3. CURRENT STATE: Where things stand right now',
+    '4. NEXT STEPS: What was being worked on or planned next',
+    '5. KEY FILES: Important files that were created or modified (with paths)',
+    '6. IMPORTANT CONTEXT: Any constraints, preferences, or decisions the user expressed',
+    '',
+    'Be thorough but concise. This summary will be used to continue the conversation in a new context window.',
+  ].join('\n');
+
+  const claudeCmd = resolveClaudeCmd();
+  console.log(`[summarizer] Generating compact summary for session ${sessionId.slice(0, 8)}`);
+
+  const subEnv = { ...process.env, PATH: fullPath };
+  delete subEnv.CLAUDECODE;
+  delete subEnv.CLAUDE_CODE_ENTRYPOINT;
+
+  return new Promise((resolve, reject) => {
+    const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+    const proc = spawn(claudeCmd, args, {
+      env: subEnv,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    proc.stdin.end();
+
+    const adapter = createClaudeAdapter();
+    const rl = createInterface({ input: proc.stdout });
+    const textParts = [];
+
+    rl.on('line', (line) => {
+      const events = adapter.parseLine(line);
+      for (const evt of events) {
+        if (evt.type === 'message' && evt.role === 'assistant') {
+          textParts.push(evt.content || '');
+        }
+      }
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString().trim();
+      if (text) console.log(`[summarizer] compact stderr: ${text.slice(0, 200)}`);
+    });
+
+    proc.on('error', reject);
+
+    proc.on('exit', (code) => {
+      const remaining = adapter.flush();
+      for (const evt of remaining) {
+        if (evt.type === 'message' && evt.role === 'assistant') textParts.push(evt.content || '');
+      }
+      const result = textParts.join('');
+      if (!result.trim()) {
+        reject(new Error(`Compact summary generation failed (exit ${code})`));
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+
 export function removeSidebarEntry(sessionId) {
   const state = loadSidebarState();
   if (state.sessions[sessionId]) {
