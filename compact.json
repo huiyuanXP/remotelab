@@ -1,0 +1,1 @@
+{"background":"Investigating Remote Lab's lack of automatic context compaction, which causes conversations to fail with error 0 after exceeding 200K tokens.","lastAction":"User identified the core problem: Remote Lab doesn't support automatic compact, causing persistent error 0 when chat exceeds 200K tokens."}
