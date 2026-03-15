@@ -1,4 +1,5 @@
 import { existsSync, statSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'fs';
+import { createHash } from 'crypto';
 import { homedir } from 'os';
 import { join, resolve, dirname, basename } from 'path';
 import { parse as parseUrl, fileURLToPath } from 'url';
@@ -9,7 +10,7 @@ import {
   parseCookies, setCookie, clearCookie,
 } from '../lib/auth.mjs';
 import { getAvailableTools } from '../lib/tools.mjs';
-import { listSessions, getSession, createSession, deleteSession, receiveHookRequest } from './session-manager.mjs';
+import { listSessions, getSession, createSession, deleteSession, sendMessage, getHistory, receiveHookRequest } from './session-manager.mjs';
 import { getSidebarState } from './summarizer.mjs';
 import { readBody, readBodyBinary } from '../lib/utils.mjs';
 import {
@@ -40,7 +41,12 @@ export async function handleRequest(req, res) {
   if (staticMimeTypes[staticName]) {
     try {
       const content = readFileSync(join(staticDir, staticName));
-      res.writeHead(200, { 'Content-Type': staticMimeTypes[staticName], 'Cache-Control': 'no-cache' });
+      res.writeHead(200, {
+        'Content-Type': staticMimeTypes[staticName],
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      });
       res.end(content);
     } catch {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -118,7 +124,7 @@ export async function handleRequest(req, res) {
     const mode = parsedUrl.query.mode === 'pw' ? 'pw' : 'token';
     let loginHtml;
     try { loginHtml = readFileSync(loginTemplatePath, 'utf8'); } catch { loginHtml = '<h1>Login template missing</h1>'; }
-    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
     res.end(loginHtml
       .replace(/\{\{NONCE\}\}/g, nonce)
       .replace(/\{\{ERROR_CLASS\}\}/g, hasError ? '' : 'hidden')
@@ -290,6 +296,89 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  // ---- Session sub-routes: /api/sessions/{id}, /api/sessions/{id}/history, /api/sessions/{id}/messages ----
+  const sessionMatch = pathname.match(/^\/api\/sessions\/([a-f0-9]+)(\/(\w+))?$/);
+  if (sessionMatch) {
+    const id = sessionMatch[1];
+    const subRoute = sessionMatch[3];
+
+    if (!subRoute && req.method === 'GET') {
+      const session = getSession(id);
+      if (!session) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ session }));
+      return;
+    }
+
+    if (subRoute === 'history' && req.method === 'GET') {
+      const session = getSession(id);
+      if (!session) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+      const events = getHistory(id);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ session, events }));
+      return;
+    }
+
+    if (subRoute === 'messages' && req.method === 'POST') {
+      const session = getSession(id);
+      if (!session) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+      let body;
+      try { body = await readBody(req, 65536); } catch (err) {
+        if (err.code === 'BODY_TOO_LARGE') {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Request body too large' }));
+          return;
+        }
+        throw err;
+      }
+      try {
+        const { text, images, tool, thinking, model } = JSON.parse(body);
+        if (!text) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'text is required' }));
+          return;
+        }
+        sendMessage(id, text.trim(), images, { tool, thinking: !!thinking, model });
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, sessionId: id, status: 'running' }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid request body' }));
+      }
+      return;
+    }
+  }
+
+  // GET /api/folders — list folders with session counts
+  if (pathname === '/api/folders' && req.method === 'GET') {
+    const allSessions = listSessions();
+    const folderMap = new Map();
+    for (const s of allSessions) {
+      if (!folderMap.has(s.folder)) folderMap.set(s.folder, []);
+      folderMap.get(s.folder).push(s);
+    }
+    const folders = Array.from(folderMap.entries()).map(([folder, sess]) => ({
+      folder,
+      sessionCount: sess.length,
+      sessions: sess.map(s => ({ id: s.id, name: s.name, tool: s.tool, status: s.status, created: s.created })),
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ folders }));
+    return;
+  }
+
   if (pathname === '/api/tools' && req.method === 'GET') {
     const tools = getAvailableTools();
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -440,9 +529,20 @@ if (pathname === '/api/sidebar' && req.method === 'GET') {
   // Main page (chat UI) — read from disk each time for hot-reload
   if (pathname === '/') {
     try {
-      const chatPage = readFileSync(chatTemplatePath, 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' });
-      res.end(chatPage.replace(/\{\{NONCE\}\}/g, nonce));
+      let chatPage = readFileSync(chatTemplatePath, 'utf8');
+      // Inject content hash into JS src for cache-busting
+      const chatJs = readFileSync(join(staticDir, 'chat.js'));
+      const jsHash = createHash('md5').update(chatJs).digest('hex').slice(0, 8);
+      chatPage = chatPage
+        .replace(/\{\{NONCE\}\}/g, nonce)
+        .replace('/chat.js"', `/chat.js?v=${jsHash}"`);
+      res.writeHead(200, {
+        'Content-Type': 'text/html',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+      });
+      res.end(chatPage);
     } catch {
       res.writeHead(500, { 'Content-Type': 'text/plain' });
       res.end('Failed to load chat page');

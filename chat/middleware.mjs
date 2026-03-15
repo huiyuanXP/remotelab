@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { isAuthenticated } from '../lib/auth.mjs';
+import { isAuthenticated, verifyToken } from '../lib/auth.mjs';
 
 // ---- Rate limiting ----
 
@@ -74,7 +74,20 @@ export function generateNonce() {
  */
 export function requireAuth(req, res) {
   if (isAuthenticated(req)) return true;
-  res.writeHead(302, { 'Location': '/login' });
-  res.end();
+
+  // Bearer token auth for API clients (MCP server, etc.)
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    if (verifyToken(authHeader.slice(7))) return true;
+  }
+
+  // API requests get 401 JSON, browser requests get 302 redirect
+  if (req.url?.startsWith('/api/')) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+  } else {
+    res.writeHead(302, { 'Location': '/login' });
+    res.end();
+  }
   return false;
 }

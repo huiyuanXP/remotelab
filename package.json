@@ -44,6 +44,7 @@
     "auth-proxy.mjs",
     "chat-server.mjs",
     "generate-token.mjs",
+    "mcp-server.mjs",
     "setup.sh",
     "start.sh",
     "stop.sh",
@@ -62,6 +63,7 @@
     "stop": "./stop.sh",
     "setup": "./setup.sh",
     "generate-token": "node generate-token.mjs",
+    "mcp": "node mcp-server.mjs",
     "prepublishOnly": "chmod +x cli.js setup.sh start.sh stop.sh claude-ttyd-session"
   },
   "dependencies": {
