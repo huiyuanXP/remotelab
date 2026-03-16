@@ -230,11 +230,18 @@ function createSessionRefsMap(refs) {
   return map;
 }
 
+function resolveRequestUrl(url) {
+  if (typeof withVisitorModeUrl === "function") {
+    return withVisitorModeUrl(url);
+  }
+  return typeof url === "string" ? url : String(url || "");
+}
+
 async function fetchJsonOrRedirect(url, options = {}) {
   const requestOptions = { ...options };
   const revalidate = requestOptions.revalidate !== false;
   delete requestOptions.revalidate;
-  const requestUrl = withVisitorModeUrl(url);
+  const requestUrl = resolveRequestUrl(url);
 
   const method = String(requestOptions.method || "GET").toUpperCase();
   const isGet = method === "GET";

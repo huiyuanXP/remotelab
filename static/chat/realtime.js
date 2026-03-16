@@ -3,9 +3,16 @@ function renderRealtimeIcon(name, className = "") {
   return window.RemoteLabIcons?.render(name, { className }) || "";
 }
 
+function resolveWsUrl(path) {
+  if (typeof withVisitorModeUrl === "function") {
+    return withVisitorModeUrl(path);
+  }
+  return typeof path === "string" ? path : String(path || "");
+}
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}${withVisitorModeUrl("/ws")}`);
+  ws = new WebSocket(`${proto}//${location.host}${resolveWsUrl("/ws")}`);
 
   ws.onopen = () => {
     updateStatus("connected", getCurrentSession());
