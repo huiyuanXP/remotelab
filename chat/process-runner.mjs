@@ -169,11 +169,17 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
   };
 
   function spawnProcess(spawnArgs) {
+    const spawnStart = Date.now();
     console.log(`${TAG} Spawning: ${resolvedCmd}`);
     console.log(`${TAG}   args: ${JSON.stringify(spawnArgs)}`);
     console.log(`${TAG}   cwd: ${folder} → ${resolvedFolder}`);
     console.log(`${TAG}   prompt: ${prompt?.slice(0, 100)}`);
     if (hasImages) console.log(`${TAG}   images: ${options.images.length}`);
+    const hasResume = spawnArgs.includes('--resume');
+    if (hasResume) {
+      const resumeIdx = spawnArgs.indexOf('--resume');
+      console.log(`${TAG}   resume: ${spawnArgs[resumeIdx + 1]}`);
+    }
 
     const proc = spawn(resolvedCmd, spawnArgs, {
       cwd: resolvedFolder,
@@ -182,7 +188,20 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
     });
     state.proc = proc;
 
-    console.log(`${TAG} Process spawned, pid=${proc.pid}`);
+    console.log(`${TAG} Process spawned, pid=${proc.pid} (+${Date.now() - spawnStart}ms)`);
+
+    // Emit a UI status event so user sees progress immediately
+    onEvent(statusEvent(hasResume ? 'Resuming session...' : 'Starting CLI...'));
+
+    // Periodic "still waiting" log + UI status if no stdout received
+    let gotFirstOutput = false;
+    const waitTimer = setInterval(() => {
+      if (!gotFirstOutput) {
+        const elapsed = Math.round((Date.now() - spawnStart) / 1000);
+        console.log(`${TAG} Still waiting for first output from pid=${proc.pid} (${elapsed}s elapsed)`);
+        onEvent(statusEvent(`Waiting for CLI response... (${elapsed}s)`));
+      }
+    }, 5000);
 
     const rl = createInterface({ input: proc.stdout });
     let lineCount = 0;
@@ -194,6 +213,12 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
 
     rl.on('line', (line) => {
       lineCount++;
+      if (!gotFirstOutput) {
+        gotFirstOutput = true;
+        clearInterval(waitTimer);
+        const elapsed = ((Date.now() - spawnStart) / 1000).toFixed(1);
+        console.log(`${TAG} First output after ${elapsed}s from pid=${proc.pid}`);
+      }
       console.log(`${TAG} [stdout#${lineCount}] ${line.slice(0, 300)}`);
 
       // Capture session/thread IDs for conversation resumption
@@ -233,7 +258,8 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
     proc.stderr.on('data', (chunk) => {
       const text = chunk.toString().trim();
       if (text) {
-        console.log(`${TAG} [stderr] ${text.slice(0, 500)}`);
+        const elapsed = ((Date.now() - spawnStart) / 1000).toFixed(1);
+        console.log(`${TAG} [stderr +${elapsed}s] ${text.slice(0, 500)}`);
       }
     });
 
@@ -244,7 +270,9 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
     });
 
     proc.on('exit', (code, signal) => {
-      console.log(`${TAG} Process exited: code=${code}, signal=${signal}, lines=${lineCount}`);
+      clearInterval(waitTimer);
+      const totalSec = ((Date.now() - spawnStart) / 1000).toFixed(1);
+      console.log(`${TAG} Process exited: code=${code}, signal=${signal}, lines=${lineCount}, total=${totalSec}s`);
       const remaining = adapter.flush();
       if (remaining.length > 0) {
         console.log(`${TAG} Flushed ${remaining.length} remaining event(s)`);
