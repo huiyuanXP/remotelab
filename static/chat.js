@@ -56,6 +56,8 @@
   let pendingSummary = new Set(); // sessionIds awaiting summary generation
   let lastSidebarUpdatedAt = {}; // sessionId -> last known updatedAt
 
+  let sessionLastMessage = {}; // sessionId -> last sent message text
+
   let selectedTool = localStorage.getItem("selectedTool") || null;
   let selectedModel = localStorage.getItem("selectedModel") || "";
   // Default thinking to enabled; only disable if explicitly set to 'false'
@@ -83,8 +85,11 @@
       return;
     if (document.visibilityState === "visible") return;
     const folder = (session?.folder || "").split("/").pop() || "Session";
+    const lastMsg = sessionLastMessage[session?.id] || "";
+    const snippet = lastMsg.length > 60 ? lastMsg.slice(0, 60) + "…" : lastMsg;
+    const body = snippet ? `${folder}: ${snippet}` : `${folder} — task completed`;
     const n = new Notification("RemoteLab", {
-      body: `${folder} — task completed`,
+      body,
       tag: "remotelab-done",
     });
     n.onclick = () => {
@@ -174,6 +179,7 @@
   inlineToolSelect.addEventListener("change", () => {
     selectedTool = inlineToolSelect.value;
     localStorage.setItem("selectedTool", selectedTool);
+    loadInlineModels(selectedTool);
   });
 
   // ---- Inline model select ----
@@ -185,26 +191,48 @@
     { id: "opus[1m]", name: "Opus 1M" },
   ];
 
-  function loadInlineModels() {
+  function populateModelSelect(models, tool, serverDefault) {
+    const storageKey = `selectedModel_${tool || "claude"}`;
+    const saved = localStorage.getItem(storageKey);
+
     inlineModelSelect.innerHTML = "";
-    for (const m of CLAUDE_MODELS) {
+    for (const m of models) {
       const opt = document.createElement("option");
       opt.value = m.id;
       opt.textContent = m.name;
       inlineModelSelect.appendChild(opt);
     }
-    if (selectedModel && CLAUDE_MODELS.some((m) => m.id === selectedModel)) {
+    const preferred = saved || serverDefault;
+    if (preferred && models.some((m) => m.id === preferred)) {
+      inlineModelSelect.value = preferred;
+      selectedModel = preferred;
+    } else if (models.length > 0) {
+      selectedModel = models[0].id;
       inlineModelSelect.value = selectedModel;
-    } else {
-      selectedModel = CLAUDE_MODELS[0].id;
-      inlineModelSelect.value = selectedModel;
-      localStorage.setItem("selectedModel", selectedModel);
+      localStorage.setItem(storageKey, selectedModel);
     }
+  }
+
+  async function loadInlineModels(tool) {
+    const activeTool = tool || selectedTool;
+    if (activeTool === "codex") {
+      try {
+        const res = await fetch(`/api/models?tool=codex`);
+        const data = await res.json();
+        if (data.models && data.models.length > 0) {
+          populateModelSelect(data.models, activeTool, data.default);
+          return;
+        }
+      } catch {}
+    }
+    // Claude (or codex fetch failed): use hardcoded list
+    populateModelSelect(CLAUDE_MODELS, activeTool, null);
   }
 
   inlineModelSelect.addEventListener("change", () => {
     selectedModel = inlineModelSelect.value;
-    localStorage.setItem("selectedModel", selectedModel);
+    const storageKey = `selectedModel_${selectedTool || "claude"}`;
+    localStorage.setItem(storageKey, selectedModel);
   });
 
   // ---- WebSocket ----
@@ -621,15 +649,20 @@
   }
 
   function renderStatusMsg(evt) {
+    if (!evt.content || evt.content === "completed" || evt.content === "thinking")
+      return;
+    const c = evt.content;
+    // Filter out internal process-level status messages
     if (
-      !evt.content ||
-      evt.content === "completed" ||
-      evt.content === "thinking"
+      c === "Starting CLI..." ||
+      c === "Resuming session..." ||
+      c.startsWith("Waiting for CLI") ||
+      c.startsWith("auto-continuing")
     )
       return;
     const div = document.createElement("div");
     div.className = "msg-system";
-    div.textContent = evt.content;
+    div.textContent = c;
     messagesInner.appendChild(div);
   }
 
@@ -819,6 +852,7 @@
 
   function sendQuickReply(text) {
     if (!currentSessionId) return;
+    sessionLastMessage[currentSessionId] = text;
     const msg = { action: "send", text };
     if (selectedTool) msg.tool = selectedTool;
     msg.model = selectedModel;
@@ -1188,6 +1222,7 @@
       inlineToolSelect.value = session.tool;
       selectedTool = session.tool;
       localStorage.setItem("selectedTool", selectedTool);
+      loadInlineModels(selectedTool);
     }
 
     msgInput.focus();
@@ -1437,6 +1472,7 @@
     }
 
     const msg = { action: "send", text: fullText || "(image)" };
+    if (currentSessionId) sessionLastMessage[currentSessionId] = fullText || "(image)";
     if (selectedTool) msg.tool = selectedTool;
     msg.model = selectedModel;
     msg.thinking = thinkingEnabled;

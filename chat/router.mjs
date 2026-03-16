@@ -386,7 +386,37 @@ export async function handleRequest(req, res) {
     return;
   }
 
-if (pathname === '/api/sidebar' && req.method === 'GET') {
+  if (pathname === '/api/models' && req.method === 'GET') {
+    const tool = parsedUrl.query.tool || '';
+    if (tool === 'codex') {
+      try {
+        const cacheFile = join(homedir(), '.codex', 'models_cache.json');
+        const configFile = join(homedir(), '.codex', 'config.toml');
+        const cache = JSON.parse(readFileSync(cacheFile, 'utf8'));
+        const models = (cache.models || [])
+          .filter(m => m.visibility !== 'hidden')
+          .map(m => ({ id: m.slug, name: m.display_name }));
+        // Read default model from config.toml
+        let defaultModel = models[0]?.id;
+        if (existsSync(configFile)) {
+          const configText = readFileSync(configFile, 'utf8');
+          const match = configText.match(/^model\s*=\s*"([^"]+)"/m);
+          if (match) defaultModel = match[1];
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ models, default: defaultModel }));
+      } catch {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ models: [] }));
+      }
+    } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ models: [] }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/sidebar' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getSidebarState()));
     return;

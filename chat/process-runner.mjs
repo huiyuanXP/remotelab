@@ -130,7 +130,7 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
   let args;
 
   if (isClaudeFamily) {
-    adapter = createClaudeAdapter();
+    adapter = createClaudeAdapter({ prompt });
     args = buildClaudeArgs(effectivePrompt, {
       dangerouslySkipPermissions: true,
       resume: options.claudeSessionId,
@@ -139,12 +139,13 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
       hookSettingsJson: buildHookSettings(CHAT_PORT),
     });
   } else if (isCodexFamily) {
-    adapter = createCodexAdapter();
+    adapter = createCodexAdapter({ prompt });
     args = buildCodexArgs(effectivePrompt, {
       threadId: options.codexThreadId,
+      model: options.model,
     });
   } else {
-    adapter = createClaudeAdapter();
+    adapter = createClaudeAdapter({ prompt });
     args = buildClaudeArgs(effectivePrompt, {
       dangerouslySkipPermissions: true,
       thinking: options.thinking,

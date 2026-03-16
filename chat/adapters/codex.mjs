@@ -29,7 +29,13 @@ import {
  *   todo_list          — { id, type, items: [{ text, completed }] }
  *   error              — { id, type, message }
  */
-export function createCodexAdapter() {
+function promptSnippet(prompt) {
+  if (!prompt) return '';
+  const s = prompt.replace(/\n+/g, ' ').trim();
+  return s.length > 80 ? s.slice(0, 80) + '…' : s;
+}
+
+export function createCodexAdapter({ prompt } = {}) {
   return {
     parseLine(line) {
       const trimmed = line.trim();
@@ -45,9 +51,12 @@ export function createCodexAdapter() {
       const events = [];
 
       switch (obj.type) {
-        case 'thread.started':
-          events.push(statusEvent(`Thread started (${obj.thread_id || 'unknown'})`));
+        case 'thread.started': {
+          const snippet = promptSnippet(prompt);
+          const label = snippet ? `Thread started — ${snippet}` : `Thread started`;
+          events.push(statusEvent(label));
           break;
+        }
 
         case 'turn.started':
           events.push(statusEvent('thinking'));
@@ -187,6 +196,10 @@ export function buildCodexArgs(prompt, options = {}) {
 
   args.push('--json');
   args.push('--dangerously-bypass-approvals-and-sandbox');
+
+  if (options.model) {
+    args.push('--model', options.model);
+  }
 
   const effectivePrompt = CODEX_SYSTEM_PREFIX + prompt;
 

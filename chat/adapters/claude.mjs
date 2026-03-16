@@ -18,7 +18,13 @@ const INTERACTIVE_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
  * From stream_event we only extract thinking deltas (which aren't
  * duplicated in complete messages).
  */
-export function createClaudeAdapter() {
+function promptSnippet(prompt) {
+  if (!prompt) return '';
+  const s = prompt.replace(/\n+/g, ' ').trim();
+  return s.length > 80 ? s.slice(0, 80) + '…' : s;
+}
+
+export function createClaudeAdapter({ prompt } = {}) {
   // Track tool_use_ids for interactive tools so we can suppress their error results
   const pendingInteractiveIds = new Set();
 
@@ -38,9 +44,12 @@ export function createClaudeAdapter() {
 
       switch (obj.type) {
         case 'system':
-          events.push(statusEvent(obj.subtype === 'init'
-            ? `Session started (${obj.session_id || 'unknown'})`
-            : `System: ${obj.subtype || 'unknown'}`));
+          if (obj.subtype === 'init') {
+            const snippet = promptSnippet(prompt);
+            const label = snippet ? `Session started — ${snippet}` : `Session started`;
+            events.push(statusEvent(label));
+          }
+          // Other subtypes (task_progress, hook_started, etc.) are internal CLI signals — suppress
           break;
 
         case 'assistant': {
