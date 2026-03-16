@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" id="favicon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><g stroke='%236b7280' stroke-width='5.5' fill='none'><circle cx='50' cy='28' r='19'/><circle cx='72' cy='50' r='19'/><circle cx='50' cy='72' r='19'/><circle cx='28' cy='50' r='19'/></g><circle cx='50' cy='50' r='4' fill='%236b7280'/></svg>">
 <title>RemoteLab Chat</title>
 <script nonce="{{NONCE}}">(function(){
   var m=localStorage.getItem('themeMode')||'auto';
@@ -159,6 +160,12 @@ body {
   width: 32px; height: 32px;
 }
 .header-btn:hover { background: var(--bg-tertiary); color: var(--text); }
+.header-logo {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); flex-shrink: 0; transition: color 0.3s;
+}
+.header-logo.active { color: var(--success); }
+.header-logo.active svg { animation: logo-spin 8s linear infinite; }
 .status-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);
   display: inline-block; flex-shrink: 0;
@@ -289,8 +296,14 @@ body {
 
 .session-item {
   padding: 7px 8px 7px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 1px;
-  border: 1px solid transparent; display: flex; align-items: flex-start; gap: 6px;
+  border: 1px solid transparent; display: flex; align-items: center; gap: 6px;
 }
+.session-item-logo {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); flex-shrink: 0; transition: color 0.3s;
+}
+.session-item-logo.running { color: var(--success); }
+.session-item-logo.running svg { animation: logo-spin 8s linear infinite; }
 .session-item:hover { background: var(--bg-secondary); }
 .session-item.active { background: var(--bg-tertiary); border-color: var(--border); }
 .session-item-info { flex: 1; min-width: 0; }
@@ -744,6 +757,16 @@ body {
 }
 .qr-btn:hover { background: var(--bg-tertiary); color: var(--text); }
 .qr-btn:active { opacity: 0.75; }
+.qr-btn .qr-del { display: none; margin-left: 4px; color: var(--text-muted); font-size: 11px; }
+.quick-replies.editing .qr-btn .qr-del { display: inline; }
+.quick-replies.editing .qr-btn:hover .qr-del { color: var(--error); }
+.qr-add, .qr-edit-toggle {
+  padding: 5px 10px; border-radius: 16px; border: 1px dashed var(--border-strong);
+  background: transparent; color: var(--text-muted); font-size: 13px; cursor: pointer;
+  font-family: inherit; white-space: nowrap; transition: color 0.1s;
+}
+.qr-add:hover, .qr-edit-toggle:hover { color: var(--text); }
+.quick-replies.editing .qr-edit-toggle { border-style: solid; color: var(--text); background: var(--bg-tertiary); }
 
 /* ---- Input area ---- */
 .input-area {
@@ -880,6 +903,56 @@ body {
   .messages { padding: 28px 32px; }
   .input-area { padding: 14px 32px; padding-bottom: calc(14px + var(--safe-bottom)); }
 }
+
+/* ---- Logo ---- */
+.logo-main {
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+/* Floating status logo — bottom right */
+.floating-logo {
+  position: fixed;
+  bottom: calc(16px + var(--safe-bottom));
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.35;
+  transition: opacity 0.2s, color 0.3s;
+  z-index: 50;
+  pointer-events: none;
+}
+.floating-logo.active {
+  color: var(--success);
+  opacity: 0.85;
+}
+.floating-logo.active svg {
+  animation: logo-spin 8s linear infinite;
+}
+@keyframes logo-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.floating-logo-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  border: 2px solid var(--bg);
+  transition: background 0.3s;
+}
+.floating-logo.active .floating-logo-dot {
+  background: var(--success);
+  animation: pulse 1.5s infinite;
+}
 </style>
 </head>
 <body>
@@ -887,6 +960,17 @@ body {
 <!-- Header -->
 <div class="header">
   <button class="header-btn" id="menuBtn" title="Sessions">&#9776;</button>
+  <div class="header-logo" id="headerLogo">
+    <svg width="22" height="22" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <g stroke="currentColor" stroke-width="5.5" fill="none">
+        <circle cx="50" cy="28" r="19"/>
+        <circle cx="72" cy="50" r="19"/>
+        <circle cx="50" cy="72" r="19"/>
+        <circle cx="28" cy="50" r="19"/>
+      </g>
+      <circle cx="50" cy="50" r="4" fill="currentColor"/>
+    </svg>
+  </div>
   <h1 id="headerTitle">RemoteLab Chat</h1>
   <div class="header-ctx" id="headerCtx">
     <div class="header-ctx-detail" id="headerCtxDetail"></div>
@@ -927,7 +1011,17 @@ body {
     <div class="messages" id="messages">
       <div class="messages-inner" id="messagesInner">
         <div class="empty-state" id="emptyState">
-          <h2>RemoteLab Chat</h2>
+          <svg class="logo-main" width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- 4 interlocking rings — network chain -->
+            <g stroke="currentColor" stroke-width="4.5" fill="none">
+              <circle cx="50" cy="28" r="19"/>
+              <circle cx="72" cy="50" r="19"/>
+              <circle cx="50" cy="72" r="19"/>
+              <circle cx="28" cy="50" r="19"/>
+            </g>
+            <circle cx="50" cy="50" r="3.5" fill="currentColor"/>
+          </svg>
+          <h2>RemoteLab</h2>
           <p>Select or create a session from the sidebar, then start chatting with your AI coding tool.</p>
         </div>
       </div>
@@ -935,13 +1029,7 @@ body {
 
     <!-- Input area -->
     <div class="input-area" id="inputArea">
-      <div id="quickReplies" class="quick-replies" style="display:none">
-        <button class="qr-btn" data-text="Continue">Continue</button>
-        <button class="qr-btn" data-text="Explain this">Explain this</button>
-        <button class="qr-btn" data-text="Run tests">Run tests</button>
-        <button class="qr-btn" data-text="Show diff">Show diff</button>
-        <button class="qr-btn" data-text="Done">Done</button>
-      </div>
+      <div id="quickReplies" class="quick-replies" style="display:none"></div>
       <div class="input-wrapper">
         <!-- Image preview inside wrapper -->
         <div class="img-preview-strip" id="imgPreviewStrip"></div>
@@ -980,6 +1068,20 @@ body {
       <button class="btn-create" id="createSession">Create</button>
     </div>
   </div>
+</div>
+
+<!-- Floating status logo -->
+<div class="floating-logo" id="floatingLogo">
+  <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g stroke="currentColor" stroke-width="5.5" fill="none">
+      <circle cx="50" cy="28" r="19"/>
+      <circle cx="72" cy="50" r="19"/>
+      <circle cx="50" cy="72" r="19"/>
+      <circle cx="28" cy="50" r="19"/>
+    </g>
+    <circle cx="50" cy="50" r="4" fill="currentColor"/>
+  </svg>
+  <span class="floating-logo-dot" id="floatingLogoDot"></span>
 </div>
 
 <script src="/marked.min.js" nonce="{{NONCE}}"></script>

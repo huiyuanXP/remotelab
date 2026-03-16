@@ -43,6 +43,8 @@
   const headerCtxFill = document.getElementById("headerCtxFill");
   const headerCtxPct = document.getElementById("headerCtxPct");
   const headerCtxCompress = document.getElementById("headerCtxCompress");
+  const floatingLogo = document.getElementById("floatingLogo");
+  const headerLogo = document.getElementById("headerLogo");
 
   let ws = null;
   let pendingImages = [];
@@ -378,6 +380,7 @@
       sendBtn.style.display = "";
       sendBtn.disabled = true;
       cancelBtn.style.display = "none";
+      floatingLogo.classList.remove("active");
       return;
     }
     sessionStatus = sessState;
@@ -400,6 +403,66 @@
     inlineModelSelect.disabled = !hasSession;
     thinkingToggle.disabled = !hasSession;
     quickReplies.style.display = hasSession && !isRunning ? "flex" : "none";
+  }
+
+  // ---- Floating logo & favicon global status ----
+  const faviconEl = document.getElementById("favicon");
+  const faviconCanvas = document.createElement("canvas");
+  faviconCanvas.width = 64;
+  faviconCanvas.height = 64;
+  const faviconCtx = faviconCanvas.getContext("2d");
+  let faviconAngle = 0;
+  let faviconAnimating = false;
+  let faviconRAF = null;
+
+  // Build SVG image for favicon
+  function makeFaviconSvg(color) {
+    return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><g stroke='${color}' stroke-width='5.5' fill='none'><circle cx='50' cy='28' r='19'/><circle cx='72' cy='50' r='19'/><circle cx='50' cy='72' r='19'/><circle cx='28' cy='50' r='19'/></g><circle cx='50' cy='50' r='4' fill='${color}'/></svg>`;
+  }
+
+  const faviconImgIdle = new Image();
+  faviconImgIdle.src = "data:image/svg+xml," + encodeURIComponent(makeFaviconSvg("#6b7280"));
+  const faviconImgActive = new Image();
+  faviconImgActive.src = "data:image/svg+xml," + encodeURIComponent(makeFaviconSvg("#22c55e"));
+
+  function drawFavicon(img, angle) {
+    const s = 64;
+    faviconCtx.clearRect(0, 0, s, s);
+    faviconCtx.save();
+    faviconCtx.translate(s / 2, s / 2);
+    faviconCtx.rotate(angle);
+    faviconCtx.drawImage(img, -s / 2, -s / 2, s, s);
+    faviconCtx.restore();
+    faviconEl.href = faviconCanvas.toDataURL("image/png");
+  }
+
+  function animateFavicon(ts) {
+    if (!faviconAnimating) return;
+    // 8s per full rotation, matching CSS logo-spin
+    faviconAngle = ((ts % 8000) / 8000) * Math.PI * 2;
+    drawFavicon(faviconImgActive, faviconAngle);
+    faviconRAF = requestAnimationFrame(animateFavicon);
+  }
+
+  function startFaviconSpin() {
+    if (faviconAnimating) return;
+    faviconAnimating = true;
+    faviconRAF = requestAnimationFrame(animateFavicon);
+  }
+
+  function stopFaviconSpin() {
+    faviconAnimating = false;
+    if (faviconRAF) { cancelAnimationFrame(faviconRAF); faviconRAF = null; }
+    faviconAngle = 0;
+    drawFavicon(faviconImgIdle, 0);
+  }
+
+  function updateFloatingLogo() {
+    const anyRunning = sessions.some(s => s.status === "running");
+    floatingLogo.classList.toggle("active", anyRunning);
+    headerLogo.classList.toggle("active", anyRunning);
+    if (anyRunning) startFaviconSpin();
+    else stopFaviconSpin();
   }
 
   // ---- Message rendering ----
@@ -1130,7 +1193,19 @@
               ? `<span>${esc(s.tool)}</span>`
               : "";
 
+        const logoRunning = s.status === "running" ? " running" : "";
         div.innerHTML = `
+          <div class="session-item-logo${logoRunning}">
+            <svg width="16" height="16" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g stroke="currentColor" stroke-width="6" fill="none">
+                <circle cx="50" cy="28" r="19"/>
+                <circle cx="72" cy="50" r="19"/>
+                <circle cx="50" cy="72" r="19"/>
+                <circle cx="28" cy="50" r="19"/>
+              </g>
+              <circle cx="50" cy="50" r="5" fill="currentColor"/>
+            </svg>
+          </div>
           <div class="session-item-info">
             <div class="session-item-name">${esc(displayName)}</div>
             <div class="session-item-meta">${metaHtml}</div>
@@ -1169,6 +1244,7 @@
       group.appendChild(items);
       sessionList.appendChild(group);
     }
+    updateFloatingLogo();
   }
 
   function startRename(itemEl, session) {
@@ -1227,6 +1303,7 @@
       loadInlineModels(selectedTool, session.model || null);
     }
 
+    loadQuickReplies(session?.folder);
     msgInput.focus();
     renderSessionList();
   }
@@ -1501,9 +1578,91 @@
 
   cancelBtn.addEventListener("click", () => wsSend({ action: "cancel" }));
 
+  // ---- Quick Replies (per-folder, persistent) ----
+  let qrButtons = [];
+  let qrFolder = null;
+  let qrEditing = false;
+
+  function renderQuickReplies() {
+    quickReplies.innerHTML = "";
+    quickReplies.classList.toggle("editing", qrEditing);
+    for (const text of qrButtons) {
+      const btn = document.createElement("button");
+      btn.className = "qr-btn";
+      btn.dataset.text = text;
+      btn.textContent = text;
+      if (qrEditing) {
+        const del = document.createElement("span");
+        del.className = "qr-del";
+        del.textContent = "\u00d7";
+        btn.appendChild(del);
+      }
+      quickReplies.appendChild(btn);
+    }
+    if (qrEditing) {
+      const addBtn = document.createElement("button");
+      addBtn.className = "qr-add";
+      addBtn.textContent = "＋";
+      addBtn.addEventListener("click", () => {
+        const text = prompt("Button text:");
+        if (text && text.trim()) {
+          qrButtons.push(text.trim());
+          saveQuickReplies();
+          renderQuickReplies();
+        }
+      });
+      quickReplies.appendChild(addBtn);
+    }
+    const editBtn = document.createElement("button");
+    editBtn.className = "qr-edit-toggle";
+    editBtn.textContent = qrEditing ? "✓" : "\u270e";
+    editBtn.title = qrEditing ? "Finish editing" : "Edit shortcuts";
+    editBtn.addEventListener("click", () => {
+      qrEditing = !qrEditing;
+      renderQuickReplies();
+    });
+    quickReplies.appendChild(editBtn);
+  }
+
+  async function loadQuickReplies(folder) {
+    if (!folder) return;
+    qrFolder = folder;
+    try {
+      const res = await fetch("/api/quick-replies?folder=" + encodeURIComponent(folder));
+      const data = await res.json();
+      qrButtons = data.buttons || [];
+    } catch {
+      qrButtons = ["Continue", "Agree", "Commit this", "Run tests", "Show diff"];
+    }
+    qrEditing = false;
+    renderQuickReplies();
+  }
+
+  async function saveQuickReplies() {
+    if (!qrFolder) return;
+    try {
+      await fetch("/api/quick-replies", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder: qrFolder, buttons: qrButtons }),
+      });
+    } catch {}
+  }
+
   quickReplies.addEventListener("click", (e) => {
+    const del = e.target.closest(".qr-del");
+    if (del && qrEditing) {
+      const btn = del.closest(".qr-btn");
+      const idx = qrButtons.indexOf(btn.dataset.text);
+      if (idx >= 0) {
+        qrButtons.splice(idx, 1);
+        saveQuickReplies();
+        renderQuickReplies();
+      }
+      return;
+    }
     const btn = e.target.closest(".qr-btn");
-    if (btn) {
+    if (btn && !qrEditing) {
       const text = btn.dataset.text;
       const cur = msgInput.value;
       msgInput.value = cur ? cur + " " + text : text;

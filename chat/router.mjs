@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import { homedir } from 'os';
 import { join, resolve, dirname, basename } from 'path';
 import { parse as parseUrl, fileURLToPath } from 'url';
-import { SESSION_EXPIRY, CHAT_IMAGES_DIR } from '../lib/config.mjs';
+import { SESSION_EXPIRY, CHAT_IMAGES_DIR, QUICK_REPLIES_FILE } from '../lib/config.mjs';
 import {
   sessions, saveAuthSessions,
   verifyToken, verifyPassword, generateToken,
@@ -419,6 +419,40 @@ export async function handleRequest(req, res) {
   if (pathname === '/api/sidebar' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getSidebarState()));
+    return;
+  }
+
+  // Quick replies per folder
+  if (pathname === '/api/quick-replies' && req.method === 'GET') {
+    const folder = parsedUrl.query.folder || '';
+    let data = {};
+    try { data = JSON.parse(readFileSync(QUICK_REPLIES_FILE, 'utf8')); } catch {}
+    const buttons = data[folder] || data.__default__ || ['Continue', 'Agree', 'Commit this', 'Run tests', 'Show diff'];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ buttons, isDefault: !data[folder] }));
+    return;
+  }
+
+  if (pathname === '/api/quick-replies' && req.method === 'PUT') {
+    let body;
+    try { body = await readBody(req, 4096); } catch { body = '{}'; }
+    try {
+      const { folder, buttons } = JSON.parse(body);
+      if (!folder || !Array.isArray(buttons)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'folder and buttons[] required' }));
+        return;
+      }
+      let data = {};
+      try { data = JSON.parse(readFileSync(QUICK_REPLIES_FILE, 'utf8')); } catch {}
+      data[folder] = buttons.map(b => String(b).slice(0, 100)).slice(0, 20);
+      writeFileSync(QUICK_REPLIES_FILE, JSON.stringify(data, null, 2));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
     return;
   }
 
