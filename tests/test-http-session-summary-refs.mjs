@@ -136,8 +136,8 @@ try {
       false,
       'default session list should omit task board state',
     );
-    const listRef = (list.json.sessionRefs || []).find((entry) => entry.id === sessionId);
-    assert.ok(listRef, 'default session list should include per-session summary refs');
+    const listSession = (list.json.sessions || []).find((entry) => entry.id === sessionId);
+    assert.ok(listSession, 'default session list should include the created session payload');
 
     const refs = await request(port, 'GET', '/api/sessions?view=refs');
     assert.equal(refs.status, 200, 'refs-only session list should succeed');

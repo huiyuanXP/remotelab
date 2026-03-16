@@ -112,6 +112,7 @@ function createContext() {
     currentSessionId: 'current-session',
     hasAttachedSession: true,
     hasLoadedSessions: true,
+    archivedSessionCount: 0,
     sessions: [
       {
         id: 'current-session',
@@ -119,7 +120,10 @@ function createContext() {
         status: 'idle',
         updatedAt: '2026-03-12T09:30:00.000Z',
         appId: 'chat',
-        summaryEtag: '"etag-current"',
+        model: 'gpt-5',
+        effort: 'high',
+        thinking: true,
+        queuedMessages: [{ id: 'queued-1', text: 'follow up' }],
       },
       {
         id: 'changed-session',
@@ -127,7 +131,6 @@ function createContext() {
         status: 'idle',
         updatedAt: '2026-03-12T08:30:00.000Z',
         appId: 'chat',
-        summaryEtag: '"etag-changed-old"',
       },
       {
         id: 'unchanged-session',
@@ -135,7 +138,6 @@ function createContext() {
         status: 'idle',
         updatedAt: '2026-03-12T07:30:00.000Z',
         appId: 'chat',
-        summaryEtag: '"etag-unchanged"',
       },
     ],
     sessionBoardLayout: null,
@@ -214,30 +216,36 @@ function createContext() {
     applyNavigationState() {},
     fetch: async (url) => {
       fetchCalls.push(String(url));
-      if (String(url) === '/api/sessions?includeVisitor=1&view=refs') {
+      if (String(url) === '/api/sessions?includeVisitor=1') {
         return createFetchResponse({
-          sessionRefs: [
-            { id: 'current-session', summaryEtag: '"etag-current"' },
-            { id: 'changed-session', summaryEtag: '"etag-changed-new"' },
-            { id: 'unchanged-session', summaryEtag: '"etag-unchanged"' },
+          sessions: [
+            {
+              id: 'changed-session',
+              name: 'Fresh changed session',
+              status: 'running',
+              updatedAt: '2026-03-12T10:00:00.000Z',
+              appId: 'chat',
+            },
+            {
+              id: 'current-session',
+              name: 'Current session refreshed',
+              status: 'running',
+              updatedAt: '2026-03-12T09:45:00.000Z',
+              appId: 'chat',
+              activity: { queue: { count: 1 } },
+            },
+            {
+              id: 'unchanged-session',
+              name: 'Stable session',
+              status: 'idle',
+              updatedAt: '2026-03-12T07:30:00.000Z',
+              appId: 'chat',
+            },
           ],
+          archivedCount: 0,
         }, {
-          etag: '"etag-refs"',
-          url: 'http://127.0.0.1/api/sessions?includeVisitor=1&view=refs',
-        });
-      }
-      if (String(url) === '/api/sessions/changed-session?view=summary') {
-        return createFetchResponse({
-          session: {
-            id: 'changed-session',
-            name: 'Fresh changed session',
-            status: 'running',
-            updatedAt: '2026-03-12T10:00:00.000Z',
-            appId: 'chat',
-          },
-        }, {
-          etag: '"etag-changed-new"',
-          url: 'http://127.0.0.1/api/sessions/changed-session?view=summary',
+          etag: '"etag-session-list"',
+          url: 'http://127.0.0.1/api/sessions?includeVisitor=1',
         });
       }
       throw new Error(`Unexpected fetch: ${url}`);
@@ -256,19 +264,28 @@ await context.fetchSessionsList();
 
 assert.deepEqual(
   context.fetchCalls,
-  [
-    '/api/sessions?includeVisitor=1&view=refs',
-    '/api/sessions/changed-session?view=summary',
-  ],
-  'incremental session refresh should fetch refs plus only changed summaries',
+  ['/api/sessions?includeVisitor=1'],
+  'session list refresh should hydrate from the default list endpoint',
 );
+assert.equal(context.renderCalls.length, 1, 'session list refresh should rerender the sidebar once');
 assert.equal(context.sessions[0].id, 'changed-session', 'changed session should resort to the top after hydration');
-assert.equal(context.sessions[0].name, 'Fresh changed session', 'changed summary hydration should replace stale metadata');
-assert.equal(context.sessions[0].summaryEtag, '"etag-changed-new"', 'changed summary hydration should store the fresh summary tag');
+assert.equal(context.sessions[0].name, 'Fresh changed session', 'changed session metadata should replace stale values');
+
+const currentSession = context.sessions.find((session) => session.id === 'current-session');
+assert.equal(currentSession?.name, 'Current session refreshed', 'current session metadata should refresh from the list payload');
+assert.equal(currentSession?.status, 'running', 'current session status should refresh from the list payload');
+assert.deepEqual(
+  currentSession?.queuedMessages,
+  [{ id: 'queued-1', text: 'follow up' }],
+  'list hydration should preserve queuedMessages when the lightweight list omits them',
+);
+assert.equal(currentSession?.model, 'gpt-5', 'list hydration should preserve the selected model when the lightweight list omits it');
+assert.equal(currentSession?.effort, 'high', 'list hydration should preserve the selected effort when the lightweight list omits it');
+assert.equal(currentSession?.thinking, true, 'list hydration should preserve thinking mode when the lightweight list omits it');
 assert.equal(
   context.sessions.find((session) => session.id === 'unchanged-session')?.name,
   'Stable session',
-  'unchanged sessions should be reused from memory without a summary refetch',
+  'unchanged sessions should remain intact after list hydration',
 );
 
 console.log('test-session-http-ref-hydration: ok');

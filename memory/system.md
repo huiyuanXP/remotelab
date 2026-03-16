@@ -283,6 +283,8 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 ### Public Mobile Shells Need Fingerprinted Assets And Non-Storable HTML (2026-03-10)
 - Cloudflare or the mobile browser may cache public JS/CSS/service-worker assets more aggressively than the origin's informal intent, even when local testing seems fine.
 - Do not rely on unversioned asset URLs plus `no-cache` HTML for operator-facing app shells. Serve HTML with `private, no-store, max-age=0, must-revalidate`, and fingerprint linked assets (`/chat.js?v=<build>`, `/manifest.json?v=<build>`, etc.).
+- If a legacy or compatibility loader fans out into multiple split frontend scripts, it must resolve one coherent `assetVersion` first (from inline build info or `/api/build-info`) and append that version to every downstream asset, including prerequisite scripts like `marked.min.js`, `session-state-model.js`, and icon/bootstrap helpers.
+- Otherwise a stale cached HTML shell or loader can mix old and new split assets during rollout and surface boot-time `ReferenceError` failures that are hard to reproduce locally.
 - Treat `sw.js` specially: use a versioned registration URL and send `no-store` so stale service workers do not survive a rollout window.
 - If the service worker is only needed for PWA installability or push, keep it fetch-passive: do not add asset-cache logic, clear Cache Storage on install/activate, and register with `updateViaCache: 'none'` so old worker-managed caches stop surviving browser rollout edges.
 - Exposing a tiny build marker in the UI and an `X-...-Build` response header makes stale-client reports much faster to confirm from mobile and `curl`.

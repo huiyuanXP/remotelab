@@ -52,7 +52,7 @@ function createFetchResponse(body, { status = 200, etag = '"etag-sidebar-refresh
     status,
     ok: status >= 200 && status < 300,
     redirected: false,
-    url: 'http://127.0.0.1/api/sessions/sidebar-target?view=summary',
+    url: 'http://127.0.0.1/api/sessions/sidebar-target?view=sidebar',
     headers: {
       get(name) {
         return headers.get(String(name).toLowerCase()) || null;
@@ -200,7 +200,7 @@ function createContext() {
     applyNavigationState() {},
     fetch: async (url, options = {}) => {
       fetchCalls.push({ url: String(url), headers: options.headers });
-      if (String(url) === '/api/sessions/sidebar-target?view=summary') {
+      if (String(url) === '/api/sessions/sidebar-target?view=sidebar') {
         return createFetchResponse({
           session: {
             id: 'sidebar-target',
@@ -225,7 +225,7 @@ vm.runInNewContext(sessionHttpSource, context, { filename: 'static/chat/session-
 
 await context.refreshSidebarSession('sidebar-target');
 
-assert.equal(context.fetchCalls.length, 1, 'sidebar refresh should fetch session summary once');
+assert.equal(context.fetchCalls.length, 1, 'sidebar refresh should fetch session sidebar once');
 assert.equal(context.renderCalls.length, 1, 'sidebar refresh should rerender the session list for non-current sessions');
 assert.equal(context.sessions[0].id, 'sidebar-target', 'sidebar refresh should allow updated sessions to move to the top');
 assert.equal(context.sessions[0].name, 'Fresh sidebar name', 'sidebar refresh should replace stale session metadata');
