@@ -153,6 +153,21 @@ body {
 .header-ctx-compress.visible { display: block; }
 .header-ctx-compress:hover { background: var(--error); color: #fff; }
 .header-ctx-compress:disabled { opacity: 0.5; cursor: not-allowed; }
+.header-ctx-clear {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: none;
+}
+.header-ctx-clear:hover { background: var(--bg-tertiary); color: var(--text); }
+.header-ctx-clear:disabled { opacity: 0.5; cursor: not-allowed; }
+.header-ctx-clear.visible { display: block; }
 .header-btn {
   background: none; border: none; color: var(--text-secondary);
   font-size: 16px; cursor: pointer; padding: 6px; border-radius: 6px;
@@ -542,6 +557,25 @@ body {
 }
 .compact-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
 .compact-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Session cleared banner */
+.session-cleared-banner {
+  text-align: center;
+  padding: 28px 20px 24px;
+  margin: 24px 0;
+  border: 2px dashed var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  animation: fadeIn 0.2s ease;
+}
+.session-cleared-icon { font-size: 28px; margin-bottom: 8px; }
+.session-cleared-title {
+  font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 10px;
+}
+.session-cleared-desc {
+  font-size: 13px; color: var(--text-secondary); line-height: 1.6;
+  max-width: 380px; margin: 0 auto;
+}
 
 /* Compact divider */
 .compact-divider {
@@ -978,6 +1012,7 @@ body {
       <span class="header-ctx-pct" id="headerCtxPct"></span>
     </div>
     <button class="header-ctx-compress" id="headerCtxCompress">Compress</button>
+    <button class="header-ctx-clear" id="headerCtxClear">Clear</button>
   </div>
   <button class="header-btn" id="themeBtn" title="主题"></button>
   <div class="header-logo" id="headerLogo">

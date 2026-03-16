@@ -5,7 +5,7 @@ import { CHAT_SESSIONS_FILE, CHAT_IMAGES_DIR } from '../lib/config.mjs';
 import { spawnTool } from './process-runner.mjs';
 import { loadHistory, appendEvent } from './history.mjs';
 import { messageEvent, statusEvent, compactEvent } from './normalizer.mjs';
-import { triggerSummary, removeSidebarEntry, generateCompactSummary } from './summarizer.mjs';
+import { triggerSummary, removeSidebarEntry, generateCompactSummary, generateAutoTitle } from './summarizer.mjs';
 
 const MIME_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
 
@@ -244,6 +244,20 @@ export function sendMessage(sessionId, text, images, options = {}) {
   appendEvent(sessionId, userEvt);
   broadcast(sessionId, { type: 'event', event: userEvt });
 
+  // Auto-generate title if session has no name and this is the first message
+  if (!session.name) {
+    const existingHistory = loadHistory(sessionId);
+    // existingHistory includes the message we just appended, so first message means length === 1
+    if (existingHistory.length <= 1) {
+      generateAutoTitle(text).then(title => {
+        if (title) {
+          console.log(`[session-mgr] Auto-title for ${sessionId.slice(0,8)}: "${title}"`);
+          renameSession(sessionId, title);
+        }
+      }).catch(() => {});
+    }
+  }
+
   let live = liveSessions.get(sessionId);
   if (!live) {
     live = { status: 'idle', runner: null, listeners: new Set() };
@@ -259,9 +273,13 @@ export function sendMessage(sessionId, text, images, options = {}) {
     live.codexThreadId = undefined;
   }
 
-  // If a process is still running, cancel it (all modes are oneshot now)
+  // If a process is still running, this is an "interrupt & send" — cancel old process
+  let wasInterrupted = false;
   if (live.runner) {
-    console.log(`[session-mgr] Cancelling existing runner`);
+    wasInterrupted = true;
+    console.log(`[session-mgr] Interrupting existing runner for new message`);
+    // Increment epoch so the stale onExit is ignored
+    live.runEpoch = (live.runEpoch || 0) + 1;
     // Capture session/thread IDs before killing
     if (live.runner.claudeSessionId) {
       live.claudeSessionId = live.runner.claudeSessionId;
@@ -272,6 +290,10 @@ export function sendMessage(sessionId, text, images, options = {}) {
     live.runner.cancel();
     live.runner = null;
   }
+
+  // Epoch counter: guards onExit from stale processes overwriting new runner state
+  live.runEpoch = (live.runEpoch || 0) + 1;
+  const myEpoch = live.runEpoch;
 
   live.status = 'running';
   broadcast(sessionId, { type: 'session', session: { ...session, status: 'running' } });
@@ -284,8 +306,14 @@ export function sendMessage(sessionId, text, images, options = {}) {
   };
 
   const onExit = (code) => {
-    console.log(`[session-mgr] onExit session=${sessionId.slice(0,8)} code=${code}`);
+    console.log(`[session-mgr] onExit session=${sessionId.slice(0,8)} code=${code} epoch=${myEpoch}`);
     const l = liveSessions.get(sessionId);
+
+    // If a newer sendMessage has started a new process, this onExit is stale — skip cleanup
+    if (l && l.runEpoch !== myEpoch) {
+      console.log(`[session-mgr] Stale onExit (epoch ${myEpoch} vs current ${l.runEpoch}), skipping`);
+      return;
+    }
 
     // Auto-retry: if --resume failed (non-zero exit, resume was attempted, not already retried),
     // clear the stale claudeSessionId and re-spawn the same message fresh.
@@ -321,13 +349,15 @@ export function sendMessage(sessionId, text, images, options = {}) {
       pendingHooks.delete(sessionId);
       pending.reject(new Error('Session ended before hook was resolved'));
     }
+    // Re-fetch session from disk to pick up any changes (e.g. auto-title rename)
+    const freshSession = getSession(sessionId) || session;
     broadcast(sessionId, {
       type: 'session',
-      session: { ...session, status: 'idle' },
+      session: { ...freshSession, status: 'idle' },
     });
-    broadcastGlobal({ type: 'session', session: { ...session, status: 'idle' } });
+    broadcastGlobal({ type: 'session', session: { ...freshSession, status: 'idle' } });
     // Trigger async sidebar summary (non-blocking, does not affect session flow)
-    triggerSummary({ id: sessionId, folder: session.folder, name: session.name || '' });
+    triggerSummary({ id: sessionId, folder: freshSession.folder, name: freshSession.name || '' });
 
   };
 
@@ -381,8 +411,20 @@ export function sendMessage(sessionId, text, images, options = {}) {
     } catch {}
   }
 
+  // When interrupting a running task, wrap the prompt so the model handles
+  // the interrupt then continues the original task (via --resume context).
+  let promptText = text;
+  if (wasInterrupted) {
+    promptText = [
+      '[INTERRUPT from user — the previous task was interrupted. Handle this message first, then continue the task you were working on. If this message is a correction or clarification, apply it to the ongoing task. Check your conversation history to recall what you were doing.]',
+      '',
+      text,
+    ].join('\n');
+    console.log(`[session-mgr] Wrapped interrupt prompt for session ${sessionId.slice(0,8)}`);
+  }
+
   console.log(`[session-mgr] Spawning tool=${effectiveTool} folder=${session.folder} thinking=${!!options.thinking}`);
-  const runner = spawnTool(effectiveTool, session.folder, text, onEvent, onExit, spawnOptions);
+  const runner = spawnTool(effectiveTool, session.folder, promptText, onEvent, onExit, spawnOptions);
   live.runner = runner;
 }
 
@@ -392,14 +434,34 @@ export function sendMessage(sessionId, text, images, options = {}) {
 export function cancelSession(sessionId) {
   const live = liveSessions.get(sessionId);
   if (live?.runner) {
+    // Increment epoch so the stale onExit from the killed process is ignored
+    // (prevents auto-retry from re-spawning with the old message)
+    live.runEpoch = (live.runEpoch || 0) + 1;
+    // Capture session/thread IDs before killing so next message can --resume
+    if (live.runner.claudeSessionId) {
+      live.claudeSessionId = live.runner.claudeSessionId;
+      console.log(`[session-mgr] Cancel: saved claudeSessionId=${live.claudeSessionId} for session ${sessionId.slice(0,8)}`);
+      unregisterClaudeSession(live.runner.claudeSessionId);
+    }
+    if (live.runner.codexThreadId) {
+      live.codexThreadId = live.runner.codexThreadId;
+      console.log(`[session-mgr] Cancel: saved codexThreadId=${live.codexThreadId} for session ${sessionId.slice(0,8)}`);
+    }
     live.runner.cancel();
     live.runner = null;
     live.status = 'idle';
+    // Reject any pending hook so the HTTP long-poll can unblock
+    const pending = pendingHooks.get(sessionId);
+    if (pending) {
+      pendingHooks.delete(sessionId);
+      pending.reject(new Error('Session cancelled by user'));
+    }
     const session = getSession(sessionId);
     broadcast(sessionId, {
       type: 'session',
       session: { ...session, status: 'idle' },
     });
+    broadcastGlobal({ type: 'session', session: { ...session, status: 'idle' } });
     const evt = statusEvent('cancelled');
     appendEvent(sessionId, evt);
     broadcast(sessionId, { type: 'event', event: evt });

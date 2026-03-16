@@ -1,8 +1,41 @@
+import { readFileSync, existsSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import {
   messageEvent, toolUseEvent, toolResultEvent,
   reasoningEvent, statusEvent, usageEvent, sessionErrorEvent,
   questionEvent, planApprovalEvent,
 } from '../normalizer.mjs';
+
+/**
+ * Load shared profile files from ~/.huiyuanclaw/ and return a formatted string
+ * to inject via --append-system-prompt. Returns empty string if the dir is absent.
+ */
+function loadSharedProfile() {
+  const base = join(homedir(), '.huiyuanclaw');
+  if (!existsSync(base)) return '';
+
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10); // UTC+8
+  const files = [
+    { label: 'USER.md', path: join(base, 'USER.md') },
+    { label: 'SOUL.md', path: join(base, 'SOUL.md') },
+    { label: 'TOOLS.md', path: join(base, 'TOOLS.md') },
+    { label: 'MEMORY.md', path: join(base, 'MEMORY.md') },
+    { label: `Daily Log (${today})`, path: join(base, 'memory', `${today}.md`) },
+  ];
+
+  const sections = [];
+  for (const { label, path } of files) {
+    if (!existsSync(path)) continue;
+    try {
+      const content = readFileSync(path, 'utf8').trim();
+      if (content) sections.push(`--- ${label} ---\n${content}`);
+    } catch {}
+  }
+
+  if (sections.length === 0) return '';
+  return `=== huiyuanClaw Shared Profile (auto-loaded) ===\n\n${sections.join('\n\n')}`;
+}
 
 // Interactive tools that need user input — their tool_result (exit 1) should be suppressed
 const INTERACTIVE_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
@@ -193,6 +226,12 @@ export function buildClaudeArgs(prompt, options = {}) {
     args.push('--model', options.model);
   } else if (options.thinking) {
     args.push('--model', 'sonnet');
+  }
+
+  // Inject shared profile files into the system prompt
+  const profile = loadSharedProfile();
+  if (profile) {
+    args.push('--append-system-prompt', profile);
   }
 
   return args;

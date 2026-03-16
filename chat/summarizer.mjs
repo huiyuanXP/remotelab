@@ -325,6 +325,75 @@ export async function generateCompactSummary(sessionId, folder) {
   });
 }
 
+/**
+ * Generate a short title for a session based on the user's first message.
+ * Uses Haiku for speed and cost efficiency.
+ * Returns the title string, or null on failure.
+ */
+export async function generateAutoTitle(userMessage) {
+  const prompt = [
+    'Generate a short title (3-8 words, no quotes) for a coding session based on this user message:',
+    '',
+    userMessage.slice(0, 500),
+    '',
+    'Reply with ONLY the title text, nothing else.',
+  ].join('\n');
+
+  const claudeCmd = resolveClaudeCmd();
+  const subEnv = { ...process.env, PATH: fullPath };
+  delete subEnv.CLAUDECODE;
+  delete subEnv.CLAUDE_CODE_ENTRYPOINT;
+
+  try {
+    const modelText = await new Promise((resolve, reject) => {
+      const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose',
+        '--dangerously-skip-permissions', '--model', 'haiku'];
+      const proc = spawn(claudeCmd, args, {
+        env: subEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      proc.stdin.end();
+
+      const adapter = createClaudeAdapter();
+      const rl = createInterface({ input: proc.stdout });
+      const textParts = [];
+
+      rl.on('line', (line) => {
+        const events = adapter.parseLine(line);
+        for (const evt of events) {
+          if (evt.type === 'message' && evt.role === 'assistant') {
+            textParts.push(evt.content || '');
+          }
+        }
+      });
+
+      proc.stderr.on('data', () => {}); // suppress stderr
+
+      proc.on('error', reject);
+      proc.on('exit', (code) => {
+        const remaining = adapter.flush();
+        for (const evt of remaining) {
+          if (evt.type === 'message' && evt.role === 'assistant') textParts.push(evt.content || '');
+        }
+        resolve(textParts.join(''));
+      });
+
+      // Timeout after 30s
+      setTimeout(() => { try { proc.kill(); } catch {} }, 30000);
+    });
+
+    const title = modelText.replace(/^["']|["']$/g, '').trim();
+    if (title && title.length > 0 && title.length < 100) {
+      return title;
+    }
+    console.error(`[summarizer] Auto-title bad output: ${modelText.slice(0, 100)}`);
+    return null;
+  } catch (err) {
+    console.error(`[summarizer] Auto-title failed: ${err.message}`);
+    return null;
+  }
+}
+
 export function removeSidebarEntry(sessionId) {
   const state = loadSidebarState();
   if (state.sessions[sessionId]) {

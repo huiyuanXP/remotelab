@@ -42,6 +42,7 @@
   const headerCtxFill = document.getElementById("headerCtxFill");
   const headerCtxPct = document.getElementById("headerCtxPct");
   const headerCtxCompress = document.getElementById("headerCtxCompress");
+  const headerCtxClear = document.getElementById("headerCtxClear");
   const floatingLogo = document.getElementById("floatingLogo");
   const headerLogo = document.getElementById("headerLogo");
 
@@ -58,6 +59,7 @@
   let lastSidebarUpdatedAt = {}; // sessionId -> last known updatedAt
 
   let sessionLastMessage = {}; // sessionId -> last sent message text
+  let pendingClearedBanner = false; // show cleared banner on next history load
 
   let selectedTool = localStorage.getItem("selectedTool") || null;
   let selectedModel = localStorage.getItem("selectedModel") || "";
@@ -323,7 +325,12 @@
         break;
 
       case "history":
-        clearMessages();
+        if (pendingClearedBanner) {
+          pendingClearedBanner = false;
+          renderSessionClearedBanner();
+        } else {
+          clearMessages();
+        }
         if (msg.events && msg.events.length > 0) {
           currentHistory = [...msg.events];
           for (const evt of msg.events) renderEvent(evt, false);
@@ -771,6 +778,7 @@
     } else {
       headerCtxCompress.classList.remove("visible");
     }
+    headerCtxClear.classList.add("visible");
 
     // Shrink the title to give space to the bar
     headerTitle.style.flex = "0 0 auto";
@@ -781,6 +789,8 @@
     headerCtx.classList.remove("visible");
     headerCtxCompress.disabled = false;
     headerCtxCompress.textContent = "Compress";
+    headerCtxClear.disabled = false;
+    headerCtxClear.textContent = "Clear";
     headerTitle.style.flex = "";
   }
 
@@ -789,6 +799,27 @@
     wsSend({ action: "compact" });
     headerCtxCompress.disabled = true;
     headerCtxCompress.textContent = "Compressing…";
+  });
+
+  headerCtxClear.addEventListener("click", () => {
+    if (!currentSessionId) return;
+    const sess = sessions.find((s) => s.id === currentSessionId);
+    if (!sess) return;
+    if (!confirm("清空这个 Session？会创建一个全新的会话，AI 不会继承之前的对话内容。")) return;
+    headerCtxClear.disabled = true;
+    headerCtxClear.textContent = "Clearing…";
+    pendingClearedBanner = true;
+    wsSend({ action: "create", folder: sess.folder, tool: sess.tool || selectedTool, name: sess.name || "" });
+    const handler = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === "session" && msg.session) {
+        ws.removeEventListener("message", handler);
+        attachSession(msg.session.id, msg.session);
+        wsSend({ action: "list" });
+      }
+    };
+    ws.addEventListener("message", handler);
   });
 
   function renderUsage(evt) {
@@ -809,6 +840,17 @@
     div.appendChild(tokens);
 
     messagesInner.appendChild(div);
+  }
+
+  function renderSessionClearedBanner() {
+    if (emptyState.parentNode === messagesInner) emptyState.remove();
+    const banner = document.createElement("div");
+    banner.className = "session-cleared-banner";
+    banner.innerHTML = `
+      <div class="session-cleared-icon">🗑</div>
+      <div class="session-cleared-title">Session 已清空</div>
+      <div class="session-cleared-desc">以上消息已被清空，AI 不会继承上方任何对话内容。<br>这是一个全新的会话，请重新开始。</div>`;
+    messagesInner.appendChild(banner);
   }
 
   function renderCompactDivider(evt) {
@@ -1424,6 +1466,12 @@
     currentSessionId = id;
     clearMessages();
     resetHeaderContext();
+    // Show Clear button immediately once a session is active
+    headerCtxClear.classList.add("visible");
+    headerCtxClear.disabled = false;
+    headerCtxClear.textContent = "Clear";
+    headerTitle.style.flex = "0 0 auto";
+    headerCtx.classList.add("visible");
     wsSend({ action: "attach", sessionId: id });
 
     const displayName =
