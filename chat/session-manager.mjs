@@ -140,6 +140,7 @@ function persistSessionIds(sessionId, claudeSessionId, codexThreadId) {
 // ---- Session Labels ----
 
 const DEFAULT_LABELS = [
+  { id: 'running', name: 'Running', color: '#16a34a' },
   { id: 'pending-review', name: 'Pending Review', color: '#f59e0b' },
   { id: 'planned', name: 'Planned', color: '#8b5cf6' },
   { id: 'done', name: 'Done', color: '#22c55e' },
@@ -438,14 +439,14 @@ export function sendMessage(sessionId, text, images, options = {}) {
   const myEpoch = live.runEpoch;
 
   live.status = 'running';
-  // System-level: auto-clear label when session enters running state
-  if (session.label) {
+  // System-level: auto-set "running" label when session receives a message
+  {
     const metas = loadSessionsMeta();
     const idx = metas.findIndex(m => m.id === sessionId);
     if (idx !== -1) {
-      delete metas[idx].label;
+      metas[idx].label = 'running';
       saveSessionsMeta(metas);
-      session = metas[idx]; // refresh session object after label removal
+      session = metas[idx];
     }
   }
   broadcast(sessionId, { type: 'session', session: { ...session, status: 'running' } });
