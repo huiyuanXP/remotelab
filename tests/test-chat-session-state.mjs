@@ -237,6 +237,158 @@ assert.equal(savedPendingCalls, 0, 'frontend should not persist pending-send sta
 assert.equal(clearedPendingCalls, 0, 'frontend should not clear any pending-send cache because none exists');
 assert.equal(attentionRefreshes, 0, 'frontend should not synthesize unread or send-failure attention state');
 
+const archiveContext = createBaseContext();
+let archiveFilterRefreshes = 0;
+let archiveRequest = null;
+const archiveAppliedStates = [];
+
+archiveContext.currentSessionId = 'session-archive';
+archiveContext.sessions = [
+  {
+    id: 'session-newer',
+    activity: createSessionActivity(),
+    updatedAt: '2026-03-12T09:00:00.000Z',
+  },
+  {
+    id: 'session-archive',
+    activity: createSessionActivity(),
+    pinned: true,
+    updatedAt: '2026-03-12T08:00:00.000Z',
+  },
+];
+archiveContext.sortSessionsInPlace = () => {
+  archiveContext.sessions.sort((a, b) => (
+    Number(b?.pinned === true) - Number(a?.pinned === true)
+    || String(b?.lastEventAt || b?.updatedAt || b?.created || '').localeCompare(
+      String(a?.lastEventAt || a?.updatedAt || a?.created || ''),
+    )
+  ));
+};
+archiveContext.refreshAppCatalog = () => {
+  archiveFilterRefreshes += 1;
+};
+archiveContext.renderSessionList = () => {};
+archiveContext.applyAttachedSessionState = (id, session) => {
+  archiveAppliedStates.push({
+    id,
+    archived: session?.archived === true,
+    pinned: session?.pinned === true,
+  });
+};
+archiveContext.fetchSessionsList = async () => archiveContext.sessions;
+archiveContext.refreshCurrentSession = async () => null;
+archiveContext.refreshSidebarSession = async () => null;
+archiveContext.fetchJsonOrRedirect = async (url, options = {}) => {
+  archiveRequest = {
+    url,
+    options,
+    optimisticSessions: archiveContext.sessions.map((session) => ({ ...session })),
+    attachedStates: archiveAppliedStates.slice(),
+  };
+  return {
+    session: {
+      id: 'session-archive',
+      activity: createSessionActivity(),
+      archived: true,
+      archivedAt: '2026-03-12T10:00:00.000Z',
+      updatedAt: '2026-03-12T08:00:00.000Z',
+    },
+  };
+};
+archiveContext.upsertSession = (value) => {
+  const index = archiveContext.sessions.findIndex((session) => session.id === value.id);
+  if (index === -1) {
+    archiveContext.sessions.push(value);
+  } else {
+    archiveContext.sessions[index] = value;
+  }
+  return value;
+};
+
+vm.runInNewContext(dispatchActionSnippet, archiveContext, {
+  filename: 'chat-dispatch-action-runtime.js',
+});
+
+const archiveAccepted = await archiveContext.dispatchAction({ action: 'archive', sessionId: 'session-archive' });
+assert.equal(archiveAccepted, true, 'archive should resolve successfully after server acceptance');
+assert.equal(archiveRequest?.url, '/api/sessions/session-archive');
+assert.match(String(archiveRequest?.options?.body || ''), /"archived":true/);
+assert.equal(
+  archiveRequest?.optimisticSessions.find((session) => session.id === 'session-archive')?.archived,
+  true,
+  'archive should hide the session from the active list before the request resolves',
+);
+assert.equal(
+  archiveRequest?.optimisticSessions.find((session) => session.id === 'session-archive')?.pinned,
+  undefined,
+  'archive should immediately clear the pinned state in the optimistic sidebar model',
+);
+assert.deepEqual(
+  archiveRequest?.attachedStates,
+  [{ id: 'session-archive', archived: true, pinned: false }],
+  'archiving the current session should update the attached view immediately',
+);
+assert.equal(archiveFilterRefreshes, 1, 'archive should refresh sidebar filter state during the optimistic update');
+
+const archiveFailureContext = createBaseContext();
+const archiveFailureAppliedStates = [];
+
+archiveFailureContext.console = { ...console, error() {} };
+archiveFailureContext.currentSessionId = 'session-failure';
+archiveFailureContext.sessions = [{
+  id: 'session-failure',
+  activity: createSessionActivity(),
+  pinned: true,
+  updatedAt: '2026-03-12T08:00:00.000Z',
+}];
+archiveFailureContext.sortSessionsInPlace = () => {};
+archiveFailureContext.refreshAppCatalog = () => {};
+archiveFailureContext.renderSessionList = () => {};
+archiveFailureContext.applyAttachedSessionState = (id, session) => {
+  archiveFailureAppliedStates.push({
+    id,
+    archived: session?.archived === true,
+    pinned: session?.pinned === true,
+  });
+};
+archiveFailureContext.fetchSessionsList = async () => archiveFailureContext.sessions;
+archiveFailureContext.refreshCurrentSession = async () => null;
+archiveFailureContext.refreshSidebarSession = async () => null;
+archiveFailureContext.fetchJsonOrRedirect = async () => {
+  assert.equal(
+    archiveFailureContext.sessions.find((session) => session.id === 'session-failure')?.archived,
+    true,
+    'failed archive should still apply the optimistic hidden state before the request rejects',
+  );
+  throw new Error('archive failed');
+};
+archiveFailureContext.upsertSession = (value) => value;
+
+vm.runInNewContext(dispatchActionSnippet, archiveFailureContext, {
+  filename: 'chat-dispatch-action-runtime.js',
+});
+
+const archiveRejected = await archiveFailureContext.dispatchAction({ action: 'archive', sessionId: 'session-failure' });
+assert.equal(archiveRejected, false, 'failed archive should return a failed action result');
+assert.equal(
+  archiveFailureContext.sessions.find((session) => session.id === 'session-failure')?.archived,
+  undefined,
+  'failed archive should restore the pre-click sidebar state',
+);
+assert.equal(
+  archiveFailureContext.sessions.find((session) => session.id === 'session-failure')?.pinned,
+  true,
+  'failed archive should restore the original pin state',
+);
+assert.deepEqual(
+  archiveFailureAppliedStates,
+  [
+    { id: 'session-failure', archived: true, pinned: false },
+    { id: 'session-failure', archived: false, pinned: true },
+  ],
+  'failed archive should roll the attached session view back after the optimistic update',
+);
+
 const attachContext = createBaseContext();
 let attachStatusUpdate = null;
 let queuedPanelSession = null;

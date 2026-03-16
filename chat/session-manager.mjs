@@ -2541,12 +2541,10 @@ export async function setSessionArchived(id, archived = true) {
       session.archived = true;
       delete session.pinned;
       session.archivedAt = nowIso();
-      session.updatedAt = session.archivedAt;
       return true;
     }
     delete session.archived;
     delete session.archivedAt;
-    session.updatedAt = nowIso();
     return true;
   });
 

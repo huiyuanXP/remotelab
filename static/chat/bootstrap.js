@@ -1002,7 +1002,7 @@ if (userFilterSelect) {
 refreshAppCatalog();
 
 function getSessionSortTime(session) {
-  const stamp = session?.updatedAt || session?.created || "";
+  const stamp = session?.lastEventAt || session?.updatedAt || session?.created || "";
   const time = new Date(stamp).getTime();
   return Number.isFinite(time) ? time : 0;
 }
@@ -1019,7 +1019,7 @@ function sortSessionsInPlace() {
 }
 
 function getArchivedSessionSortTime(session) {
-  const stamp = session?.archivedAt || session?.updatedAt || session?.created || "";
+  const stamp = session?.archivedAt || session?.lastEventAt || session?.updatedAt || session?.created || "";
   const time = new Date(stamp).getTime();
   return Number.isFinite(time) ? time : 0;
 }

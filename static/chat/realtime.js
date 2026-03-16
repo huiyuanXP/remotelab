@@ -120,21 +120,30 @@ async function dispatchAction(msg) {
       }
       case "archive":
       case "unarchive": {
-        const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(msg.sessionId)}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ archived: msg.action === "archive" }),
-        });
-        if (data.session) {
-          const session = upsertSession(data.session) || data.session;
-          renderSessionList();
-          if (currentSessionId === msg.sessionId) {
-            applyAttachedSessionState(msg.sessionId, session);
+        const shouldArchive = msg.action === "archive";
+        const previousSession = applyOptimisticSessionArchiveState(msg.sessionId, shouldArchive);
+        try {
+          const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(msg.sessionId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ archived: shouldArchive }),
+          });
+          if (data.session) {
+            const session = upsertSession(data.session) || data.session;
+            renderSessionList();
+            if (currentSessionId === msg.sessionId) {
+              applyAttachedSessionState(msg.sessionId, session);
+            }
+          } else if (currentSessionId === msg.sessionId) {
+            await refreshCurrentSession();
+          } else {
+            await fetchSessionsList();
           }
-        } else if (currentSessionId === msg.sessionId) {
-          await refreshCurrentSession();
-        } else {
-          await fetchSessionsList();
+        } catch (error) {
+          if (previousSession) {
+            restoreOptimisticSessionSnapshot(previousSession);
+          }
+          throw error;
         }
         return true;
       }
@@ -259,6 +268,54 @@ async function dispatchAction(msg) {
   } catch (error) {
     console.error("HTTP action failed:", error.message);
     return false;
+  }
+}
+
+function buildOptimisticArchivedSession(session, archived) {
+  if (!session?.id) return null;
+  const next = { ...session };
+  if (archived) {
+    next.archived = true;
+    next.archivedAt = next.archivedAt || new Date().toISOString();
+    delete next.pinned;
+    return next;
+  }
+  delete next.archived;
+  delete next.archivedAt;
+  return next;
+}
+
+function applyOptimisticSessionArchiveState(sessionId, archived) {
+  const index = sessions.findIndex((session) => session.id === sessionId);
+  if (index === -1) return null;
+  const previous = sessions[index];
+  const next = buildOptimisticArchivedSession(previous, archived);
+  if (!next) return null;
+  sessions[index] = next;
+  sortSessionsInPlace();
+  refreshAppCatalog();
+  if (currentSessionId === sessionId) {
+    applyAttachedSessionState(sessionId, next);
+  } else {
+    renderSessionList();
+  }
+  return previous;
+}
+
+function restoreOptimisticSessionSnapshot(session) {
+  if (!session?.id) return;
+  const index = sessions.findIndex((entry) => entry.id === session.id);
+  if (index === -1) {
+    sessions.push(session);
+  } else {
+    sessions[index] = session;
+  }
+  sortSessionsInPlace();
+  refreshAppCatalog();
+  if (currentSessionId === session.id) {
+    applyAttachedSessionState(session.id, session);
+  } else {
+    renderSessionList();
   }
 }
 

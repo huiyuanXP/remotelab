@@ -66,6 +66,13 @@ const restored = await setSessionArchived(older.id, false);
 assert.equal(restored?.archived, undefined, 'restoring should clear the archived flag');
 assert.equal(restored?.pinned, undefined, 'restoring should not silently re-pin the session');
 
+listed = await listSessions();
+assert.deepEqual(
+  listed.slice(0, 2).map((session) => session.id),
+  [newer.id, older.id],
+  'restoring should preserve the prior recency order instead of bumping the session to the top',
+);
+
 const repinnedAfterRestore = await setSessionPinned(older.id, true);
 assert.equal(repinnedAfterRestore?.pinned, true, 'restored sessions can be pinned again');
 
