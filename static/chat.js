@@ -1413,6 +1413,11 @@
       if (!groups.has(folder)) groups.set(folder, []);
       groups.get(folder).push(s);
     }
+    // Keep folders visible even when all their sessions are archived
+    for (const s of archivedSessions) {
+      const folder = s.folder || "?";
+      if (!groups.has(folder)) groups.set(folder, []);
+    }
 
     let sortedFolders;
     if (allowDrag) {
@@ -1732,10 +1737,11 @@
           <div class="session-item-actions">
             <button class="session-action-btn unarchive" title="Unarchive" data-id="${s.id}">&#8862;</button>
             <button class="session-action-btn del" title="Delete" data-id="${s.id}">&times;</button>
+            <button class="session-menu-btn" title="More" data-id="${s.id}">&#8942;</button>
           </div>`;
 
         div.addEventListener("click", (e) => {
-          if (e.target.classList.contains("unarchive") || e.target.classList.contains("del")) return;
+          if (e.target.classList.contains("unarchive") || e.target.classList.contains("del") || e.target.classList.contains("session-menu-btn")) return;
           attachSession(s.id, s);
           if (!isDesktop) closeSidebarFn();
         });
@@ -1748,6 +1754,10 @@
           if (confirm("Delete this session?")) {
             wsSend({ action: "delete", sessionId: s.id });
           }
+        });
+        div.querySelector(".session-menu-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          showArchivedDropdown(e.currentTarget, s);
         });
         container.appendChild(div);
       }
@@ -1975,6 +1985,61 @@
       wsSend({ action: "archive", sessionId: session.id, archived: true });
     });
 
+    dropdown.querySelector(".del-action").addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdown.remove();
+      if (confirm("Delete this session?")) {
+        wsSend({ action: "delete", sessionId: session.id });
+      }
+    });
+
+    function onOutsideEvent(e) {
+      if (!dropdown.isConnected) {
+        document.removeEventListener("click", onOutsideEvent, true);
+        document.removeEventListener("touchstart", onOutsideEvent, true);
+        return;
+      }
+      if (!dropdown.contains(e.target) && e.target !== btn) {
+        dropdown.remove();
+        document.removeEventListener("click", onOutsideEvent, true);
+        document.removeEventListener("touchstart", onOutsideEvent, true);
+      }
+    }
+    setTimeout(() => {
+      document.addEventListener("click", onOutsideEvent, true);
+      document.addEventListener("touchstart", onOutsideEvent, true);
+    }, 0);
+  }
+
+  function showArchivedDropdown(btn, session) {
+    const existing = document.querySelector(".session-dropdown");
+    if (existing) {
+      const wasSameBtn = existing._triggerBtn === btn;
+      existing.remove();
+      if (wasSameBtn) return;
+    }
+    const dropdown = document.createElement("div");
+    dropdown.className = "session-dropdown";
+    dropdown._triggerBtn = btn;
+    dropdown.innerHTML = `
+      <div class="session-dropdown-item unarchive-action">&#8862;&nbsp; Unarchive</div>
+      <div class="session-dropdown-item del-action del">&#215;&nbsp; Delete</div>`;
+    document.body.appendChild(dropdown);
+
+    const btnRect = btn.getBoundingClientRect();
+    const dRect = dropdown.getBoundingClientRect();
+    let top = btnRect.bottom + 4;
+    let left = btnRect.right - dRect.width;
+    if (left < 4) left = 4;
+    if (top + dRect.height > window.innerHeight - 8) top = btnRect.top - dRect.height - 4;
+    dropdown.style.top = top + "px";
+    dropdown.style.left = left + "px";
+
+    dropdown.querySelector(".unarchive-action").addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdown.remove();
+      wsSend({ action: "archive", sessionId: session.id, archived: false });
+    });
     dropdown.querySelector(".del-action").addEventListener("click", (e) => {
       e.stopPropagation();
       dropdown.remove();
