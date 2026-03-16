@@ -191,7 +191,7 @@
     { id: "opus[1m]", name: "Opus 1M" },
   ];
 
-  function populateModelSelect(models, tool, serverDefault) {
+  function populateModelSelect(models, tool, serverDefault, sessionModel) {
     const storageKey = `selectedModel_${tool || "claude"}`;
     const saved = localStorage.getItem(storageKey);
 
@@ -202,7 +202,9 @@
       opt.textContent = m.name;
       inlineModelSelect.appendChild(opt);
     }
-    const preferred = saved || serverDefault;
+    // Priority: session-persisted > localStorage > server default > first item
+    const preferred = (sessionModel && models.some((m) => m.id === sessionModel) ? sessionModel : null)
+      || saved || serverDefault;
     if (preferred && models.some((m) => m.id === preferred)) {
       inlineModelSelect.value = preferred;
       selectedModel = preferred;
@@ -213,20 +215,20 @@
     }
   }
 
-  async function loadInlineModels(tool) {
+  async function loadInlineModels(tool, sessionModel) {
     const activeTool = tool || selectedTool;
     if (activeTool === "codex") {
       try {
         const res = await fetch(`/api/models?tool=codex`);
         const data = await res.json();
         if (data.models && data.models.length > 0) {
-          populateModelSelect(data.models, activeTool, data.default);
+          populateModelSelect(data.models, activeTool, data.default, sessionModel);
           return;
         }
       } catch {}
     }
     // Claude (or codex fetch failed): use hardcoded list
-    populateModelSelect(CLAUDE_MODELS, activeTool, null);
+    populateModelSelect(CLAUDE_MODELS, activeTool, null, sessionModel);
   }
 
   inlineModelSelect.addEventListener("change", () => {
@@ -1222,7 +1224,7 @@
       inlineToolSelect.value = session.tool;
       selectedTool = session.tool;
       localStorage.setItem("selectedTool", selectedTool);
-      loadInlineModels(selectedTool);
+      loadInlineModels(selectedTool, session.model || null);
     }
 
     msgInput.focus();
@@ -1259,6 +1261,13 @@
   );
   newSessionModal.addEventListener("click", (e) => {
     if (e.target === newSessionModal) newSessionModal.classList.remove("open");
+  });
+
+  folderInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); nameInput.focus(); }
+  });
+  nameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); createSessionBtn.click(); }
   });
 
   createSessionBtn.addEventListener("click", () => {

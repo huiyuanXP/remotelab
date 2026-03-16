@@ -349,6 +349,13 @@ export function sendMessage(sessionId, text, images, options = {}) {
   }
   if (options.model) {
     spawnOptions.model = options.model;
+    // Persist model selection to session metadata so it survives refresh/reattach
+    const metas = loadSessionsMeta();
+    const idx = metas.findIndex(m => m.id === sessionId);
+    if (idx !== -1 && metas[idx].model !== options.model) {
+      metas[idx].model = options.model;
+      saveSessionsMeta(metas);
+    }
   }
   // Register Claude's session_id → our sessionId mapping when Claude announces itself
   spawnOptions.onClaudeSessionId = (claudeSessionId) => {

@@ -32,3 +32,8 @@ credentials.txt
 
 # Node
 node_modules/
+
+# Local files
+disconnect
+dogfood-output/
+shared/
