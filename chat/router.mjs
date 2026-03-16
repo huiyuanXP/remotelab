@@ -256,7 +256,7 @@ export async function handleRequest(req, res) {
       throw err;
     }
     try {
-      const { folder, tool } = JSON.parse(body);
+      const { folder, tool, name } = JSON.parse(body);
       if (!folder || !tool) {
         console.warn('[router] 400 POST /api/sessions missing folder or tool');
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -272,7 +272,7 @@ export async function handleRequest(req, res) {
         res.end(JSON.stringify({ error: 'Folder does not exist' }));
         return;
       }
-      const session = createSession(resolvedFolder, tool);
+      const session = createSession(resolvedFolder, tool, name || '');
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ session }));
     } catch {

@@ -4,6 +4,7 @@ import {
   createSession, deleteSession, getSession, listSessions,
   subscribe, unsubscribe, sendMessage, cancelSession, getHistory,
   renameSession, resolveHookRequest, compactSession,
+  subscribeGlobal, unsubscribeGlobal,
 } from './session-manager.mjs';
 
 /**
@@ -32,9 +33,27 @@ export function attachWebSocket(server) {
     });
   });
 
+  // Heartbeat: ping all clients every 30s to keep Cloudflare Tunnel alive
+  // and detect zombie connections (no pong response → close)
+  const heartbeat = setInterval(() => {
+    wss.clients.forEach((ws) => {
+      if (ws.isAlive === false) {
+        ws.terminate();
+        return;
+      }
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
+
+  wss.on('close', () => clearInterval(heartbeat));
+
   wss.on('connection', (ws) => {
     let attachedSessionId = null;
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
     console.log('[ws] Client connected');
+    subscribeGlobal(ws);
 
     ws.on('message', (raw) => {
       let msg;
@@ -63,6 +82,7 @@ export function attachWebSocket(server) {
       if (attachedSessionId) {
         unsubscribe(attachedSessionId, ws);
       }
+      unsubscribeGlobal(ws);
     });
   });
 

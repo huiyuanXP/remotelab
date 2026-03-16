@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, readdirSync } from 'fs';
 import { dirname, join } from 'path';
-import { CHAT_SESSIONS_FILE, CHAT_IMAGES_DIR, AUTO_COMPACT_THRESHOLD, CONTEXT_WINDOW_SIZE } from '../lib/config.mjs';
+import { CHAT_SESSIONS_FILE, CHAT_IMAGES_DIR } from '../lib/config.mjs';
 import { spawnTool } from './process-runner.mjs';
 import { loadHistory, appendEvent } from './history.mjs';
 import { messageEvent, statusEvent, compactEvent } from './normalizer.mjs';
@@ -27,6 +27,27 @@ function saveImages(images) {
 // In-memory session registry
 // sessionId -> { id, folder, tool, status, runner, listeners: Set<ws> }
 const liveSessions = new Map();
+
+// Global subscribers: WS clients that receive system-level events
+// (session created, deleted, status changes) regardless of which session they're attached to.
+const globalSubscribers = new Set();
+
+export function subscribeGlobal(ws) {
+  globalSubscribers.add(ws);
+}
+
+export function unsubscribeGlobal(ws) {
+  globalSubscribers.delete(ws);
+}
+
+function broadcastGlobal(msg) {
+  const data = JSON.stringify(msg);
+  for (const ws of globalSubscribers) {
+    try {
+      if (ws.readyState === 1) ws.send(data);
+    } catch {}
+  }
+}
 
 // Maps Claude's internal session_id → RemoteLab sessionId (for hook routing)
 const claudeSessionMap = new Map();
@@ -132,7 +153,10 @@ export function createSession(folder, tool, name = '', options = {}) {
   metas.push(session);
   saveSessionsMeta(metas);
 
-  return { ...session, status: 'idle' };
+  const result = { ...session, status: 'idle' };
+  // Notify all connected clients (e.g. sessions created via REST API or MCP)
+  broadcastGlobal({ type: 'session', session: result });
+  return result;
 }
 
 export function deleteSession(id) {
@@ -148,6 +172,7 @@ export function deleteSession(id) {
   metas.splice(idx, 1);
   saveSessionsMeta(metas);
   removeSidebarEntry(id);
+  broadcastGlobal({ type: 'deleted', sessionId: id });
   return true;
 }
 
@@ -250,6 +275,7 @@ export function sendMessage(sessionId, text, images, options = {}) {
 
   live.status = 'running';
   broadcast(sessionId, { type: 'session', session: { ...session, status: 'running' } });
+  broadcastGlobal({ type: 'session', session: { ...session, status: 'running' } });
 
   const onEvent = (evt) => {
     console.log(`[session-mgr] onEvent session=${sessionId.slice(0,8)} type=${evt.type} content=${(evt.content || evt.toolName || '').slice(0, 80)}`);
@@ -299,16 +325,10 @@ export function sendMessage(sessionId, text, images, options = {}) {
       type: 'session',
       session: { ...session, status: 'idle' },
     });
+    broadcastGlobal({ type: 'session', session: { ...session, status: 'idle' } });
     // Trigger async sidebar summary (non-blocking, does not affect session flow)
     triggerSummary({ id: sessionId, folder: session.folder, name: session.name || '' });
 
-    // Auto-compact: if context is near limit, trigger compaction
-    if (code === 0 && shouldAutoCompact(sessionId)) {
-      console.log(`[session-mgr] Context threshold reached for ${sessionId.slice(0,8)}, auto-compacting`);
-      compactSession(sessionId).catch(err => {
-        console.error(`[session-mgr] Auto-compact failed for ${sessionId.slice(0,8)}: ${err.message}`);
-      });
-    }
   };
 
   const spawnOptions = {};
@@ -334,6 +354,25 @@ export function sendMessage(sessionId, text, images, options = {}) {
   spawnOptions.onClaudeSessionId = (claudeSessionId) => {
     registerClaudeSession(claudeSessionId, sessionId);
   };
+
+  // Log Claude session file size if resuming (helps diagnose slow --resume)
+  if (spawnOptions.claudeSessionId) {
+    const home = process.env.HOME || '';
+    const sessDir = join(home, '.claude', 'projects');
+    try {
+      // Search for the session JSONL file across all project dirs
+      const projects = readdirSync(sessDir);
+      for (const proj of projects) {
+        const sessFile = join(sessDir, proj, '.sessions', spawnOptions.claudeSessionId + '.jsonl');
+        if (existsSync(sessFile)) {
+          const size = statSync(sessFile).size;
+          const sizeKB = (size / 1024).toFixed(1);
+          console.log(`[session-mgr] Claude session file: ${sessFile} (${sizeKB} KB)`);
+          break;
+        }
+      }
+    } catch {}
+  }
 
   console.log(`[session-mgr] Spawning tool=${effectiveTool} folder=${session.folder} thinking=${!!options.thinking}`);
   const runner = spawnTool(effectiveTool, session.folder, text, onEvent, onExit, spawnOptions);
@@ -369,21 +408,6 @@ export function getHistory(sessionId) {
 
 // ---- Auto-compact ----
 
-/**
- * Check if a session's context usage exceeds the auto-compact threshold.
- */
-function shouldAutoCompact(sessionId) {
-  const events = loadHistory(sessionId);
-  // Find the last usage event
-  for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i].type === 'usage') {
-      const u = events[i];
-      const total = (u.inputTokens || 0) + (u.cacheCreationTokens || 0) + (u.cacheReadTokens || 0);
-      return total >= CONTEXT_WINDOW_SIZE * AUTO_COMPACT_THRESHOLD;
-    }
-  }
-  return false;
-}
 
 /**
  * Auto-compact a session: generate summary, create new session, seamlessly switch listeners.
