@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, readdirSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
-import { CHAT_SESSIONS_FILE, CHAT_IMAGES_DIR, INTERRUPTED_SESSIONS_FILE } from '../lib/config.mjs';
+import { CHAT_SESSIONS_FILE, CHAT_IMAGES_DIR, INTERRUPTED_SESSIONS_FILE, SESSION_LABELS_FILE } from '../lib/config.mjs';
 import { spawnTool } from './process-runner.mjs';
 import { loadHistory, appendEvent } from './history.mjs';
 import { messageEvent, statusEvent, compactEvent, restartInterruptEvent, restartResumeEvent } from './normalizer.mjs';
@@ -137,6 +137,89 @@ function persistSessionIds(sessionId, claudeSessionId, codexThreadId) {
   saveSessionsMeta(metas);
 }
 
+// ---- Session Labels ----
+
+const DEFAULT_LABELS = [
+  { id: 'pending-review', name: 'Pending Review', color: '#f59e0b' },
+  { id: 'planned', name: 'Planned', color: '#8b5cf6' },
+  { id: 'done', name: 'Done', color: '#22c55e' },
+];
+
+function loadLabels() {
+  try {
+    if (!existsSync(SESSION_LABELS_FILE)) {
+      saveLabels(DEFAULT_LABELS);
+      return [...DEFAULT_LABELS];
+    }
+    return JSON.parse(readFileSync(SESSION_LABELS_FILE, 'utf8'));
+  } catch {
+    return [...DEFAULT_LABELS];
+  }
+}
+
+function saveLabels(labels) {
+  const dir = dirname(SESSION_LABELS_FILE);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(SESSION_LABELS_FILE, JSON.stringify(labels, null, 2), 'utf8');
+}
+
+export function getLabels() {
+  return loadLabels();
+}
+
+export function addLabel(label) {
+  const labels = loadLabels();
+  labels.push(label);
+  saveLabels(labels);
+  return label;
+}
+
+export function removeLabel(labelId) {
+  const labels = loadLabels();
+  const idx = labels.findIndex(l => l.id === labelId);
+  if (idx === -1) return false;
+  labels.splice(idx, 1);
+  saveLabels(labels);
+  // Clear this label from any sessions that use it
+  const metas = loadSessionsMeta();
+  let changed = false;
+  for (const m of metas) {
+    if (m.label === labelId) {
+      delete m.label;
+      changed = true;
+    }
+  }
+  if (changed) saveSessionsMeta(metas);
+  return true;
+}
+
+export function updateLabel(labelId, updates) {
+  const labels = loadLabels();
+  const label = labels.find(l => l.id === labelId);
+  if (!label) return null;
+  if (updates.name !== undefined) label.name = updates.name;
+  if (updates.color !== undefined) label.color = updates.color;
+  saveLabels(labels);
+  return label;
+}
+
+export function setSessionLabel(sessionId, labelId) {
+  const metas = loadSessionsMeta();
+  const idx = metas.findIndex(m => m.id === sessionId);
+  if (idx === -1) return null;
+  if (labelId === null || labelId === undefined) {
+    delete metas[idx].label;
+  } else {
+    metas[idx].label = labelId;
+  }
+  saveSessionsMeta(metas);
+  const live = liveSessions.get(sessionId);
+  const updated = { ...metas[idx], status: live ? live.status : 'idle' };
+  broadcast(sessionId, { type: 'session', session: updated });
+  broadcastGlobal({ type: 'session', session: updated });
+  return updated;
+}
+
 // ---- Public API ----
 
 export function listSessions() {
@@ -203,6 +286,23 @@ export function deleteSession(id) {
   return true;
 }
 
+export function archiveSession(id, archived) {
+  const metas = loadSessionsMeta();
+  const idx = metas.findIndex(m => m.id === id);
+  if (idx === -1) return null;
+  if (archived) {
+    metas[idx].archived = true;
+  } else {
+    delete metas[idx].archived;
+  }
+  saveSessionsMeta(metas);
+  const live = liveSessions.get(id);
+  const updated = { ...metas[idx], status: live ? live.status : 'idle' };
+  broadcast(id, { type: 'session', session: updated });
+  broadcastGlobal({ type: 'session', session: updated });
+  return updated;
+}
+
 export function renameSession(id, name) {
   const metas = loadSessionsMeta();
   const idx = metas.findIndex(m => m.id === id);
@@ -261,7 +361,7 @@ function broadcast(sessionId, msg) {
  * Send a user message to a session. Spawns a new process if needed.
  */
 export function sendMessage(sessionId, text, images, options = {}) {
-  const session = getSession(sessionId);
+  let session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
   // Determine effective tool: per-message override or session default
@@ -338,6 +438,16 @@ export function sendMessage(sessionId, text, images, options = {}) {
   const myEpoch = live.runEpoch;
 
   live.status = 'running';
+  // System-level: auto-clear label when session enters running state
+  if (session.label) {
+    const metas = loadSessionsMeta();
+    const idx = metas.findIndex(m => m.id === sessionId);
+    if (idx !== -1) {
+      delete metas[idx].label;
+      saveSessionsMeta(metas);
+      session = metas[idx]; // refresh session object after label removal
+    }
+  }
   broadcast(sessionId, { type: 'session', session: { ...session, status: 'running' } });
   broadcastGlobal({ type: 'session', session: { ...session, status: 'running' } });
 

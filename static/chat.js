@@ -3,6 +3,12 @@
 
   console.log("hello!");
 
+  // Reliable touch detection: add class to <html> so CSS can target it
+  // More reliable than @media (hover: none) on real Android/iOS devices
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    document.documentElement.classList.add('touch-device');
+  }
+
   // ---- Elements ----
   const menuBtn = document.getElementById("menuBtn");
   const sidebarOverlay = document.getElementById("sidebarOverlay");
@@ -57,6 +63,8 @@
   let reconnectTimer = null;
   let sessions = [];
   let workflowSessions = []; // hidden sessions created by workflow engine
+  let archivedSessions = []; // archived sessions (hidden from main list)
+  let showArchived = false;
   let currentHistory = []; // raw events for current session (used by Recover)
   let sessionContextTotal = 0; // latest total context tokens (input + cache)
   let pendingSummary = new Set(); // sessionIds awaiting summary generation
@@ -64,6 +72,7 @@
 
   let sessionLastMessage = {}; // sessionId -> last sent message text
   let pendingClearedBanner = false; // show cleared banner on next history load
+  let sessionLabels = []; // loaded from /api/session-labels
 
   let selectedTool = localStorage.getItem("selectedTool") || null;
   let selectedModel = localStorage.getItem("selectedModel") || "";
@@ -296,15 +305,22 @@
   function handleWsMessage(msg) {
     switch (msg.type) {
       case "sessions":
-        sessions = (msg.sessions || []).filter(s => !s.hidden);
+        sessions = (msg.sessions || []).filter(s => !s.hidden && !s.archived);
         workflowSessions = (msg.sessions || []).filter(s => s.hidden);
+        archivedSessions = (msg.sessions || []).filter(s => !s.hidden && s.archived);
         renderSessionList();
         break;
 
       case "session":
         if (msg.session) {
           const isHidden = !!msg.session.hidden;
-          const targetArr = isHidden ? workflowSessions : sessions;
+          const isArchived = !!msg.session.archived;
+          // Determine target array and remove from any other array to handle moves
+          if (!isHidden) {
+            sessions = sessions.filter(s => s.id !== msg.session.id);
+            archivedSessions = archivedSessions.filter(s => s.id !== msg.session.id);
+          }
+          const targetArr = isHidden ? workflowSessions : (isArchived ? archivedSessions : sessions);
           const prevStatus = sessionStatus;
           sessionStatus = msg.session.status || "idle";
           updateStatus("connected", sessionStatus);
@@ -361,6 +377,7 @@
       case "deleted":
         sessions = sessions.filter((s) => s.id !== msg.sessionId);
         workflowSessions = workflowSessions.filter((s) => s.id !== msg.sessionId);
+        archivedSessions = archivedSessions.filter((s) => s.id !== msg.sessionId);
         if (currentSessionId === msg.sessionId) {
           currentSessionId = null;
           clearMessages();
@@ -1214,6 +1231,166 @@
     return el.innerHTML;
   }
 
+  // ---- Session Labels ----
+  const LABEL_PRESET_COLORS = ['#ef4444','#f59e0b','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+
+  async function loadSessionLabels() {
+    try {
+      const res = await fetch('/api/session-labels');
+      const data = await res.json();
+      sessionLabels = data.labels || [];
+    } catch {}
+  }
+
+  function getLabelById(id) {
+    return sessionLabels.find(l => l.id === id) || null;
+  }
+
+  function closeLabelPopover() {
+    const existing = document.querySelector('.label-popover');
+    if (existing) existing.remove();
+  }
+
+  function showLabelPopover(logoEl, session) {
+    closeLabelPopover();
+    const popover = document.createElement('div');
+    popover.className = 'label-popover';
+
+    const currentLabel = session.label || null;
+
+    // Render label options
+    for (const label of sessionLabels) {
+      const opt = document.createElement('div');
+      opt.className = 'label-option' + (currentLabel === label.id ? ' active' : '');
+      opt.innerHTML = `<span class="label-color-dot" style="background:${label.color}"></span>${esc(label.name)}`;
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wsSend({ action: 'set-label', sessionId: session.id, label: label.id });
+        // Optimistic update
+        const s = sessions.find(x => x.id === session.id);
+        if (s) s.label = label.id;
+        closeLabelPopover();
+        renderSessionList();
+      });
+      popover.appendChild(opt);
+    }
+
+    // Clear option (if has label)
+    if (currentLabel) {
+      const sep = document.createElement('div');
+      sep.className = 'label-separator';
+      popover.appendChild(sep);
+
+      const clearOpt = document.createElement('div');
+      clearOpt.className = 'label-option';
+      clearOpt.innerHTML = `<span class="label-color-dot" style="background:var(--text-muted)"></span>Clear label`;
+      clearOpt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wsSend({ action: 'set-label', sessionId: session.id, label: null });
+        const s = sessions.find(x => x.id === session.id);
+        if (s) delete s.label;
+        closeLabelPopover();
+        renderSessionList();
+      });
+      popover.appendChild(clearOpt);
+    }
+
+    // Separator + Add new label
+    const sep2 = document.createElement('div');
+    sep2.className = 'label-separator';
+    popover.appendChild(sep2);
+
+    const addBtn = document.createElement('div');
+    addBtn.className = 'label-option';
+    addBtn.textContent = '＋ Add new label';
+    let formVisible = false;
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (formVisible) return;
+      formVisible = true;
+      addBtn.style.display = 'none';
+      const form = document.createElement('div');
+      form.className = 'label-add-form';
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.placeholder = 'Label name';
+      form.appendChild(nameInput);
+
+      const colorPicker = document.createElement('div');
+      colorPicker.className = 'color-picker-dots';
+      let selectedColor = LABEL_PRESET_COLORS[0];
+      for (const c of LABEL_PRESET_COLORS) {
+        const dot = document.createElement('span');
+        dot.className = 'color-picker-dot' + (c === selectedColor ? ' selected' : '');
+        dot.style.background = c;
+        dot.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          selectedColor = c;
+          colorPicker.querySelectorAll('.color-picker-dot').forEach(d => d.classList.remove('selected'));
+          dot.classList.add('selected');
+        });
+        colorPicker.appendChild(dot);
+      }
+      form.appendChild(colorPicker);
+
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'label-add-confirm';
+      confirmBtn.textContent = 'Add';
+      confirmBtn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const name = nameInput.value.trim();
+        if (!name) return;
+        try {
+          const res = await fetch('/api/session-labels', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, color: selectedColor }),
+          });
+          const data = await res.json();
+          if (data.label) {
+            sessionLabels.push(data.label);
+            // Also apply it to this session
+            wsSend({ action: 'set-label', sessionId: session.id, label: data.label.id });
+            const s = sessions.find(x => x.id === session.id);
+            if (s) s.label = data.label.id;
+          }
+        } catch {}
+        closeLabelPopover();
+        renderSessionList();
+      });
+      form.appendChild(confirmBtn);
+      popover.appendChild(form);
+      nameInput.focus();
+    });
+    popover.appendChild(addBtn);
+
+    // Position popover next to logo
+    document.body.appendChild(popover);
+    const rect = logoEl.getBoundingClientRect();
+    popover.style.position = 'fixed';
+    popover.style.left = (rect.right + 4) + 'px';
+    popover.style.top = rect.top + 'px';
+    // Keep within viewport
+    requestAnimationFrame(() => {
+      const pr = popover.getBoundingClientRect();
+      if (pr.bottom > window.innerHeight) {
+        popover.style.top = Math.max(4, window.innerHeight - pr.height - 4) + 'px';
+      }
+      if (pr.right > window.innerWidth) {
+        popover.style.left = (rect.left - pr.width - 4) + 'px';
+      }
+    });
+
+    // Close on click outside
+    const closeHandler = (e) => {
+      if (!popover.contains(e.target)) {
+        closeLabelPopover();
+        document.removeEventListener('click', closeHandler, true);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
+  }
+
   // ---- Session list ----
   // Persisted folder order for drag-to-reorder
   let folderOrderList = JSON.parse(localStorage.getItem("folderOrder") || "[]");
@@ -1279,10 +1456,14 @@
       const header = document.createElement("div");
       header.className =
         "folder-group-header" + (collapsedFolders[folder] ? " collapsed" : "");
+      const runningCount = folderSessions.filter(s => s.status === "running").length;
+      const runningBadge = runningCount > 0
+        ? `<span class="folder-running-badge"><svg width="12" height="12" viewBox="0 0 100 100" fill="none"><g stroke="currentColor" stroke-width="6" fill="none"><circle cx="50" cy="28" r="19"/><circle cx="72" cy="50" r="19"/><circle cx="50" cy="72" r="19"/><circle cx="28" cy="50" r="19"/></g><circle cx="50" cy="50" r="5" fill="currentColor"/></svg>${runningCount}</span>`
+        : "";
       header.innerHTML = `${allowDrag ? `<span class="folder-drag-handle" title="Drag to reorder">⠿</span>` : ""}
         <span class="folder-chevron">&#9660;</span>
         <span class="folder-name" title="${esc(shortFolder)}">${esc(folderName)}</span>
-        <span class="folder-count">${folderSessions.length}</span>
+        <span class="folder-count">${folderSessions.length}</span>${runningBadge}
         ${allowAdd ? `<button class="folder-add-btn" title="New session">+</button>` : ""}`;
       header.addEventListener("click", (e) => {
         if (allowAdd && e.target.classList.contains("folder-add-btn")) return;
@@ -1319,16 +1500,22 @@
           "session-item" + (s.id === currentSessionId ? " active" : "");
 
         const displayName = s.name || s.tool || "session";
-        const metaHtml =
-          s.status === "running"
-            ? `<span class="status-running">● running</span>`
-            : s.tool && s.name
-              ? `<span>${esc(s.tool)}</span>`
-              : "";
+        const label = s.label ? getLabelById(s.label) : null;
+        let metaHtml;
+        if (s.status === "running") {
+          metaHtml = `<span class="status-running">● running</span>`;
+        } else if (label) {
+          metaHtml = `<span style="color:${label.color}">● ${esc(label.name)}</span>`;
+        } else if (s.tool && s.name) {
+          metaHtml = `<span>${esc(s.tool)}</span>`;
+        } else {
+          metaHtml = "";
+        }
 
         const logoRunning = s.status === "running" ? " running" : "";
+        const logoColor = (s.status !== "running" && label) ? ` style="color:${label.color}"` : "";
         div.innerHTML = `
-          <div class="session-item-logo${logoRunning}">
+          <div class="session-item-logo${logoRunning}"${logoColor}>
             <svg width="16" height="16" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
               <g stroke="currentColor" stroke-width="6" fill="none">
                 <circle cx="50" cy="28" r="19"/>
@@ -1345,13 +1532,25 @@
           </div>
           <div class="session-item-actions">
             <button class="session-action-btn rename" title="Rename" data-id="${s.id}">&#9998;</button>
+            <button class="session-action-btn archive" title="Archive" data-id="${s.id}">&#8863;</button>
             <button class="session-action-btn del" title="Delete" data-id="${s.id}">&times;</button>
+            <button class="session-menu-btn" title="More" data-id="${s.id}">&#8942;</button>
           </div>`;
+
+        // Logo click → label popover (stop propagation to prevent session switch)
+        const logoEl = div.querySelector('.session-item-logo');
+        logoEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showLabelPopover(logoEl, s);
+        });
 
         div.addEventListener("click", (e) => {
           if (
             e.target.classList.contains("rename") ||
-            e.target.classList.contains("del")
+            e.target.classList.contains("archive") ||
+            e.target.classList.contains("del") ||
+            e.target.classList.contains("session-menu-btn") ||
+            e.target.closest(".session-item-logo")
           )
             return;
           attachSession(s.id, s);
@@ -1363,11 +1562,21 @@
           startRename(div, s);
         });
 
+        div.querySelector(".archive").addEventListener("click", (e) => {
+          e.stopPropagation();
+          wsSend({ action: "archive", sessionId: s.id, archived: true });
+        });
+
         div.querySelector(".del").addEventListener("click", (e) => {
           e.stopPropagation();
           if (confirm("Delete this session?")) {
             wsSend({ action: "delete", sessionId: s.id });
           }
+        });
+
+        div.querySelector(".session-menu-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          showSessionDropdown(e.currentTarget, s, div);
         });
 
         items.appendChild(div);
@@ -1475,6 +1684,77 @@
 
   function renderSessionList() {
     renderSessionItems(sessions, sessionList, { allowAdd: true, allowDrag: true });
+    renderArchivedSection();
+  }
+
+  function renderArchivedSection() {
+    // Remove old archived section if any
+    const old = sessionList.querySelector(".archived-section");
+    if (old) old.remove();
+
+    if (archivedSessions.length === 0) return;
+
+    const section = document.createElement("div");
+    section.className = "archived-section";
+
+    const toggle = document.createElement("div");
+    toggle.className = "archived-section-toggle";
+    toggle.innerHTML = `<span class="archived-chevron">${showArchived ? "&#9660;" : "&#9654;"}</span> ${archivedSessions.length} archived`;
+    toggle.addEventListener("click", () => {
+      showArchived = !showArchived;
+      renderArchivedSection();
+    });
+    section.appendChild(toggle);
+
+    if (showArchived) {
+      const container = document.createElement("div");
+      container.className = "archived-items";
+      for (const s of archivedSessions) {
+        const div = document.createElement("div");
+        div.className = "session-item archived" + (s.id === currentSessionId ? " active" : "");
+        const displayName = s.name || s.tool || "session";
+        div.innerHTML = `
+          <div class="session-item-logo">
+            <svg width="16" height="16" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g stroke="currentColor" stroke-width="6" fill="none">
+                <circle cx="50" cy="28" r="19"/>
+                <circle cx="72" cy="50" r="19"/>
+                <circle cx="50" cy="72" r="19"/>
+                <circle cx="28" cy="50" r="19"/>
+              </g>
+              <circle cx="50" cy="50" r="5" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="session-item-info">
+            <div class="session-item-name">${esc(displayName)}</div>
+            <div class="session-item-meta"><span>${esc(s.tool || "")}</span></div>
+          </div>
+          <div class="session-item-actions">
+            <button class="session-action-btn unarchive" title="Unarchive" data-id="${s.id}">&#8862;</button>
+            <button class="session-action-btn del" title="Delete" data-id="${s.id}">&times;</button>
+          </div>`;
+
+        div.addEventListener("click", (e) => {
+          if (e.target.classList.contains("unarchive") || e.target.classList.contains("del")) return;
+          attachSession(s.id, s);
+          if (!isDesktop) closeSidebarFn();
+        });
+        div.querySelector(".unarchive").addEventListener("click", (e) => {
+          e.stopPropagation();
+          wsSend({ action: "archive", sessionId: s.id, archived: false });
+        });
+        div.querySelector(".del").addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (confirm("Delete this session?")) {
+            wsSend({ action: "delete", sessionId: s.id });
+          }
+        });
+        container.appendChild(div);
+      }
+      section.appendChild(container);
+    }
+
+    sessionList.appendChild(section);
   }
 
   // ---- Task panel (schedules in sidebar tab) ----
@@ -1645,6 +1925,71 @@
         rerender();
       }
     });
+  }
+
+  function showSessionDropdown(btn, session, itemEl) {
+    const existing = document.querySelector(".session-dropdown");
+    if (existing) {
+      const wasSameBtn = existing._triggerBtn === btn;
+      existing.remove();
+      if (wasSameBtn) return;
+    }
+
+    const dropdown = document.createElement("div");
+    dropdown.className = "session-dropdown";
+    dropdown._triggerBtn = btn;
+    dropdown.innerHTML = `
+      <div class="session-dropdown-item rename-action">&#9998;&nbsp; Rename</div>
+      <div class="session-dropdown-item archive-action">&#8863;&nbsp; Archive</div>
+      <div class="session-dropdown-item del-action del">&#215;&nbsp; Delete</div>`;
+    document.body.appendChild(dropdown);
+
+    // Position below button, right-aligned, clamped to viewport
+    const btnRect = btn.getBoundingClientRect();
+    const dRect = dropdown.getBoundingClientRect();
+    let top = btnRect.bottom + 4;
+    let left = btnRect.right - dRect.width;
+    if (left < 4) left = 4;
+    if (top + dRect.height > window.innerHeight - 8) top = btnRect.top - dRect.height - 4;
+    dropdown.style.top = top + "px";
+    dropdown.style.left = left + "px";
+
+    dropdown.querySelector(".rename-action").addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdown.remove();
+      startRename(itemEl, session);
+    });
+
+    dropdown.querySelector(".archive-action").addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdown.remove();
+      wsSend({ action: "archive", sessionId: session.id, archived: true });
+    });
+
+    dropdown.querySelector(".del-action").addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdown.remove();
+      if (confirm("Delete this session?")) {
+        wsSend({ action: "delete", sessionId: session.id });
+      }
+    });
+
+    function onOutsideEvent(e) {
+      if (!dropdown.isConnected) {
+        document.removeEventListener("click", onOutsideEvent, true);
+        document.removeEventListener("touchstart", onOutsideEvent, true);
+        return;
+      }
+      if (!dropdown.contains(e.target) && e.target !== btn) {
+        dropdown.remove();
+        document.removeEventListener("click", onOutsideEvent, true);
+        document.removeEventListener("touchstart", onOutsideEvent, true);
+      }
+    }
+    setTimeout(() => {
+      document.addEventListener("click", onOutsideEvent, true);
+      document.addEventListener("touchstart", onOutsideEvent, true);
+    }, 0);
   }
 
   function attachSession(id, session) {
@@ -2106,11 +2451,10 @@
 
   function renderProgressPanel(state) {
     progressPanel.innerHTML = "";
-    const stateEntries = Object.entries(state.sessions || {});
 
-    // Collect all session IDs to render: those with data + those pending without data yet
+    const stateEntries = Object.entries(state.sessions || {});
     const pendingOnly = [...pendingSummary].filter(id => !state.sessions[id]);
-    const allEntries = [
+    const allActiveEntries = [
       ...stateEntries,
       ...pendingOnly.map(id => {
         const s = sessions.find(sess => sess.id === id);
@@ -2118,7 +2462,38 @@
       }),
     ];
 
-    if (allEntries.length === 0) {
+    // Enrich with metadata (label, running status) from sessions array
+    const enriched = allActiveEntries.map(([id, entry]) => {
+      const sess = sessions.find(s => s.id === id);
+      return {
+        id,
+        entry,
+        isRunning: !!(sess && sess.status === "running"),
+        isSummarizing: pendingSummary.has(id),
+        label: sess?.label || null,
+      };
+    });
+
+    // Priority buckets: pending-review > running > other labeled > unlabeled
+    const grpPendingReview = enriched.filter(e => e.label === "pending-review");
+    const grpRunning = enriched.filter(e => e.isRunning && e.label !== "pending-review");
+    const grpOtherLabeled = enriched.filter(e => !e.isRunning && e.label && e.label !== "pending-review");
+    const grpUnlabeled = enriched.filter(e => !e.isRunning && !e.label);
+
+    const sortByRecency = (a, b) => {
+      if (a.isSummarizing !== b.isSummarizing) return a.isSummarizing ? -1 : 1;
+      return (b.entry.updatedAt || 0) - (a.entry.updatedAt || 0);
+    };
+    [grpPendingReview, grpRunning, grpOtherLabeled, grpUnlabeled].forEach(g => g.sort(sortByRecency));
+
+    // Archived sessions (may or may not have sidebar summary data)
+    const archivedEnriched = archivedSessions.map(sess => {
+      const entry = state.sessions[sess.id] || { folder: sess.folder || "", name: sess.name || "" };
+      return { id: sess.id, entry, isRunning: false, isSummarizing: false, label: sess.label || null };
+    });
+    archivedEnriched.sort((a, b) => (b.entry.updatedAt || 0) - (a.entry.updatedAt || 0));
+
+    if (enriched.length === 0 && archivedSessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "progress-empty";
       empty.textContent = "No summaries yet. Send a message in any session to generate one.";
@@ -2126,31 +2501,23 @@
       return;
     }
 
-    // Sort by most recently updated; pending-only entries sort to top
-    allEntries.sort((a, b) => {
-      const aPending = pendingSummary.has(a[0]);
-      const bPending = pendingSummary.has(b[0]);
-      if (aPending !== bPending) return aPending ? -1 : 1;
-      return (b[1].updatedAt || 0) - (a[1].updatedAt || 0);
-    });
-
-    for (const [sessionId, entry] of allEntries) {
-      const isRunning = sessions.some(s => s.id === sessionId && s.status === "running");
-      const isSummarizing = pendingSummary.has(sessionId);
+    const renderCard = ({ id: sessionId, entry, isRunning, isSummarizing, label }) => {
       const card = document.createElement("div");
       card.className = "progress-card";
-
       const folderName = (entry.folder || "").split("/").pop() || entry.folder || "unknown";
       const displayName = entry.name || folderName;
-
-      const summaryIndicator = isSummarizing
-        ? '<div class="progress-summarizing">Summarizing...</div>'
-        : "";
+      const labelObj = label ? getLabelById(label) : null;
+      const labelHtml = labelObj
+        ? `<span class="progress-card-label" style="background:${escapeHtml(labelObj.color)}20;color:${escapeHtml(labelObj.color)};border-color:${escapeHtml(labelObj.color)}40">${escapeHtml(labelObj.name)}</span>`
+        : label
+          ? `<span class="progress-card-label">${escapeHtml(label)}</span>`
+          : "";
 
       if (entry._pendingOnly) {
         card.innerHTML = `
           <div class="progress-card-header">
             <div class="progress-card-name">${escapeHtml(displayName)}</div>
+            ${labelHtml}
           </div>
           <div class="progress-card-folder">${escapeHtml(entry.folder || "")}</div>
           <div class="progress-summarizing">Summarizing...</div>
@@ -2160,20 +2527,20 @@
           <div class="progress-card-header">
             ${isRunning ? '<div class="progress-running-dot"></div>' : ''}
             <div class="progress-card-name">${escapeHtml(displayName)}</div>
+            ${labelHtml}
           </div>
           <div class="progress-card-folder">${escapeHtml(entry.folder || "")}</div>
           <div class="progress-card-bg">${escapeHtml(entry.background || "")}</div>
-          <div class="progress-card-action">↳ ${escapeHtml(entry.lastAction || "")}</div>
+          ${entry.lastAction ? `<div class="progress-card-action">↳ ${escapeHtml(entry.lastAction)}</div>` : ""}
           <div class="progress-card-footer">
             ${entry.updatedAt ? `<span class="progress-card-time">${relativeTime(entry.updatedAt)}</span>` : ""}
-            ${summaryIndicator}
+            ${isSummarizing ? '<span class="progress-summarizing">Summarizing...</span>' : ""}
           </div>
         `;
       }
 
-      // Click card to switch to that session
       card.addEventListener("click", () => {
-        const session = sessions.find(s => s.id === sessionId);
+        const session = sessions.find(s => s.id === sessionId) || archivedSessions.find(s => s.id === sessionId);
         if (session) {
           switchTab("sessions");
           attachSession(session.id, session);
@@ -2181,8 +2548,47 @@
         }
       });
       card.style.cursor = "pointer";
+      return card;
+    };
 
-      progressPanel.appendChild(card);
+    const renderSection = (title, items, extraClass) => {
+      if (items.length === 0) return;
+      const header = document.createElement("div");
+      header.className = "progress-section-header" + (extraClass ? " " + extraClass : "");
+      header.textContent = title;
+      progressPanel.appendChild(header);
+      items.forEach(item => progressPanel.appendChild(renderCard(item)));
+    };
+
+    renderSection("Pending Review", grpPendingReview, "is-pending-review");
+    renderSection("Running", grpRunning, "is-running");
+    renderSection("Labeled", grpOtherLabeled, "");
+    renderSection("Other", grpUnlabeled, "");
+
+    // Archived — collapsible section pinned to bottom
+    if (archivedEnriched.length > 0) {
+      const archiveSection = document.createElement("div");
+      archiveSection.className = "progress-archived-section";
+
+      const archiveToggle = document.createElement("div");
+      archiveToggle.className = "progress-section-header progress-archive-toggle";
+
+      let archiveOpen = false;
+      const archiveBody = document.createElement("div");
+      archiveBody.className = "progress-archive-body";
+      archiveBody.style.display = "none";
+      archivedEnriched.forEach(item => archiveBody.appendChild(renderCard(item)));
+
+      const updateToggle = () => {
+        archiveToggle.innerHTML = `<span class="progress-archive-chevron">${archiveOpen ? "▾" : "▸"}</span> Archived (${archivedEnriched.length})`;
+        archiveBody.style.display = archiveOpen ? "" : "none";
+      };
+      archiveToggle.addEventListener("click", () => { archiveOpen = !archiveOpen; updateToggle(); });
+      updateToggle();
+
+      archiveSection.appendChild(archiveToggle);
+      archiveSection.appendChild(archiveBody);
+      progressPanel.appendChild(archiveSection);
     }
   }
 
@@ -2368,5 +2774,6 @@
   initResponsiveLayout();
   loadInlineTools();
   loadInlineModels();
+  loadSessionLabels();
   connect();
 })();

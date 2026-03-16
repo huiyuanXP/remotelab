@@ -273,6 +273,23 @@ body {
   font-size: 10px; color: var(--text-muted); font-style: italic;
   animation: pulse 1.5s infinite; margin-top: 4px;
 }
+.progress-section-header {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted);
+  padding: 10px 4px 4px; margin-top: 2px;
+}
+.progress-section-header:first-child { padding-top: 4px; }
+.progress-section-header.is-pending-review { color: #f59e0b; }
+.progress-section-header.is-running { color: var(--success); }
+.progress-archive-toggle { cursor: pointer; user-select: none; }
+.progress-archive-toggle:hover { color: var(--text-secondary); }
+.progress-archive-chevron { display: inline-block; width: 10px; }
+.progress-archived-section { margin-top: 4px; }
+.progress-archive-body { display: flex; flex-direction: column; gap: 6px; }
+.progress-card-label {
+  font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid; white-space: nowrap; flex-shrink: 0; margin-left: auto;
+}
 
 /* Folder groups */
 .folder-group { margin-bottom: 4px; transition: opacity 0.15s; }
@@ -288,8 +305,18 @@ body {
 }
 .folder-group-header:hover .folder-drag-handle { opacity: 0.6; }
 .folder-drag-handle:hover { opacity: 1 !important; color: var(--text-secondary); }
-/* Always show drag handle on touch devices */
-@media (hover: none) { .folder-drag-handle { opacity: 0.5; } }
+/* Always show drag handle and folder add btn on touch devices */
+@media (hover: none) {
+  .folder-drag-handle { opacity: 0.5; }
+  .folder-add-btn { opacity: 0.7; }
+  .session-action-btn { display: none; }
+  .session-menu-btn { display: flex !important; }
+}
+/* JS-based touch detection fallback (more reliable on real Android/iOS) */
+.touch-device .folder-drag-handle { opacity: 0.5; }
+.touch-device .folder-add-btn { opacity: 0.7; }
+.touch-device .session-action-btn { display: none; }
+.touch-device .session-menu-btn { display: flex !important; }
 .folder-group-header {
   display: flex; align-items: center; gap: 6px; padding: 5px 8px;
   cursor: pointer; border-radius: 6px; font-size: 12px; color: var(--text-secondary);
@@ -309,6 +336,12 @@ body {
   font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary);
   padding: 1px 6px; border-radius: 10px;
 }
+.folder-running-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  color: var(--success); font-weight: 600; font-size: 11px;
+  margin-left: 4px;
+}
+.folder-running-badge svg { animation: logo-spin 8s linear infinite; }
 .folder-group-header.collapsed + .folder-group-items { display: none; }
 .folder-add-btn {
   background: none; border: none; color: var(--text-muted); cursor: pointer;
@@ -349,6 +382,81 @@ body {
 .session-item:hover .session-action-btn { opacity: 1; }
 .session-action-btn:hover { background: var(--bg-tertiary); color: var(--text); }
 .session-action-btn.del:hover { background: var(--error-bg); color: var(--error); }
+.session-action-btn.archive:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+.session-action-btn.unarchive:hover { background: var(--success-bg); color: var(--success); }
+.session-item.archived { opacity: 0.55; }
+.session-item.archived:hover { opacity: 0.8; }
+.session-menu-btn {
+  display: none; background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 17px; padding: 2px 6px; border-radius: 4px; line-height: 1;
+  align-items: center; justify-content: center; flex-shrink: 0;
+}
+.session-menu-btn:active { background: var(--bg-tertiary); color: var(--text); }
+.session-dropdown {
+  position: fixed; z-index: 2000; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.22); padding: 4px 0; min-width: 150px;
+}
+.session-dropdown-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; font-size: 13px; color: var(--text); cursor: pointer;
+}
+.session-dropdown-item:hover, .session-dropdown-item:active { background: var(--bg-tertiary); }
+.session-dropdown-item.del { color: var(--error); }
+.session-dropdown-item.del:hover, .session-dropdown-item.del:active { background: var(--error-bg); }
+.archived-section { padding: 0 8px 8px; }
+.archived-section-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 6px; font-size: 11px; color: var(--text-muted);
+  cursor: pointer; border-radius: 6px; user-select: none;
+}
+.archived-section-toggle:hover { color: var(--text-secondary); background: var(--bg-secondary); }
+.archived-chevron { font-size: 9px; }
+.archived-items { margin-top: 2px; }
+
+/* Label popover */
+.label-popover {
+  position: absolute; z-index: 1000; background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25); padding: 6px 0;
+  min-width: 180px; max-width: 240px;
+}
+.label-option {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+  cursor: pointer; font-size: 13px; color: var(--text); transition: background 0.1s;
+}
+.label-option:hover { background: var(--bg-tertiary); }
+.label-option.active { font-weight: 600; }
+.label-color-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.label-separator {
+  height: 1px; background: var(--border); margin: 4px 0;
+}
+.label-add-form {
+  padding: 8px 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.label-add-form input {
+  padding: 4px 8px; font-size: 12px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg); color: var(--text);
+  font-family: inherit; outline: none;
+}
+.label-add-form input:focus { border-color: var(--accent); }
+.color-picker-dots {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.color-picker-dot {
+  width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+  border: 2px solid transparent; transition: border-color 0.15s;
+}
+.color-picker-dot:hover, .color-picker-dot.selected {
+  border-color: var(--text);
+}
+.label-add-confirm {
+  padding: 4px 10px; font-size: 12px; border: none; border-radius: 6px;
+  background: var(--text); color: var(--bg); cursor: pointer; align-self: flex-end;
+}
+.label-add-confirm:hover { opacity: 0.85; }
 
 /* Inline rename input */
 .session-rename-input {

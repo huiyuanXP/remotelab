@@ -4,7 +4,7 @@ import {
   createSession, deleteSession, getSession, listSessions,
   subscribe, unsubscribe, sendMessage, cancelSession, getHistory,
   renameSession, resolveHookRequest, compactSession,
-  subscribeGlobal, unsubscribeGlobal,
+  subscribeGlobal, unsubscribeGlobal, setSessionLabel, archiveSession,
 } from './session-manager.mjs';
 
 /**
@@ -200,6 +200,30 @@ function handleMessage(ws, msg, ctx) {
         console.error(`[ws] Manual compact failed: ${err.message}`);
         wsSend(ws, { type: 'error', message: `Compact failed: ${err.message}` });
       });
+      break;
+    }
+
+    case 'set-label': {
+      if (!msg.sessionId) {
+        wsSend(ws, { type: 'error', message: 'sessionId is required' });
+        return;
+      }
+      const updated = setSessionLabel(msg.sessionId, msg.label || null);
+      if (!updated) {
+        wsSend(ws, { type: 'error', message: 'Session not found' });
+      }
+      break;
+    }
+
+    case 'archive': {
+      if (!msg.sessionId) {
+        wsSend(ws, { type: 'error', message: 'sessionId is required' });
+        return;
+      }
+      const updated = archiveSession(msg.sessionId, !!msg.archived);
+      if (!updated) {
+        wsSend(ws, { type: 'error', message: 'Session not found' });
+      }
       break;
     }
 

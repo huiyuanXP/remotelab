@@ -291,6 +291,23 @@ const TOOLS = [
     description: 'List available CLI tools that can be used when creating sessions (e.g. claude, codex).',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
+  {
+    name: 'set_label',
+    description: 'Set a custom label/status on a session (e.g. "planned", "pending-review", "done"). If session_id is omitted, sets the label on the current session (self). Set label to null or omit it to clear.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'The session ID to label. If omitted, labels the current session (self).' },
+        label: { type: 'string', description: 'Label ID to set (e.g. "planned", "pending-review", "done"). Omit or set to null to clear the label.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'list_labels',
+    description: 'List all available session labels with their names and colors.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
 ];
 
 // ---- Tool execution ----
@@ -393,6 +410,20 @@ async function executeTool(name, args) {
 
     case 'list_tools': {
       const res = await apiRequest('GET', '/api/tools');
+      if (res.status !== 200) return { isError: true, content: [{ type: 'text', text: `Error ${res.status}: ${JSON.stringify(res.data)}` }] };
+      return { content: [{ type: 'text', text: JSON.stringify(res.data, null, 2) }] };
+    }
+
+    case 'set_label': {
+      const targetId = args.session_id || MY_SESSION_ID;
+      if (!targetId) return { isError: true, content: [{ type: 'text', text: 'No session_id provided and no current session ID available (REMOTELAB_SESSION_ID not set).' }] };
+      const res = await apiRequest('PATCH', `/api/sessions/${targetId}/label`, { label: args.label || null });
+      if (res.status !== 200) return { isError: true, content: [{ type: 'text', text: `Error ${res.status}: ${JSON.stringify(res.data)}` }] };
+      return { content: [{ type: 'text', text: JSON.stringify(res.data, null, 2) }] };
+    }
+
+    case 'list_labels': {
+      const res = await apiRequest('GET', '/api/session-labels');
       if (res.status !== 200) return { isError: true, content: [{ type: 'text', text: `Error ${res.status}: ${JSON.stringify(res.data)}` }] };
       return { content: [{ type: 'text', text: JSON.stringify(res.data, null, 2) }] };
     }

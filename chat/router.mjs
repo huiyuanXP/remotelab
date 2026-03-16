@@ -10,7 +10,7 @@ import {
   parseCookies, setCookie, clearCookie,
 } from '../lib/auth.mjs';
 import { getAvailableTools } from '../lib/tools.mjs';
-import { listSessions, getSession, createSession, deleteSession, sendMessage, getHistory, waitForIdle, receiveHookRequest } from './session-manager.mjs';
+import { listSessions, getSession, createSession, deleteSession, sendMessage, getHistory, waitForIdle, receiveHookRequest, getLabels, addLabel, removeLabel, updateLabel, setSessionLabel, archiveSession } from './session-manager.mjs';
 import { executeWorkflow, listWorkflowRuns } from './workflow-engine.mjs';
 import { getSidebarState } from './summarizer.mjs';
 import { readBody, readBodyBinary } from '../lib/utils.mjs';
@@ -438,6 +438,114 @@ export async function handleRequest(req, res) {
       }
       return;
     }
+  }
+
+  // ---- Session Labels API ----
+
+  // PATCH /api/sessions/{id}/label — set or clear session label
+  const labelMatch = pathname.match(/^\/api\/sessions\/([a-f0-9]+)\/label$/);
+  if (labelMatch && req.method === 'PATCH') {
+    const id = labelMatch[1];
+    let body;
+    try { body = await readBody(req, 4096); } catch { body = '{}'; }
+    try {
+      const { label } = JSON.parse(body);
+      const updated = setSessionLabel(id, label || null);
+      if (!updated) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ session: updated }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
+  }
+
+  // PATCH /api/sessions/{id}/archive — archive or unarchive a session
+  const archiveMatch = pathname.match(/^\/api\/sessions\/([a-f0-9]+)\/archive$/);
+  if (archiveMatch && req.method === 'PATCH') {
+    const id = archiveMatch[1];
+    let body;
+    try { body = await readBody(req, 4096); } catch { body = '{}'; }
+    try {
+      const { archived } = JSON.parse(body);
+      const updated = archiveSession(id, !!archived);
+      if (!updated) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ session: updated }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/session-labels' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ labels: getLabels() }));
+    return;
+  }
+
+  if (pathname === '/api/session-labels' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 4096); } catch { body = '{}'; }
+    try {
+      const { name, color } = JSON.parse(body);
+      if (!name || !color) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'name and color are required' }));
+        return;
+      }
+      const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const label = addLabel({ id, name, color });
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ label }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
+  }
+
+  const labelIdMatch = pathname.match(/^\/api\/session-labels\/([a-z0-9-]+)$/);
+  if (labelIdMatch && req.method === 'DELETE') {
+    const ok = removeLabel(labelIdMatch[1]);
+    if (ok) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Label not found' }));
+    }
+    return;
+  }
+
+  if (labelIdMatch && req.method === 'PUT') {
+    let body;
+    try { body = await readBody(req, 4096); } catch { body = '{}'; }
+    try {
+      const updates = JSON.parse(body);
+      const updated = updateLabel(labelIdMatch[1], updates);
+      if (!updated) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Label not found' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ label: updated }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
   }
 
   // GET /api/folders — list folders with session counts
