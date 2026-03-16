@@ -13,7 +13,7 @@
   const newSessionModal = document.getElementById("newSessionModal");
   const folderInput = document.getElementById("folderInput");
   const folderSuggestions = document.getElementById("folderSuggestions");
-  const nameInput = document.getElementById("nameInput");
+
   const toolSelect = document.getElementById("toolSelect");
   const cancelModal = document.getElementById("cancelModal");
   const createSessionBtn = document.getElementById("createSession");
@@ -23,7 +23,6 @@
   const msgInput = document.getElementById("msgInput");
   const sendBtn = document.getElementById("sendBtn");
   const headerTitle = document.getElementById("headerTitle");
-  const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
   const imgBtn = document.getElementById("imgBtn");
   const imgFileInput = document.getElementById("imgFileInput");
@@ -315,6 +314,10 @@
           const idx = sessions.findIndex((s) => s.id === msg.session.id);
           if (idx >= 0) sessions[idx] = msg.session;
           else sessions.push(msg.session);
+          // Update header title if current session was renamed (e.g. auto-title)
+          if (msg.session.id === currentSessionId && msg.session.name) {
+            headerTitle.textContent = msg.session.name;
+          }
           renderSessionList();
         }
         break;
@@ -374,7 +377,7 @@
   // ---- Status ----
   function updateStatus(connState, sessState) {
     if (connState === "disconnected") {
-      statusDot.className = "status-dot";
+      headerLogo.classList.remove("active");
       statusText.textContent = "disconnected";
       msgInput.disabled = true;
       sendBtn.style.display = "";
@@ -385,18 +388,16 @@
     }
     sessionStatus = sessState;
     const isRunning = sessState === "running";
-    if (isRunning) {
-      statusDot.className = "status-dot running";
-      statusText.textContent = "running";
-    } else {
-      statusDot.className = "status-dot";
-      statusText.textContent = currentSessionId ? "idle" : "connected";
-    }
+    headerLogo.classList.toggle("active", isRunning);
+    statusText.textContent = isRunning ? "running" : (currentSessionId ? "idle" : "connected");
     const hasSession = !!currentSessionId;
     msgInput.disabled = !hasSession;
-    sendBtn.style.display = isRunning ? "none" : "";
+    // Show both Send and Stop when running (Send = interrupt & send new message)
+    sendBtn.style.display = "";
     sendBtn.disabled = !hasSession;
+    sendBtn.title = isRunning ? "Interrupt & send" : "Send";
     cancelBtn.style.display = isRunning && hasSession ? "flex" : "none";
+    msgInput.placeholder = isRunning ? "Send a correction or hint..." : "Message...";
     imgBtn.disabled = !hasSession;
     fileAttachBtn.disabled = !hasSession;
     inlineToolSelect.disabled = !hasSession;
@@ -460,7 +461,6 @@
   function updateFloatingLogo() {
     const anyRunning = sessions.some(s => s.status === "running");
     floatingLogo.classList.toggle("active", anyRunning);
-    headerLogo.classList.toggle("active", anyRunning);
     if (anyRunning) startFaviconSpin();
     else stopFaviconSpin();
   }
@@ -1130,6 +1130,14 @@
   }
 
   // ---- Session list ----
+  // Persisted folder order for drag-to-reorder
+  let folderOrderList = JSON.parse(localStorage.getItem("folderOrder") || "[]");
+
+  function saveFolderOrder(order) {
+    folderOrderList = order;
+    localStorage.setItem("folderOrder", JSON.stringify(order));
+  }
+
   function renderSessionList() {
     sessionList.innerHTML = "";
 
@@ -1140,9 +1148,35 @@
       groups.get(folder).push(s);
     }
 
-    for (const [folder, folderSessions] of groups) {
+    // Stable folder ordering: manual order first, then by earliest created time
+    const sortedFolders = [...groups.keys()].sort((a, b) => {
+      const idxA = folderOrderList.indexOf(a);
+      const idxB = folderOrderList.indexOf(b);
+      // Both in manual order — respect it
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      // Manual-ordered folders come first
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      // Neither in manual order — sort by earliest session created time
+      const earliestA = groups.get(a).reduce((min, s) => s.created && s.created < min ? s.created : min, "z");
+      const earliestB = groups.get(b).reduce((min, s) => s.created && s.created < min ? s.created : min, "z");
+      return earliestA.localeCompare(earliestB);
+    });
+
+    // Sync folderOrder to include all current folders (add new ones at end)
+    const currentOrder = [...folderOrderList.filter(f => groups.has(f))];
+    for (const f of sortedFolders) {
+      if (!currentOrder.includes(f)) currentOrder.push(f);
+    }
+    if (JSON.stringify(currentOrder) !== JSON.stringify(folderOrderList)) {
+      saveFolderOrder(currentOrder);
+    }
+
+    for (const folder of sortedFolders) {
+      const folderSessions = groups.get(folder);
       const group = document.createElement("div");
       group.className = "folder-group";
+      group.dataset.folder = folder;
 
       const shortFolder = folder.replace(/^\/Users\/[^/]+/, "~");
       const folderName = shortFolder.split("/").pop() || shortFolder;
@@ -1150,12 +1184,14 @@
       const header = document.createElement("div");
       header.className =
         "folder-group-header" + (collapsedFolders[folder] ? " collapsed" : "");
-      header.innerHTML = `<span class="folder-chevron">&#9660;</span>
+      header.innerHTML = `<span class="folder-drag-handle" title="Drag to reorder">⠿</span>
+        <span class="folder-chevron">&#9660;</span>
         <span class="folder-name" title="${esc(shortFolder)}">${esc(folderName)}</span>
         <span class="folder-count">${folderSessions.length}</span>
         <button class="folder-add-btn" title="New session">+</button>`;
       header.addEventListener("click", (e) => {
         if (e.target.classList.contains("folder-add-btn")) return;
+        if (e.target.classList.contains("folder-drag-handle")) return;
         header.classList.toggle("collapsed");
         collapsedFolders[folder] = header.classList.contains("collapsed");
         localStorage.setItem(
@@ -1166,12 +1202,19 @@
       header.querySelector(".folder-add-btn").addEventListener("click", (e) => {
         e.stopPropagation();
         if (!isDesktop) closeSidebarFn();
-        newSessionModal.classList.add("open");
-        loadTools();
-        folderInput.value = folder;
-        nameInput.value = "";
-        folderSuggestions.innerHTML = "";
-        nameInput.focus();
+        // Directly create session in this folder — title auto-generated by summarizer
+        const tool = selectedTool || (toolsList.length > 0 ? toolsList[0].id : "claude");
+        wsSend({ action: "create", folder, tool, name: "" });
+        const handler = (ev) => {
+          let msg;
+          try { msg = JSON.parse(ev.data); } catch { return; }
+          if (msg.type === "session" && msg.session) {
+            ws.removeEventListener("message", handler);
+            attachSession(msg.session.id, msg.session);
+            wsSend({ action: "list" });
+          }
+        };
+        ws.addEventListener("message", handler);
       });
 
       const items = document.createElement("div");
@@ -1239,6 +1282,104 @@
 
         items.appendChild(div);
       }
+
+      // Drag-to-reorder: desktop (HTML5 drag) + mobile (touch)
+      // Only enable draggable when handle is grabbed (prevents interfering with session clicks)
+      header.querySelector(".folder-drag-handle").addEventListener("mousedown", () => {
+        group.draggable = true;
+      });
+      group.addEventListener("dragend", () => {
+        group.classList.remove("dragging");
+        group.draggable = false;
+      });
+      group.addEventListener("dragstart", (e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", folder);
+        group.classList.add("dragging");
+      });
+      group.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const dragging = sessionList.querySelector(".folder-group.dragging");
+        if (dragging && dragging !== group) {
+          const rect = group.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) {
+            sessionList.insertBefore(dragging, group);
+          } else {
+            sessionList.insertBefore(dragging, group.nextSibling);
+          }
+        }
+      });
+      group.addEventListener("drop", (e) => {
+        e.preventDefault();
+        // Persist new order
+        const newOrder = [...sessionList.querySelectorAll(".folder-group")].map(g => g.dataset.folder);
+        saveFolderOrder(newOrder);
+      });
+
+      // Touch drag for mobile
+      const handle = header.querySelector(".folder-drag-handle");
+      let touchDragState = null;
+      handle.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const touch = e.touches[0];
+        touchDragState = { startY: touch.clientY, el: group, placeholder: null };
+        group.classList.add("dragging");
+        // Create placeholder
+        const ph = document.createElement("div");
+        ph.className = "folder-drag-placeholder";
+        ph.style.height = group.offsetHeight + "px";
+        group.parentNode.insertBefore(ph, group);
+        touchDragState.placeholder = ph;
+        // Float the group
+        group.style.position = "fixed";
+        group.style.zIndex = "1000";
+        group.style.width = group.offsetWidth + "px";
+        group.style.left = group.getBoundingClientRect().left + "px";
+        group.style.top = touch.clientY - group.offsetHeight / 2 + "px";
+        group.style.pointerEvents = "none";
+      }, { passive: false });
+
+      handle.addEventListener("touchmove", (e) => {
+        if (!touchDragState) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        const group = touchDragState.el;
+        group.style.top = touch.clientY - group.offsetHeight / 2 + "px";
+        // Find target position
+        const groups = [...sessionList.querySelectorAll(".folder-group:not(.dragging)")];
+        for (const g of groups) {
+          const rect = g.getBoundingClientRect();
+          if (touch.clientY < rect.top + rect.height / 2) {
+            sessionList.insertBefore(touchDragState.placeholder, g);
+            return;
+          }
+        }
+        sessionList.appendChild(touchDragState.placeholder);
+      }, { passive: false });
+
+      handle.addEventListener("touchend", () => {
+        if (!touchDragState) return;
+        const group = touchDragState.el;
+        group.classList.remove("dragging");
+        group.style.position = "";
+        group.style.zIndex = "";
+        group.style.width = "";
+        group.style.left = "";
+        group.style.top = "";
+        group.style.pointerEvents = "";
+        // Place group where placeholder is
+        if (touchDragState.placeholder.parentNode) {
+          touchDragState.placeholder.parentNode.insertBefore(group, touchDragState.placeholder);
+          touchDragState.placeholder.remove();
+        }
+        touchDragState = null;
+        // Persist new order
+        const newOrder = [...sessionList.querySelectorAll(".folder-group")].map(g => g.dataset.folder);
+        saveFolderOrder(newOrder);
+      });
 
       group.appendChild(header);
       group.appendChild(items);
@@ -1328,7 +1469,6 @@
     newSessionModal.classList.add("open");
     loadTools();
     folderInput.value = "";
-    nameInput.value = "";
     folderSuggestions.innerHTML = "";
     folderInput.focus();
   });
@@ -1341,21 +1481,17 @@
   });
 
   folderInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); nameInput.focus(); }
-  });
-  nameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); createSessionBtn.click(); }
   });
 
   createSessionBtn.addEventListener("click", () => {
     const folder = folderInput.value.trim();
     const tool = toolSelect.value;
-    const name = nameInput.value.trim();
     if (!folder) {
       folderInput.focus();
       return;
     }
-    wsSend({ action: "create", folder, tool, name });
+    wsSend({ action: "create", folder, tool, name: "" });
     newSessionModal.classList.remove("open");
 
     const handler = (e) => {
@@ -1632,7 +1768,7 @@
       const data = await res.json();
       qrButtons = data.buttons || [];
     } catch {
-      qrButtons = ["Continue", "Agree", "Commit this", "Run tests", "Show diff"];
+      qrButtons = ["Continue", "Agree", "Commit this", "Restart", "Update your memory"];
     }
     qrEditing = false;
     renderQuickReplies();

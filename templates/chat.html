@@ -166,11 +166,6 @@ body {
 }
 .header-logo.active { color: var(--success); }
 .header-logo.active svg { animation: logo-spin 8s linear infinite; }
-.status-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);
-  display: inline-block; flex-shrink: 0;
-}
-.status-dot.running { background: var(--success); animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 #statusText { font-size: 12px; color: var(--text-muted); }
 
@@ -265,7 +260,21 @@ body {
 }
 
 /* Folder groups */
-.folder-group { margin-bottom: 4px; }
+.folder-group { margin-bottom: 4px; transition: opacity 0.15s; }
+.folder-group.dragging { opacity: 0.4; }
+.folder-drag-placeholder {
+  border: 2px dashed var(--text-muted); border-radius: 8px; margin-bottom: 4px;
+  opacity: 0.4; box-sizing: border-box;
+}
+.folder-drag-handle {
+  cursor: grab; color: var(--text-muted); font-size: 12px; padding: 0 2px;
+  opacity: 0; transition: opacity 0.15s; user-select: none; touch-action: none;
+  flex-shrink: 0;
+}
+.folder-group-header:hover .folder-drag-handle { opacity: 0.6; }
+.folder-drag-handle:hover { opacity: 1 !important; color: var(--text-secondary); }
+/* Always show drag handle on touch devices */
+@media (hover: none) { .folder-drag-handle { opacity: 0.5; } }
 .folder-group-header {
   display: flex; align-items: center; gap: 6px; padding: 5px 8px;
   cursor: pointer; border-radius: 6px; font-size: 12px; color: var(--text-secondary);
@@ -932,7 +941,6 @@ body {
   opacity: 0.85;
 }
 .floating-logo.active svg {
-  animation: logo-spin 8s linear infinite;
 }
 @keyframes logo-spin {
   from { transform: rotate(0deg); }
@@ -960,17 +968,6 @@ body {
 <!-- Header -->
 <div class="header">
   <button class="header-btn" id="menuBtn" title="Sessions">&#9776;</button>
-  <div class="header-logo" id="headerLogo">
-    <svg width="22" height="22" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <g stroke="currentColor" stroke-width="5.5" fill="none">
-        <circle cx="50" cy="28" r="19"/>
-        <circle cx="72" cy="50" r="19"/>
-        <circle cx="50" cy="72" r="19"/>
-        <circle cx="28" cy="50" r="19"/>
-      </g>
-      <circle cx="50" cy="50" r="4" fill="currentColor"/>
-    </svg>
-  </div>
   <h1 id="headerTitle">RemoteLab Chat</h1>
   <div class="header-ctx" id="headerCtx">
     <div class="header-ctx-detail" id="headerCtxDetail"></div>
@@ -983,7 +980,17 @@ body {
     <button class="header-ctx-compress" id="headerCtxCompress">Compress</button>
   </div>
   <button class="header-btn" id="themeBtn" title="主题"></button>
-  <span class="status-dot" id="statusDot"></span>
+  <div class="header-logo" id="headerLogo">
+    <svg width="18" height="18" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <g stroke="currentColor" stroke-width="5.5" fill="none">
+        <circle cx="50" cy="28" r="19"/>
+        <circle cx="72" cy="50" r="19"/>
+        <circle cx="50" cy="72" r="19"/>
+        <circle cx="28" cy="50" r="19"/>
+      </g>
+      <circle cx="50" cy="50" r="4" fill="currentColor"/>
+    </svg>
+  </div>
   <span id="statusText">disconnected</span>
 </div>
 
@@ -1061,8 +1068,6 @@ body {
     <div class="ac-suggestions" id="folderSuggestions"></div>
     <label>Tool</label>
     <select id="toolSelect"></select>
-    <label>Name <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
-    <input type="text" id="nameInput" placeholder="e.g. Fix auth bug">
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelModal">Cancel</button>
       <button class="btn-create" id="createSession">Create</button>
