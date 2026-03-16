@@ -38,9 +38,15 @@
   const tabSessions = document.getElementById("tabSessions");
   const tabProgress = document.getElementById("tabProgress");
   const progressPanel = document.getElementById("progressPanel");
+  const headerCtx = document.getElementById("headerCtx");
+  const headerCtxDetail = document.getElementById("headerCtxDetail");
+  const headerCtxFill = document.getElementById("headerCtxFill");
+  const headerCtxPct = document.getElementById("headerCtxPct");
+  const headerCtxCompress = document.getElementById("headerCtxCompress");
 
   let ws = null;
   let pendingImages = [];
+  let pendingFiles = []; // { file: File, name: string }
   let currentSessionId = null;
   let sessionStatus = "idle";
   let reconnectTimer = null;
@@ -628,43 +634,81 @@
   }
 
   const CONTEXT_WINDOW = 200000; // claude-sonnet context window
-  const CONTEXT_WARN_THRESHOLD = 0.75; // show compact button at 75%
+  const CONTEXT_DANGER_THRESHOLD = 0.85; // header danger threshold
+
+  function fmtTok(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+    if (n >= 10000) return Math.round(n / 1000) + "k";
+    if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+    return String(n);
+  }
+
+  function updateHeaderContext(input, output, cacheWrite, cacheRead) {
+    // Context fill = input + cacheCreation.
+    // cacheCreation accumulates the system prompt (first call) + all conversation history
+    // (each subsequent call), so it ≈ the total tokens sent on the most recent API call.
+    //
+    // cacheRead is NOT included: it's a cumulative count of how many times previously-cached
+    // content was re-read across ALL API calls in the run (e.g. system prompt re-read 9× for
+    // a task with 9 tool calls = 450k), so it always exceeds the 200k window and is meaningless
+    // for measuring context fill.
+    const contextTotal = input + cacheWrite;
+    const pct = Math.min(contextTotal / CONTEXT_WINDOW, 1);
+    const pctRounded = Math.round(pct * 100);
+
+    // Line 1: total context (what fills the window) + output
+    // Line 2: breakdown — new input this call vs accumulated cache
+    headerCtxDetail.textContent =
+      `ctx: ${fmtTok(contextTotal)}  out: ${fmtTok(output)}\nin: ${fmtTok(input)}  +c: ${fmtTok(cacheWrite)}`;
+
+    headerCtxFill.style.width = `${pct * 100}%`;
+    headerCtxFill.className = "header-ctx-fill" +
+      (pct >= CONTEXT_DANGER_THRESHOLD ? " danger" : pct >= 0.6 ? " warn" : "");
+
+    headerCtxPct.textContent = `${pctRounded}%`;
+    headerCtxPct.className = "header-ctx-pct" + (pct >= CONTEXT_DANGER_THRESHOLD ? " danger" : "");
+
+    if (pct >= CONTEXT_DANGER_THRESHOLD) {
+      headerCtxCompress.classList.add("visible");
+    } else {
+      headerCtxCompress.classList.remove("visible");
+    }
+
+    // Shrink the title to give space to the bar
+    headerTitle.style.flex = "0 0 auto";
+    headerCtx.classList.add("visible");
+  }
+
+  function resetHeaderContext() {
+    headerCtx.classList.remove("visible");
+    headerCtxCompress.disabled = false;
+    headerCtxCompress.textContent = "Compress";
+    headerTitle.style.flex = "";
+  }
+
+  headerCtxCompress.addEventListener("click", () => {
+    if (!currentSessionId) return;
+    wsSend({ action: "compact" });
+    headerCtxCompress.disabled = true;
+    headerCtxCompress.textContent = "Compressing…";
+  });
 
   function renderUsage(evt) {
     const input = evt.inputTokens || 0;
     const output = evt.outputTokens || 0;
-    const cache = (evt.cacheCreationTokens || 0) + (evt.cacheReadTokens || 0);
-    const total = input + cache;
+    const cacheWrite = evt.cacheCreationTokens || 0;
+    // cacheRead excluded: it's cumulative across all API calls in the run, not per-call context
+    const total = input + cacheWrite;
     sessionContextTotal = total;
-    const pct = Math.min(total / CONTEXT_WINDOW, 1);
+
+    updateHeaderContext(input, output, cacheWrite, evt.cacheReadTokens || 0);
 
     const div = document.createElement("div");
     div.className = "usage-info";
 
     const tokens = document.createElement("span");
-    tokens.textContent = `${total.toLocaleString()} in · ${output.toLocaleString()} out`;
+    tokens.textContent = `ctx: ${total.toLocaleString()} · out: ${output.toLocaleString()}`;
     div.appendChild(tokens);
-
-    if (pct >= CONTEXT_WARN_THRESHOLD) {
-      const bar = document.createElement("div");
-      bar.className = "context-bar";
-      const fill = document.createElement("div");
-      fill.className = "context-bar-fill" + (pct >= 0.9 ? " context-bar-danger" : "");
-      fill.style.width = `${Math.round(pct * 100)}%`;
-      bar.appendChild(fill);
-      div.appendChild(bar);
-
-      const compactBtn = document.createElement("button");
-      compactBtn.className = "compact-btn";
-      compactBtn.textContent = `Compact context (${Math.round(pct * 100)}%)`;
-      compactBtn.addEventListener("click", () => {
-        if (!currentSessionId) return;
-        wsSend({ action: "compact" });
-        compactBtn.disabled = true;
-        compactBtn.textContent = "Compacting…";
-      });
-      div.appendChild(compactBtn);
-    }
 
     messagesInner.appendChild(div);
   }
@@ -1126,6 +1170,7 @@
   function attachSession(id, session) {
     currentSessionId = id;
     clearMessages();
+    resetHeaderContext();
     wsSend({ action: "attach", sessionId: id });
 
     const displayName =
@@ -1279,7 +1324,7 @@
 
   function renderImagePreviews() {
     imgPreviewStrip.innerHTML = "";
-    if (pendingImages.length === 0) {
+    if (pendingImages.length === 0 && pendingFiles.length === 0) {
       imgPreviewStrip.classList.remove("has-images");
       return;
     }
@@ -1301,6 +1346,24 @@
       item.appendChild(removeBtn);
       imgPreviewStrip.appendChild(item);
     });
+    pendingFiles.forEach((pf, i) => {
+      const item = document.createElement("div");
+      item.className = "file-preview-item";
+      const nameEl = document.createElement("span");
+      nameEl.className = "file-preview-name";
+      nameEl.textContent = pf.name;
+      nameEl.title = pf.name;
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-img";
+      removeBtn.innerHTML = "&times;";
+      removeBtn.onclick = () => {
+        pendingFiles.splice(i, 1);
+        renderImagePreviews();
+      };
+      item.appendChild(nameEl);
+      item.appendChild(removeBtn);
+      imgPreviewStrip.appendChild(item);
+    });
   }
 
   imgBtn.addEventListener("click", () => imgFileInput.click());
@@ -1309,39 +1372,16 @@
     imgFileInput.value = "";
   });
 
-  // ---- File attachment upload ----
+  // ---- File attachment (queued, uploaded on send) ----
   fileAttachBtn.addEventListener("click", () => fileAttachInput.click());
-  fileAttachInput.addEventListener("change", async () => {
+  fileAttachInput.addEventListener("change", () => {
     const files = Array.from(fileAttachInput.files);
     fileAttachInput.value = "";
-    if (!files.length || !currentSessionId) return;
-
-    fileAttachBtn.disabled = true;
-    fileAttachBtn.textContent = "…";
-
+    if (!files.length) return;
     for (const file of files) {
-      try {
-        const res = await fetch(
-          `/api/upload?name=${encodeURIComponent(file.name)}&sessionId=${encodeURIComponent(currentSessionId)}`,
-          { method: "POST", body: file }
-        );
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          alert(`Upload failed: ${err.error || res.statusText}`);
-          continue;
-        }
-        const data = await res.json();
-        // Append file reference into textarea so user can see and edit it
-        const ref = `\n📎 ${data.path}`;
-        msgInput.value = (msgInput.value + ref).trimStart();
-        autoResizeInput();
-      } catch (e) {
-        alert(`Upload failed: ${e.message}`);
-      }
+      pendingFiles.push({ file, name: file.name });
     }
-
-    fileAttachBtn.disabled = false;
-    fileAttachBtn.textContent = "📎";
+    renderImagePreviews();
   });
 
   msgInput.addEventListener("paste", (e) => {
@@ -1361,10 +1401,42 @@
   });
 
   // ---- Send message ----
-  function sendMessage() {
+  async function sendMessage() {
     const text = msgInput.value.trim();
-    if ((!text && pendingImages.length === 0) || !currentSessionId) return;
-    const msg = { action: "send", text: text || "(image)" };
+    if ((!text && pendingImages.length === 0 && pendingFiles.length === 0) || !currentSessionId) return;
+
+    let fullText = text;
+
+    // Upload pending files before sending
+    if (pendingFiles.length > 0) {
+      const filesToUpload = [...pendingFiles];
+      pendingFiles = [];
+      renderImagePreviews();
+      const paths = [];
+      for (const pf of filesToUpload) {
+        try {
+          const res = await fetch(
+            `/api/upload?name=${encodeURIComponent(pf.name)}&sessionId=${encodeURIComponent(currentSessionId)}`,
+            { method: "POST", body: pf.file }
+          );
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(`Upload failed: ${err.error || res.statusText}`);
+            continue;
+          }
+          const data = await res.json();
+          paths.push(data.path);
+        } catch (e) {
+          alert(`Upload failed: ${e.message}`);
+        }
+      }
+      if (paths.length > 0) {
+        const fileRefs = paths.map((p) => `📎 ${p}`).join("\n");
+        fullText = [fullText, fileRefs].filter(Boolean).join("\n").trim();
+      }
+    }
+
+    const msg = { action: "send", text: fullText || "(image)" };
     if (selectedTool) msg.tool = selectedTool;
     msg.model = selectedModel;
     msg.thinking = thinkingEnabled;
@@ -1386,7 +1458,12 @@
 
   quickReplies.addEventListener("click", (e) => {
     const btn = e.target.closest(".qr-btn");
-    if (btn && sessionStatus === "idle") sendQuickReply(btn.dataset.text);
+    if (btn) {
+      const text = btn.dataset.text;
+      const cur = msgInput.value;
+      msgInput.value = cur ? cur + " " + text : text;
+      msgInput.focus();
+    }
   });
 
   sendBtn.addEventListener("click", sendMessage);
