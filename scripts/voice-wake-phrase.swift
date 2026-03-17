@@ -13,6 +13,7 @@ struct Options {
     let allowServerFallback: Bool
     let connectorId: String
     let roomName: String
+    let ackSoundPath: String
 }
 
 struct WakeMetadata: Codable {
@@ -34,7 +35,7 @@ struct WakeEvent: Codable {
 }
 
 func usage() -> Never {
-    fputs("Usage: voice-wake-phrase.swift [--phrase <text>] [--locale <id>] [--cooldown-ms <ms>] [--restart-delay-ms <ms>] [--on-device <true|false>] [--allow-server-fallback <true|false>]\n", stderr)
+    fputs("Usage: voice-wake-phrase.swift [--phrase <text>] [--locale <id>] [--cooldown-ms <ms>] [--restart-delay-ms <ms>] [--on-device <true|false>] [--allow-server-fallback <true|false>] [--ack-sound-path <path>] [--test-trigger]\n", stderr)
     exit(1)
 }
 
@@ -68,6 +69,24 @@ func nowIso() -> String {
     ISO8601DateFormatter().string(from: Date())
 }
 
+func playAckSound(path: String) {
+    let normalizedPath = trim(path)
+    guard !normalizedPath.isEmpty else { return }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+    process.arguments = [normalizedPath]
+    do {
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            fputs("[voice-wake] ack sound failed with status \(process.terminationStatus) for \(normalizedPath)\n", stderr)
+        }
+    } catch {
+        fputs("[voice-wake] ack sound failed: \(error.localizedDescription)\n", stderr)
+    }
+}
+
 let edgeTrimCharacters = CharacterSet.whitespacesAndNewlines
     .union(.punctuationCharacters)
     .union(CharacterSet(charactersIn: "，。！？；：、“”‘’（）【】《》<>「」『』—-…"))
@@ -84,6 +103,35 @@ func extractTrailingText(original: String, phrase: String) -> String {
     }
     let suffix = String(original[range.upperBound...])
     return trimEdgePunctuation(suffix)
+}
+
+func emitWakeEvent(phrase: String, transcript: String, localeId: String, connectorId: String, roomName: String, source: String, recognitionMode: String, ackSoundPath: String) {
+    playAckSound(path: ackSoundPath)
+
+    let payload = WakeEvent(
+        eventId: "voice-\(UUID().uuidString.lowercased())",
+        wakeWord: phrase,
+        transcript: transcript,
+        detectedAt: nowIso(),
+        connectorId: connectorId,
+        roomName: roomName,
+        source: source,
+        metadata: WakeMetadata(
+            rawTranscript: phrase + (transcript.isEmpty ? "" : " \(transcript)"),
+            locale: localeId,
+            captureNeeded: transcript.isEmpty,
+            recognitionMode: recognitionMode
+        )
+    )
+
+    let encoder = JSONEncoder()
+    do {
+        let data = try encoder.encode(payload)
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+    } catch {
+        fputs("[voice-wake] failed to encode wake event: \(error.localizedDescription)\n", stderr)
+    }
 }
 
 final class WakeListener {
@@ -188,6 +236,8 @@ final class WakeListener {
         lastTriggerAt = now
 
         let trailingText = extractTrailingText(original: transcript, phrase: options.phrase)
+        playAckSound(path: options.ackSoundPath)
+
         let payload = WakeEvent(
             eventId: "voice-\(UUID().uuidString.lowercased())",
             wakeWord: options.phrase,
@@ -263,6 +313,8 @@ var onDevice = true
 var allowServerFallback = true
 var connectorId = envString("REMOTELAB_VOICE_CONNECTOR_ID")
 var roomName = envString("REMOTELAB_VOICE_ROOM_NAME")
+var ackSoundPath = envString("REMOTELAB_VOICE_WAKE_ACK_SOUND_PATH")
+var testTrigger = false
 
 var index = 1
 while index < CommandLine.arguments.count {
@@ -292,6 +344,13 @@ while index < CommandLine.arguments.count {
         guard index + 1 < CommandLine.arguments.count else { usage() }
         allowServerFallback = parseBool(CommandLine.arguments[index + 1]) ?? allowServerFallback
         index += 2
+    case "--ack-sound-path":
+        guard index + 1 < CommandLine.arguments.count else { usage() }
+        ackSoundPath = trim(CommandLine.arguments[index + 1])
+        index += 2
+    case "--test-trigger":
+        testTrigger = true
+        index += 1
     case "--help", "-h":
         usage()
     default:
@@ -302,6 +361,20 @@ while index < CommandLine.arguments.count {
 guard !phrase.isEmpty else {
     fputs("Missing wake phrase\n", stderr)
     exit(1)
+}
+
+if testTrigger {
+    emitWakeEvent(
+        phrase: phrase,
+        transcript: "",
+        localeId: localeId,
+        connectorId: connectorId,
+        roomName: roomName,
+        source: "voice_wake_test",
+        recognitionMode: "test",
+        ackSoundPath: ackSoundPath
+    )
+    exit(0)
 }
 
 let locale = Locale(identifier: localeId)
@@ -346,7 +419,8 @@ let options = Options(
     onDevice: onDevice,
     allowServerFallback: allowServerFallback,
     connectorId: connectorId,
-    roomName: roomName
+    roomName: roomName,
+    ackSoundPath: ackSoundPath
 )
 
 let listener = WakeListener(options: options, recognizer: recognizer)
