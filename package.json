@@ -1,7 +1,7 @@
 {
   "name": "@ninglo/remotelab",
   "version": "0.3.1",
-  "description": "Remote browser access to any CLI dev tool (Claude, Copilot, Codex, Cline and more) via HTTPS",
+  "description": "Mobile-first orchestration workbench for AI workers running on your own Mac or Linux machine",
   "type": "module",
   "license": "MIT",
   "author": "Ninglo",

@@ -2,36 +2,74 @@
 
 [中文](README.zh.md) | English
 
-Mobile-first control console for AI workers running on your own Mac or Linux machine.
+**The mobile-first orchestration workbench for AI workers running on your own machine.**
 
-Control CodeX (`codex`), Claude Code, Cline, and compatible local tools from a phone browser. RemoteLab is not a terminal emulator or mobile IDE; it is a durable chat/control plane that keeps sessions, runs, and history on disk.
+Your phone becomes the command center. Your Mac or Linux machine stays the place where AI actually works.
+
+RemoteLab is built for the shift from **"I personally operate the computer"** to **"I assign goals, review progress, and make decisions while AI executes."** It lets you control `codex`, `claude`, `cline`, and compatible local tools from a phone browser without pretending the phone is the workstation.
 
 ![Chat UI](docs/demo.gif)
 
-> Current baseline: `v0.2` — filesystem-backed HTTP control plane, detached runners, thin WebSocket invalidation, and a no-build mobile UI.
+> Current baseline: `v0.3` — owner-first session orchestration, detached runners, durable on-disk history, App-based workflow packaging, and a no-build mobile UI.
 
 ---
 
 ## For Humans
 
-### What RemoteLab is
+### Why RemoteLab exists
 
-RemoteLab is a **mobile-first control console for AI workers running on your own Mac or Linux machine**.
+AI is getting good enough that the bottleneck is no longer typing commands fast enough. The new bottleneck is **orchestrating multiple long-running work threads without carrying all the context in your head**.
 
-It is not a terminal emulator, not a mobile IDE, and not a generic multi-user chat SaaS. The current product model is:
+RemoteLab is for that shift. It helps one owner:
+
+- start and steer AI work on a real machine from a phone
+- come back hours later and recover context quickly
+- see which thread needs a decision instead of rereading raw logs
+- turn a proven workflow into an `App` that can be reused or shared
+
+If you want the sharper phrase, RemoteLab is an orchestration workbench for the AI-super-individual era.
+
+### What RemoteLab is — and what it is not
+
+**RemoteLab is:**
+
+- a control plane for AI workers running on your own Mac or Linux machine
+- an owner-first system for durable sessions, long-running work, and context recovery
+- a workflow packaging layer that turns repeatable agent behavior into reusable `Apps`
+- a thin mobile surface for decisions, approvals, quick inputs, and status
+
+**RemoteLab is not:**
+
+- a terminal emulator
+- a mobile IDE
+- a generic multi-user chat SaaS
+- a replacement for the strongest local executors like `codex` or `claude`
+
+### Product grammar
+
+The current product model is intentionally simple:
 
 - `Session` — the durable work thread
-- `Run` — one execution attempt under a session
-- `App` — a reusable template or policy for starting sessions
+- `Run` — one execution attempt inside a session
+- `App` — a reusable workflow / policy package for starting sessions
 - `Share snapshot` — an immutable read-only export of a session
 
-The important architectural assumptions are:
+The architectural assumptions behind that model:
 
 - HTTP is the canonical state path and WebSocket only hints that something changed
 - the browser is a control surface, not the system of record
 - runtime processes are disposable; durable state lives on disk
-- the product is single-owner first, with visitor access scoped through Apps
+- the product is single-owner first, with visitor access scoped through `Apps`
 - the frontend stays framework-light and mobile-friendly
+
+### What feels different
+
+RemoteLab is opinionated in a few ways:
+
+- **Orchestrate, do not mirror the desktop.** The phone is for steering work, not pretending to be a tiny laptop.
+- **Recover context, do not dump logs.** Durable sessions matter more than raw terminal continuity.
+- **Package workflows, do not just share prompts.** `Apps` are reusable operating shapes, not just copy-pasted text.
+- **Plug into strong executors, do not rebuild them.** RemoteLab coordinates tools like `codex` and `claude`; it does not try to replace them.
 
 ### What you can do
 
@@ -46,14 +84,15 @@ The important architectural assumptions are:
 
 ### Provider note
 
-- RemoteLab now treats `CodeX` (`codex`) as the default built-in tool and shows it first in the picker.
-- The main reason is policy clarity: API-key / local-CLI style integrations are usually a cleaner fit for a self-hosted control plane than consumer-login-based remote wrappers.
-- `Claude Code` still works in RemoteLab, and Claude-flavored local setups that talk to other backends are a separate decision, but you should review the current provider terms yourself before routing any proprietary CLI through a third-party UI like RemoteLab.
-- In practice, the risk is usually about the underlying provider auth / terms, not the binary name by itself. Make your own call based on the provider and account type behind that tool.
+- RemoteLab treats `Codex` (`codex`) as the default built-in tool and shows it first in the picker.
+- The product boundary is deliberate: RemoteLab aims to integrate the strongest executors available locally, not re-implement them behind a heavier UI.
+- API-key / local-CLI style integrations are usually a cleaner fit for a self-hosted control plane than consumer-login-based remote wrappers.
+- `Claude Code` still works in RemoteLab, and any other compatible local tool can fit as long as its auth and terms work for your setup.
+- In practice, the main risk is usually the underlying provider auth / terms, not the binary name by itself. Make your own call based on the provider and account type behind that tool.
 
 ### Get set up in 5 minutes — hand it to an AI
 
-The fastest path is still to paste a setup prompt into CodeX, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login when that mode is in play.
+The fastest path is still to paste a setup prompt into Codex, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login when that mode is in play.
 
 Configuration and feature-rollout docs in this repo are model-first and prompt-first: the human copies a prompt into their own AI coding agent, the agent gathers the needed context up front in as few rounds as possible, and the rest of the work stays inside that conversation except for explicit `[HUMAN]` steps.
 
@@ -67,7 +106,7 @@ The best pattern is one early handoff: the agent asks for everything it needs in
   - **Cloudflare Tunnel**: a domain pointed at Cloudflare ([free account](https://cloudflare.com), domain ~$1–12/yr from Namecheap or Porkbun)
   - **Tailscale**: [free for personal use](https://tailscale.com) — install on both phone and dev machine, join the same tailnet, no domain needed
 
-**Copy this prompt into CodeX or another coding agent:**
+**Copy this prompt into Codex or another coding agent:**
 
 ```text
 I want to set up RemoteLab on this machine so I can control AI coding tools from my phone.
@@ -99,7 +138,7 @@ Open your RemoteLab URL on your phone:
 
 ![Dashboard](docs/new-dashboard.png)
 
-- create a session with a local AI tool, with CodeX first by default
+- create a session with a local AI tool, with Codex first by default
 - start from `~` by default, or point the agent at another repo when needed
 - send messages while the UI re-fetches canonical HTTP state in the background
 - leave and come back later without losing the conversation thread
