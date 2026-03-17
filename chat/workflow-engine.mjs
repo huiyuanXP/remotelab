@@ -3,7 +3,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes } from 'crypto';
 import { homedir } from 'os';
-import { createAndRun, archiveSession } from './session-manager.mjs';
+import { createAndRun, archiveSession, sendMessage, waitForIdle } from './session-manager.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKFLOWS_DIR = join(__dirname, '..', 'workflows');
@@ -31,7 +31,21 @@ function resolvePlaceholders(prompt, results) {
 
 // ---- Single task runner ----
 
+async function runSessionMessageTask(task, runDir) {
+  console.log(`[Workflow] Sending message to session "${task.sessionId}"`);
+  sendMessage(task.sessionId, task.text);
+  await waitForIdle(task.sessionId);
+  const output = `Message sent to session ${task.sessionId}`;
+  writeFileSync(join(runDir, `${task.id}.txt`), output, 'utf8');
+  console.log(`[Workflow] sessionMessage task "${task.id}" completed`);
+  return output;
+}
+
 async function runTask(task, runDir, sessionIds) {
+  if (task.type === 'sessionMessage') {
+    return runSessionMessageTask(task, runDir);
+  }
+  // Default: createAndRun (legacy task type)
   console.log(`[Workflow] Running task "${task.id}" in ${task.workspace} (model: ${task.model})`);
   const { output, sessionId } = await createAndRun(task.workspace, task.model, task.prompt);
   if (sessionId) sessionIds.push(sessionId);
@@ -91,19 +105,24 @@ function handleRunCount(schedule) {
 // ---- Main export ----
 
 export async function executeWorkflow(workflowName, options = {}) {
-  const { schedule } = options;
+  const { schedule, inlineWorkflow } = options;
 
-  const workflowPath = join(WORKFLOWS_DIR, `${workflowName}.json`);
-  if (!existsSync(workflowPath)) {
-    throw new Error(`Workflow definition not found: ${workflowPath}`);
+  let workflow;
+  if (inlineWorkflow) {
+    workflow = inlineWorkflow;
+  } else {
+    const workflowPath = join(WORKFLOWS_DIR, `${workflowName}.json`);
+    if (!existsSync(workflowPath)) {
+      throw new Error(`Workflow definition not found: ${workflowPath}`);
+    }
+    workflow = JSON.parse(readFileSync(workflowPath, 'utf8'));
   }
-  const workflow = JSON.parse(readFileSync(workflowPath, 'utf8'));
 
   const runId = randomBytes(8).toString('hex');
   const runDir = join(RUNS_DIR, runId);
   mkdirSync(runDir, { recursive: true });
 
-  console.log(`[Workflow] Starting "${workflowName}" run=${runId}`);
+  console.log(`[Workflow] Starting "${workflowName || workflow.name}" run=${runId}`);
 
   const meta = {
     runId,
@@ -124,7 +143,7 @@ export async function executeWorkflow(workflowName, options = {}) {
 
       const resolvedTasks = step.tasks.map(task => ({
         ...task,
-        prompt: resolvePlaceholders(task.prompt, results),
+        ...(task.prompt ? { prompt: resolvePlaceholders(task.prompt, results) } : {}),
       }));
 
       if (step.type === 'parallel') {

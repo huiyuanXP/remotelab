@@ -14,17 +14,20 @@
  * The server reads the auth token from ~/.config/claude-web/auth.json automatically.
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync } from 'fs';
 import { createInterface } from 'readline';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
 import { join } from 'path';
+import { randomBytes } from 'crypto';
 import http from 'http';
 
 const AUTH_FILE = join(homedir(), '.config', 'claude-web', 'auth.json');
 const CHAT_PORT = parseInt(process.env.CHAT_PORT, 10) || 7690;
 const BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
 const MY_SESSION_ID = process.env.REMOTELAB_SESSION_ID || null;
+const WORKFLOWS_DIR = join(import.meta.dirname, 'workflows');
+const SCHEDULES_FILE = join(WORKFLOWS_DIR, 'schedules.json');
 
 // ---- Auth token ----
 
@@ -320,6 +323,20 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'schedule_message',
+    description: 'Schedule a message to be sent to a session at a future time. The message will be delivered by the scheduler as a one-shot task. Provide either delay_ms or run_at (not both).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'Target session ID to send the message to.' },
+        text: { type: 'string', description: 'The message text to send.' },
+        delay_ms: { type: 'number', description: 'Delay in milliseconds before sending. Mutually exclusive with run_at.' },
+        run_at: { type: 'string', description: 'ISO 8601 timestamp for when to send. Mutually exclusive with delay_ms.' },
+      },
+      required: ['session_id', 'text'],
+    },
+  },
 ];
 
 // ---- Tool execution ----
@@ -507,6 +524,66 @@ async function executeTool(name, args) {
       } catch {}
 
       return { content: [{ type: 'text', text: log.join('\n') }] };
+    }
+
+    case 'schedule_message': {
+      if (!args.delay_ms && !args.run_at) {
+        return { isError: true, content: [{ type: 'text', text: 'Either delay_ms or run_at must be provided.' }] };
+      }
+      if (args.delay_ms && args.run_at) {
+        return { isError: true, content: [{ type: 'text', text: 'Provide either delay_ms or run_at, not both.' }] };
+      }
+
+      const runAt = args.run_at
+        ? new Date(args.run_at).toISOString()
+        : new Date(Date.now() + args.delay_ms).toISOString();
+
+      const scheduleId = `msg-${Date.now()}-${randomBytes(2).toString('hex')}`;
+      const newSchedule = {
+        id: scheduleId,
+        cron: null,
+        runAt,
+        workflow: null,
+        inlineWorkflow: {
+          name: 'schedule_message',
+          steps: [{
+            id: 'send',
+            type: 'sequential',
+            tasks: [{
+              id: 'msg',
+              type: 'sessionMessage',
+              sessionId: args.session_id,
+              text: args.text,
+            }],
+          }],
+        },
+        enabled: true,
+        disposable: true,
+        maxRuns: 1,
+        runCount: 0,
+        lastRun: null,
+      };
+
+      // Append to schedules.json
+      let data;
+      try {
+        data = JSON.parse(readFileSync(SCHEDULES_FILE, 'utf8'));
+      } catch {
+        data = { schedules: [] };
+      }
+      data.schedules.push(newSchedule);
+      const tmp = SCHEDULES_FILE + '.tmp.' + process.pid;
+      writeFileSync(tmp, JSON.stringify(data, null, 2));
+      renameSync(tmp, SCHEDULES_FILE);
+
+      // Tell the scheduler to pick it up
+      try {
+        await apiRequest('POST', `/api/schedules/${scheduleId}/reload`);
+      } catch {
+        // Scheduler will pick it up on next restart if reload fails
+      }
+
+      return { content: [{ type: 'text', text: JSON.stringify({ scheduleId, runAt }, null, 2) }] };
     }
 
     default:

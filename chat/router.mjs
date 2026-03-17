@@ -922,7 +922,10 @@ export async function handleRequest(req, res) {
         return;
       }
       // Fire-and-forget; return run ID immediately
-      const runPromise = executeWorkflow(schedule.workflow, { schedule });
+      const runPromise = executeWorkflow(schedule.workflow, {
+        schedule,
+        inlineWorkflow: schedule.inlineWorkflow || null,
+      });
       runPromise
         .then(({ runId }) => console.log(`[router] Manual trigger run=${runId} completed`))
         .catch(err => console.error(`[router] Manual trigger failed: ${err.message}`));
@@ -932,6 +935,15 @@ export async function handleRequest(req, res) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
+    return;
+  }
+
+  // POST /api/schedules/:id/reload — tell scheduler to pick up a new/changed schedule
+  const scheduleReloadMatch = pathname.match(/^\/api\/schedules\/([^/]+)\/reload$/);
+  if (scheduleReloadMatch && req.method === 'POST') {
+    reloadSchedule(scheduleReloadMatch[1]);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
     return;
   }
 

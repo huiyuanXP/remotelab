@@ -49,6 +49,9 @@ server.listen(CHAT_PORT, '127.0.0.1', () => {
 
   // Start workflow scheduler (fires once server is up so createAndRun can reach itself)
   startScheduler(async (schedule) => {
-    return executeWorkflow(schedule.workflow, { schedule });
+    return executeWorkflow(schedule.workflow, {
+      schedule,
+      inlineWorkflow: schedule.inlineWorkflow || null,
+    });
   });
 });
