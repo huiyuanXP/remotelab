@@ -113,6 +113,25 @@ function scheduleOne(schedule, onTrigger) {
     return;
   }
 
+  // interval-based schedule (recurring with fixed interval)
+  if (schedule.intervalMs && !schedule.cron) {
+    const intervalMin = Math.round(schedule.intervalMs / 1000 / 60);
+    console.log(`[Scheduler] "${schedule.id}" interval every ${intervalMin} min`);
+    const timer = setTimeout(function tick() {
+      console.log(`[Scheduler] Triggering "${schedule.id}" (interval)`);
+      triggerAndUpdate(schedule, onTrigger);
+      // Re-schedule from fresh disk state (might have been disabled/updated)
+      const freshData = loadSchedules();
+      const freshSchedule = freshData.schedules.find(s => s.id === schedule.id);
+      if (freshSchedule && freshSchedule.enabled && freshSchedule.intervalMs) {
+        const nextTimer = setTimeout(tick, freshSchedule.intervalMs);
+        activeTimers.set(schedule.id, nextTimer);
+      }
+    }, schedule.intervalMs);
+    activeTimers.set(schedule.id, timer);
+    return;
+  }
+
   // cron-based schedule
   if (!schedule.cron) return;
 

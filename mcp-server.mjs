@@ -328,7 +328,7 @@ const TOOLS = [
   },
   {
     name: 'schedule_message',
-    description: 'Schedule a message to be sent to a session at a future time. The message will be delivered by the scheduler as a one-shot task. Provide either delay_ms or run_at (not both).',
+    description: 'Schedule a message to be sent to a session. Supports one-shot (delay_ms or run_at) and recurring (interval_ms) modes. For one-shot: provide delay_ms or run_at (not both). For recurring: provide interval_ms (fires repeatedly at this interval).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -336,6 +336,7 @@ const TOOLS = [
         text: { type: 'string', description: 'The message text to send.' },
         delay_ms: { type: 'number', description: 'Delay in milliseconds before sending. Mutually exclusive with run_at.' },
         run_at: { type: 'string', description: 'ISO 8601 timestamp for when to send. Mutually exclusive with delay_ms.' },
+        interval_ms: { type: 'number', description: 'Interval in milliseconds for recurring delivery. Mutually exclusive with delay_ms and run_at.' },
       },
       required: ['session_id', 'text'],
     },
@@ -530,42 +531,63 @@ async function executeTool(name, args) {
     }
 
     case 'schedule_message': {
-      if (!args.delay_ms && !args.run_at) {
-        return { isError: true, content: [{ type: 'text', text: 'Either delay_ms or run_at must be provided.' }] };
+      const modes = [args.delay_ms, args.run_at, args.interval_ms].filter(Boolean).length;
+      if (modes === 0) {
+        return { isError: true, content: [{ type: 'text', text: 'Provide one of: delay_ms, run_at, or interval_ms.' }] };
       }
-      if (args.delay_ms && args.run_at) {
-        return { isError: true, content: [{ type: 'text', text: 'Provide either delay_ms or run_at, not both.' }] };
+      if (modes > 1) {
+        return { isError: true, content: [{ type: 'text', text: 'Provide only one of: delay_ms, run_at, or interval_ms.' }] };
       }
 
-      const runAt = args.run_at
-        ? new Date(args.run_at).toISOString()
-        : new Date(Date.now() + args.delay_ms).toISOString();
-
+      let newSchedule;
       const scheduleId = `msg-${Date.now()}-${randomBytes(2).toString('hex')}`;
-      const newSchedule = {
-        id: scheduleId,
-        cron: null,
-        runAt,
-        workflow: null,
-        inlineWorkflow: {
-          name: 'schedule_message',
-          steps: [{
-            id: 'send',
-            type: 'sequential',
-            tasks: [{
-              id: 'msg',
-              type: 'sessionMessage',
-              sessionId: args.session_id,
-              text: args.text,
-            }],
+      const inlineWorkflow = {
+        name: 'schedule_message',
+        steps: [{
+          id: 'send',
+          type: 'sequential',
+          tasks: [{
+            id: 'msg',
+            type: 'sessionMessage',
+            sessionId: args.session_id,
+            text: args.text,
           }],
-        },
-        enabled: true,
-        disposable: true,
-        maxRuns: 1,
-        runCount: 0,
-        lastRun: null,
+        }],
       };
+
+      if (args.interval_ms) {
+        // Recurring interval schedule
+        newSchedule = {
+          id: scheduleId,
+          cron: null,
+          runAt: null,
+          intervalMs: args.interval_ms,
+          workflow: null,
+          inlineWorkflow,
+          enabled: true,
+          disposable: false,
+          maxRuns: null,
+          runCount: 0,
+          lastRun: null,
+        };
+      } else {
+        // One-shot schedule
+        const runAt = args.run_at
+          ? new Date(args.run_at).toISOString()
+          : new Date(Date.now() + args.delay_ms).toISOString();
+        newSchedule = {
+          id: scheduleId,
+          cron: null,
+          runAt,
+          workflow: null,
+          inlineWorkflow,
+          enabled: true,
+          disposable: true,
+          maxRuns: 1,
+          runCount: 0,
+          lastRun: null,
+        };
+      }
 
       // Append to schedules.json
       let data;
@@ -580,7 +602,7 @@ async function executeTool(name, args) {
       writeFileSync(tmp, JSON.stringify(data, null, 2));
       renameSync(tmp, SCHEDULES_FILE);
 
-      process.stderr.write(`[mcp] schedule_message registered: id=${scheduleId} runAt=${runAt} target=${args.session_id.slice(0,8)}\n`);
+      process.stderr.write(`[mcp] schedule_message registered: id=${scheduleId} ${args.interval_ms ? `intervalMs=${args.interval_ms}` : `runAt=${newSchedule.runAt}`} target=${args.session_id.slice(0,8)}\n`);
 
       // Tell the scheduler to pick it up
       try {
@@ -589,7 +611,10 @@ async function executeTool(name, args) {
         // Scheduler will pick it up on next restart if reload fails
       }
 
-      return { content: [{ type: 'text', text: JSON.stringify({ scheduleId, runAt }, null, 2) }] };
+      const result = args.interval_ms
+        ? { scheduleId, intervalMs: args.interval_ms, recurring: true }
+        : { scheduleId, runAt: newSchedule.runAt };
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     }
 
     default:

@@ -987,7 +987,7 @@ export async function handleRequest(req, res) {
         return;
       }
       // Allow updating only specific fields
-      const ALLOWED = ['enabled', 'maxRuns', 'disposable'];
+      const ALLOWED = ['enabled', 'maxRuns', 'disposable', 'intervalMs'];
       for (const key of ALLOWED) {
         if (updates[key] !== undefined) schedule[key] = updates[key];
       }

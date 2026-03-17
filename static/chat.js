@@ -1869,6 +1869,15 @@
     return new Date(runAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
+  function formatInterval(ms) {
+    if (!ms) return null;
+    const totalMin = Math.round(ms / 60000);
+    if (totalMin < 60) return `Every ${totalMin}m`;
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return m > 0 ? `Every ${h}h ${m}m` : `Every ${h}h`;
+  }
+
   async function loadTaskSection() {
     try {
       const schedRes = await fetch("/api/schedules");
@@ -1898,6 +1907,7 @@
         let summaryText = formatCron(sched.cron);
         const runAtLabel = formatRunAt(sched.runAt);
         if (runAtLabel) summaryText = runAtLabel;
+        if (sched.intervalMs) summaryText = formatInterval(sched.intervalMs);
 
         const item = document.createElement("div");
         item.className = "task-item" + (enabled ? "" : " disabled") + (sched.id === currentTaskDetailId ? " active" : "");
@@ -2039,14 +2049,18 @@
       // ── Basic Info ──
       const infoSection = document.createElement("div");
       infoSection.className = "tdp-section";
-      const cronLabel = formatCron(sched.cron);
+      const cronLabel = sched.intervalMs ? formatInterval(sched.intervalMs) : formatCron(sched.cron);
       const runAtLabel = formatRunAt(sched.runAt);
       const runCountDisplay = sched.maxRuns != null
         ? `${sched.runCount || 0} / ${sched.maxRuns}`
         : `${sched.runCount || 0} / \u221E`;
 
       // Compute next run info for cron schedules
-      const nextRunDate = nextCronUTC(sched.cron);
+      let nextRunDate = nextCronUTC(sched.cron);
+      if (!nextRunDate && sched.intervalMs) {
+        const base = sched.lastRun ? new Date(sched.lastRun).getTime() : Date.now();
+        nextRunDate = new Date(base + sched.intervalMs);
+      }
       const nextRunLocalStr = nextRunDate
         ? nextRunDate.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
         : null;
@@ -2147,7 +2161,10 @@
       }
 
       // ── Run History ──
-      const schedRuns = runs.filter(r => !sched.workflow || r.workflow === sched.workflow);
+      const schedRuns = runs.filter(r => {
+        if (sched.workflow) return r.workflow === sched.workflow;
+        return r.scheduleId === sched.id;
+      });
       const runSection = document.createElement("div");
       runSection.className = "tdp-section";
       runSection.innerHTML = `<div class="tdp-section-title">Run History</div>`;
