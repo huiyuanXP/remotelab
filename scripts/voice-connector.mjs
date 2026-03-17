@@ -19,6 +19,7 @@ const DEFAULT_SESSION_TOOL = 'codex'
 const DEFAULT_APP_ID = 'voice'
 const DEFAULT_APP_NAME = 'Voice'
 const DEFAULT_GROUP_NAME = 'Voice'
+const DEFAULT_SESSION_MODE = 'stable'
 const RUN_POLL_INTERVAL_MS = 1500
 const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000
 const DEFAULT_CAPTURE_TIMEOUT_MS = 90 * 1000
@@ -138,6 +139,7 @@ function normalizeConfig(value, options = {}) {
   const roomName = trimString(normalized.roomName || normalized.room)
   const sessionName = trimString(normalized.sessionName)
   const description = trimString(normalized.description)
+  const sessionMode = trimString(normalized.sessionMode).toLowerCase() === 'per-wake' ? 'per-wake' : DEFAULT_SESSION_MODE
   const queueMode = trimString(normalized.queueMode).toLowerCase() === 'ignore' ? 'ignore' : 'queue'
   return {
     configPath: resolvedConfigPath,
@@ -154,6 +156,7 @@ function normalizeConfig(value, options = {}) {
     appId: trimString(normalized.appId || DEFAULT_APP_ID) || DEFAULT_APP_ID,
     appName: trimString(normalized.appName || DEFAULT_APP_NAME) || DEFAULT_APP_NAME,
     group: trimString(normalized.group || DEFAULT_GROUP_NAME) || DEFAULT_GROUP_NAME,
+    sessionMode,
     sessionName,
     description,
     queueMode,
@@ -217,6 +220,7 @@ Config shape:
     "model": "",
     "effort": "",
     "thinking": false,
+    "sessionMode": "${DEFAULT_SESSION_MODE}",
     "systemPrompt": "${DEFAULT_SESSION_SYSTEM_PROMPT.replace(/"/g, '\\"')}",
     "wake": {
       "mode": "command",
@@ -339,11 +343,16 @@ function normalizeIngressEvent(value, defaults = {}) {
 
 function buildExternalTriggerId(summary, config = {}) {
   const connectorId = trimString(summary?.connectorId || config.connectorId || summary?.roomName || config.roomName)
-  return `voice:${sanitizeIdPart(connectorId, 'main')}`
+  const baseId = `voice:${sanitizeIdPart(connectorId, 'main')}`
+  if (trimString(config.sessionMode).toLowerCase() === 'per-wake') {
+    const eventPart = sanitizeIdPart(summary?.eventId || randomUUID())
+    return `${baseId}:${eventPart}`
+  }
+  return baseId
 }
 
-function buildRequestId(summary) {
-  const triggerId = buildExternalTriggerId(summary, summary)
+function buildRequestId(summary, config = {}) {
+  const triggerId = buildExternalTriggerId(summary, config)
   const eventPart = sanitizeIdPart(summary?.eventId || randomUUID())
   return `${triggerId}:${eventPart}`
 }
@@ -555,7 +564,7 @@ async function createOrReuseSession(runtime, summary) {
 
 async function submitRemoteLabMessage(runtime, sessionId, summary) {
   const payload = {
-    requestId: buildRequestId(summary),
+    requestId: buildRequestId(summary, runtime.config),
     text: buildRemoteLabMessage(summary),
     tool: runtime.config.sessionTool,
     thinking: runtime.config.thinking === true,

@@ -63,6 +63,7 @@
     "feishu:connect": "node scripts/feishu-connector.mjs",
     "feishu:connect:instance": "./scripts/feishu-connector-instance.sh start",
     "voice:connect": "node scripts/voice-connector.mjs",
+    "voice:connect:instance": "./scripts/voice-connector-instance.sh start",
     "observer:run": "node scripts/proactive-observer.mjs",
     "observer:instance": "./scripts/proactive-observer-instance.sh start",
     "transcript:measure": "node scripts/measure-transcript-overhead.mjs",

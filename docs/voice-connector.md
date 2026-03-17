@@ -77,6 +77,10 @@ The expected session scope is:
 - `group`: `Voice`
 - `externalTriggerId`: stable per connector, such as `voice:living-room-speaker`
 
+For demos that want one fresh session per wake event instead of one stable device thread, set:
+
+- `sessionMode`: `per-wake`
+
 ## Human Checkpoints
 
 Only interrupt the human for items the AI cannot complete alone.
@@ -177,6 +181,51 @@ For a custom command, the reply is passed both as stdin and as `REMOTELAB_VOICE_
     "rate": 185
   }
 }
+```
+
+## Built-in macOS demo helpers
+
+This repo now ships a simple macOS-first demo path that keeps all microphone / wake-word handling outside the main server:
+
+- `scripts/voice-wake-phrase.swift` — always-on wake listener using macOS Speech; emits one JSON line when it hears the wake phrase
+- `scripts/voice-capture-until-silence.swift` — captures one follow-up utterance and stops after about 1 second of silence
+- `scripts/music-open.mjs` — opens a preset Apple Music classical target or a search page, then sends a play/pause key as a pragmatic playback trigger
+- `scripts/voice-connector-instance.sh` — start/stop/status helper for the persistent connector process
+
+Example machine-local config for this demo shape:
+
+```json
+{
+  "connectorId": "desk-speaker",
+  "roomName": "Desk",
+  "chatBaseUrl": "http://127.0.0.1:7690",
+  "sessionFolder": "~",
+  "sessionTool": "codex",
+  "sessionMode": "per-wake",
+  "thinking": false,
+  "systemPrompt": "You are Rowan speaking through a local wake-word voice connector on the owner's Mac. You may use shell commands, osascript, and local scripts on this machine when useful. For music playback requests, prefer running `node /Users/jiujianian/code/remotelab/scripts/music-open.mjs --preset apple-music-classical` for generic classical music, or `node /Users/jiujianian/code/remotelab/scripts/music-open.mjs --query \"<query>\"` for a search. When a local action is possible, do it before replying. Reply with exactly the short text that should be spoken aloud.",
+  "wake": {
+    "mode": "command",
+    "command": "swift /Users/jiujianian/code/remotelab/scripts/voice-wake-phrase.swift --phrase \"Hello World\" --locale en-US --cooldown-ms 3000 --restart-delay-ms 1200 --on-device true --allow-server-fallback true",
+    "keyword": "Hello World"
+  },
+  "capture": {
+    "command": "swift /Users/jiujianian/code/remotelab/scripts/voice-capture-until-silence.swift --timeout-ms 20000 --speech-start-timeout-ms 8000 --silence-ms 1000 --locale zh-CN --on-device true --allow-server-fallback true",
+    "timeoutMs": 30000
+  },
+  "tts": {
+    "mode": "say",
+    "voice": "Tingting",
+    "rate": 185,
+    "timeoutMs": 120000
+  }
+}
+```
+
+Start the persistent demo instance with:
+
+```bash
+./scripts/voice-connector-instance.sh start
 ```
 
 ## Validation

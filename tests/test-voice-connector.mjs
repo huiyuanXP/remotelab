@@ -64,6 +64,7 @@ assert.equal(plainIngress.connectorId, 'desk-speaker')
 assert.ok(plainIngress.eventId.startsWith('voice-'))
 
 assert.equal(buildExternalTriggerId({ connectorId: 'Living Room Speaker' }), 'voice:living-room-speaker')
+assert.equal(buildExternalTriggerId({ connectorId: 'Living Room Speaker', eventId: 'wake_1' }, { sessionMode: 'per-wake' }), 'voice:living-room-speaker:wake_1')
 
 const renderedPrompt = buildRemoteLabMessage({
   connectorId: 'living-room-speaker',
