@@ -9,6 +9,7 @@ import uuid
 
 from voice_audio_common import (
     DEFAULT_MODEL,
+    default_input_backend,
     emit_json,
     make_temp_wav,
     normalize_for_match,
@@ -68,9 +69,10 @@ def main():
     running = True
     last_trigger_at = 0.0
     normalized_phrase = normalize_for_match(args.phrase)
+    active_backend = trim(args.input_backend) or default_input_backend()
 
     print(
-        f"[voice-wake-loop] listening for {args.phrase} via ffmpeg + mlx_whisper"
+        f"[voice-wake-loop] listening for {args.phrase} via {active_backend} + mlx_whisper"
         f" (chunk={args.chunk_seconds}s, mode={args.transcript_mode})",
         file=sys.stderr,
     )

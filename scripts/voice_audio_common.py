@@ -16,6 +16,21 @@ try:
 except Exception:
     mlx_whisper = None
 
+try:
+    import numpy as np
+except Exception:
+    np = None
+
+try:
+    import sounddevice as sd
+except Exception:
+    sd = None
+
+try:
+    import soundfile as sf
+except Exception:
+    sf = None
+
 DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo-q4"
 
 
@@ -48,6 +63,8 @@ def play_ack_sound(path):
 
 
 def default_input_backend():
+    if sd is not None and sf is not None:
+        return "sounddevice"
     system = platform.system()
     if system == "Darwin":
         return "avfoundation"
@@ -57,6 +74,12 @@ def default_input_backend():
 
 
 def default_input_source(backend):
+    if backend == "sounddevice":
+        if sd is not None:
+            default_input = getattr(sd.default, "device", None)
+            if isinstance(default_input, (list, tuple)) and len(default_input) >= 1 and default_input[0] is not None and default_input[0] >= 0:
+                return str(default_input[0])
+        return ""
     if backend == "avfoundation":
         return "0"
     if backend == "pulse":
@@ -93,10 +116,42 @@ def run_command(args, *, capture_output=False):
     return subprocess.run(args, **kwargs)
 
 
+def record_audio_sounddevice(output_path, *, duration_seconds, source=None):
+    if sd is None or sf is None or np is None:
+        raise RuntimeError("sounddevice backend requires sounddevice, soundfile, and numpy")
+    output_path = str(Path(output_path).expanduser().resolve())
+    normalized_source = trim(source)
+    device = None
+    if normalized_source:
+        try:
+            device = int(normalized_source)
+        except ValueError:
+            device = normalized_source
+    sample_rate = 16000
+    frames = max(1, int(round(float(duration_seconds) * sample_rate)))
+    audio = sd.rec(
+        frames,
+        samplerate=sample_rate,
+        channels=1,
+        dtype="float32",
+        device=device,
+    )
+    sd.wait()
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    sf.write(output_path, audio, sample_rate)
+    if peak <= 1e-8:
+        raise RuntimeError(
+            "Microphone capture returned silence; on macOS this usually means the process is not running inside a microphone-authorized app context such as Terminal.app"
+        )
+    return output_path
+
+
 def record_audio(output_path, *, duration_seconds, backend=None, source=None):
     output_path = str(Path(output_path).expanduser().resolve())
     backend = trim(backend) or default_input_backend()
     source = trim(source) or default_input_source(backend)
+    if backend == "sounddevice":
+        return record_audio_sounddevice(output_path, duration_seconds=duration_seconds, source=source)
     cmd = [
         "ffmpeg",
         "-hide_banner",
