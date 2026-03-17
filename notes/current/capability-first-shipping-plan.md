@@ -2,6 +2,8 @@
 
 Status: active working direction as of 2026-03-17
 
+Concrete execution companion: `notes/current/board-fanout-next-push.md`
+
 ## Decision
 
 - Prioritize shaping the next product expression before another deep refactor pass.
