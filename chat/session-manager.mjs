@@ -55,7 +55,6 @@ import {
   isTerminalRunState,
   listRunIds,
   materializeRunSpoolLine,
-  readRunSpoolDelta,
   readRunSpoolRecords,
   requestRunCancel,
   runDir,
@@ -222,6 +221,7 @@ function getAutoCompactStatusText(run) {
 
 const liveSessions = new Map();
 const observedRuns = new Map();
+const runSyncPromises = new Map();
 
 function nowIso() {
   return new Date().toISOString();
@@ -807,6 +807,214 @@ function observeDetachedRun(sessionId, runId) {
     console.error(`[runs] failed to observe ${runId}: ${error.message}`);
     return false;
   }
+}
+
+function parseRecordTimestamp(record) {
+  const parsed = Date.parse(record?.ts || '');
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isUserMessageEvent(event) {
+  return event?.type === 'message' && event.role === 'user';
+}
+
+function dropActiveRunGeneratedHistoryEvents(history = [], activeRunId = '') {
+  if (!activeRunId) return Array.isArray(history) ? history : [];
+  return (Array.isArray(history) ? history : []).filter((event) => {
+    if (event?.runId !== activeRunId) return true;
+    return isUserMessageEvent(event);
+  });
+}
+
+function withSyntheticSeqs(events = [], baseSeq = 0) {
+  let nextSeq = Number.isInteger(baseSeq) && baseSeq > 0 ? baseSeq : 0;
+  return (Array.isArray(events) ? events : []).map((event) => {
+    nextSeq += 1;
+    return {
+      ...event,
+      seq: nextSeq,
+    };
+  });
+}
+
+async function collectNormalizedRunEvents(run, manifest) {
+  const runtimeInvocation = await createToolInvocation(manifest.tool, '', {
+    model: manifest.options?.model,
+    effort: manifest.options?.effort,
+    thinking: manifest.options?.thinking,
+  });
+  const { adapter } = runtimeInvocation;
+  const spoolRecords = await readRunSpoolRecords(run.id);
+  const normalizedEvents = [];
+  let stdoutLineCount = 0;
+  let lastRecordTimestamp = null;
+
+  for (const record of spoolRecords) {
+    if (record?.stream !== 'stdout') continue;
+    const line = await materializeRunSpoolLine(run.id, record);
+    if (!line) continue;
+    stdoutLineCount += 1;
+    const stableTimestamp = parseRecordTimestamp(record);
+    if (Number.isInteger(stableTimestamp)) {
+      lastRecordTimestamp = stableTimestamp;
+    }
+    const parsedEvents = adapter.parseLine(line).map((event) => ({
+      ...event,
+      ...(Number.isInteger(stableTimestamp) ? { timestamp: stableTimestamp } : {}),
+    }));
+    normalizedEvents.push(...normalizeRunEvents(run, parsedEvents));
+  }
+
+  const flushedEvents = adapter.flush().map((event) => ({
+    ...event,
+    ...(Number.isInteger(lastRecordTimestamp) ? { timestamp: lastRecordTimestamp } : {}),
+  }));
+  normalizedEvents.push(...normalizeRunEvents(run, flushedEvents));
+
+  const preview = spoolRecords
+    .filter((record) => ['stdout', 'stderr', 'error'].includes(record.stream))
+    .map((record) => {
+      if (record?.json && typeof record.json === 'object') {
+        try {
+          return clipFailurePreview(JSON.stringify(record.json));
+        } catch {}
+      }
+      return typeof record?.line === 'string' ? clipFailurePreview(record.line) : '';
+    })
+    .filter(Boolean)
+    .slice(-3)
+    .join(' | ');
+
+  return {
+    runtimeInvocation,
+    normalizedEvents,
+    stdoutLineCount,
+    preview,
+  };
+}
+
+async function buildSessionTimelineEvents(sessionId, options = {}) {
+  const includeBodies = options.includeBodies !== false;
+  const history = await loadHistory(sessionId, { includeBodies });
+  const sessionMeta = options.sessionMeta || await findSessionMeta(sessionId);
+  const activeRunId = typeof sessionMeta?.activeRunId === 'string' ? sessionMeta.activeRunId.trim() : '';
+  if (!activeRunId) {
+    return history;
+  }
+
+  const run = await getRun(activeRunId);
+  if (!run || run.finalizedAt) {
+    return history;
+  }
+
+  const manifest = await getRunManifest(activeRunId);
+  if (!manifest) {
+    return history;
+  }
+
+  const projected = await collectNormalizedRunEvents(run, manifest);
+  if (projected.normalizedEvents.length === 0) {
+    return dropActiveRunGeneratedHistoryEvents(history, activeRunId);
+  }
+
+  const committedLatestSeq = history.reduce(
+    (maxSeq, event) => (Number.isInteger(event?.seq) && event.seq > maxSeq ? event.seq : maxSeq),
+    0,
+  );
+
+  return [
+    ...dropActiveRunGeneratedHistoryEvents(history, activeRunId),
+    ...withSyntheticSeqs(projected.normalizedEvents, committedLatestSeq),
+  ];
+}
+
+async function syncDetachedRunUnlocked(sessionId, runId) {
+  let run = await getRun(runId);
+  if (!run) {
+    stopObservedRun(runId);
+    return null;
+  }
+  const manifest = await getRunManifest(runId);
+  if (!manifest) return run;
+
+  let historyChanged = false;
+  let sessionChanged = false;
+
+  const projection = await collectNormalizedRunEvents(run, manifest);
+  const normalizedEvents = projection.normalizedEvents;
+  const latestUsage = [...normalizedEvents].reverse().find((event) => event.type === 'usage');
+  const contextInputTokens = Number.isInteger(latestUsage?.contextTokens)
+    ? latestUsage.contextTokens
+    : null;
+  const contextWindowTokens = Number.isInteger(latestUsage?.contextWindowTokens)
+    ? latestUsage.contextWindowTokens
+    : null;
+
+  run = await updateRun(runId, (current) => ({
+    ...current,
+    normalizedLineCount: projection.stdoutLineCount,
+    normalizedEventCount: normalizedEvents.length,
+    lastNormalizedAt: nowIso(),
+    ...(Number.isInteger(contextInputTokens) ? { contextInputTokens } : {}),
+    ...(Number.isInteger(contextWindowTokens) ? { contextWindowTokens } : {}),
+  })) || run;
+
+  if (run.claudeSessionId || run.codexThreadId) {
+    sessionChanged = await persistResumeIds(sessionId, run.claudeSessionId, run.codexThreadId) || sessionChanged;
+  }
+
+  const isStructuredRuntime = projection.runtimeInvocation.isClaudeFamily || projection.runtimeInvocation.isCodexFamily;
+  const result = await getRunResult(runId);
+  const inferredState = deriveRunStateFromResult(run, result);
+  const completedAt = typeof result?.completedAt === 'string' && result.completedAt
+    ? result.completedAt
+    : null;
+  const zeroStructuredOutputReason = (
+    isStructuredRuntime
+    && inferredState === 'completed'
+    && normalizedEvents.length === 0
+  )
+    ? await deriveStructuredRuntimeFailureReason(runId, projection.preview)
+    : null;
+
+  if (zeroStructuredOutputReason) {
+    run = await updateRun(runId, (current) => ({
+      ...current,
+      state: 'failed',
+      completedAt,
+      result,
+      failureReason: zeroStructuredOutputReason,
+    })) || run;
+  }
+
+  if (!isTerminalRunState(run.state)) {
+    if (inferredState && completedAt) {
+      run = await updateRun(runId, (current) => ({
+        ...current,
+        state: inferredState,
+        completedAt,
+        result,
+        failureReason: inferredState === 'failed'
+          ? deriveRunFailureReasonFromResult(current, result)
+          : null,
+      })) || run;
+    }
+  }
+
+  if (isTerminalRunState(run.state) && !run.finalizedAt) {
+    const finalized = await finalizeDetachedRun(sessionId, run, manifest, normalizedEvents);
+    historyChanged = historyChanged || finalized.historyChanged;
+    sessionChanged = sessionChanged || finalized.sessionChanged;
+    run = await getRun(runId) || run;
+  }
+
+  if (historyChanged || sessionChanged) {
+    broadcastSessionInvalidation(sessionId);
+  }
+  if (isTerminalRunState(run.state)) {
+    stopObservedRun(runId);
+  }
+  return run;
 }
 
 async function saveAttachments(images) {
@@ -2082,7 +2290,7 @@ async function applyCompactionWorkerResult(targetSessionId, run, manifest) {
   return true;
 }
 
-async function finalizeDetachedRun(sessionId, run, manifest) {
+async function finalizeDetachedRun(sessionId, run, manifest, normalizedEvents = []) {
   let historyChanged = false;
   let sessionChanged = false;
   const live = liveSessions.get(sessionId);
@@ -2092,6 +2300,11 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
   const compactionTargetSessionId = typeof manifest?.compactionTargetSessionId === 'string'
     ? manifest.compactionTargetSessionId
     : '';
+
+  if (Array.isArray(normalizedEvents) && normalizedEvents.length > 0) {
+    await appendEvents(sessionId, normalizedEvents);
+    historyChanged = true;
+  }
 
   if (run.state === 'cancelled') {
     const event = {
@@ -2274,157 +2487,18 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
 }
 
 async function syncDetachedRun(sessionId, runId) {
-  let run = await getRun(runId);
-  if (!run) {
-    stopObservedRun(runId);
-    return null;
+  if (!runId) return null;
+  if (runSyncPromises.has(runId)) {
+    return runSyncPromises.get(runId);
   }
-  const manifest = await getRunManifest(runId);
-  if (!manifest) return run;
-
-  const consumedLineCount = Number.isInteger(run.normalizedLineCount) ? run.normalizedLineCount : 0;
-  const consumedByteOffset = Number.isInteger(run.normalizedByteOffset) ? run.normalizedByteOffset : 0;
-  const canResumeFromByteOffset = consumedByteOffset > 0;
-  const spoolDelta = canResumeFromByteOffset
-    ? await readRunSpoolDelta(runId, { startOffset: consumedByteOffset })
-    : await readRunSpoolDelta(runId, { skipLines: consumedLineCount });
-  const spoolRecords = spoolDelta.records || [];
-  const consumedNormalizedEventCount = Number.isInteger(run.normalizedEventCount)
-    ? run.normalizedEventCount
-    : 0;
-  let historyChanged = false;
-  let sessionChanged = false;
-  let nextNormalizedEventCount = consumedNormalizedEventCount;
-  let runtimeInvocation = null;
-
-  if (spoolRecords.length > 0) {
-    runtimeInvocation = await createToolInvocation(manifest.tool, '', {
-      model: manifest.options?.model,
-      effort: manifest.options?.effort,
-      thinking: manifest.options?.thinking,
+  const promise = (async () => syncDetachedRunUnlocked(sessionId, runId))()
+    .finally(() => {
+      if (runSyncPromises.get(runId) === promise) {
+        runSyncPromises.delete(runId);
+      }
     });
-    const { adapter } = runtimeInvocation;
-    const events = [];
-    for (const record of spoolRecords) {
-      if (record.stream !== 'stdout') continue;
-      const line = await materializeRunSpoolLine(runId, record);
-      if (!line) continue;
-      events.push(...adapter.parseLine(line));
-    }
-    events.push(...adapter.flush());
-    const normalizedEvents = normalizeRunEvents(run, events);
-    nextNormalizedEventCount += normalizedEvents.length;
-    if (normalizedEvents.length > 0) {
-      await appendEvents(sessionId, normalizedEvents);
-      historyChanged = true;
-    }
-    const latestUsage = [...normalizedEvents].reverse().find((event) => event.type === 'usage');
-    const contextInputTokens = Number.isInteger(latestUsage?.contextTokens)
-      ? latestUsage.contextTokens
-      : null;
-    const contextWindowTokens = Number.isInteger(latestUsage?.contextWindowTokens)
-      ? latestUsage.contextWindowTokens
-      : null;
-    if (Number.isInteger(contextInputTokens) || Number.isInteger(contextWindowTokens)) {
-      run = await updateRun(runId, (current) => ({
-        ...current,
-        ...(Number.isInteger(contextInputTokens) ? { contextInputTokens } : {}),
-        ...(Number.isInteger(contextWindowTokens) ? { contextWindowTokens } : {}),
-      })) || run;
-    }
-  }
-
-  const nextNormalizedLineCount = canResumeFromByteOffset
-    ? consumedLineCount + (spoolDelta.processedLineCount || 0)
-    : (spoolDelta.skippedLineCount || 0) + (spoolDelta.processedLineCount || 0);
-  const nextNormalizedByteOffset = Number.isInteger(spoolDelta.nextOffset)
-    ? spoolDelta.nextOffset
-    : consumedByteOffset;
-
-  if (
-    nextNormalizedLineCount !== consumedLineCount
-    || nextNormalizedByteOffset !== consumedByteOffset
-    || nextNormalizedEventCount !== consumedNormalizedEventCount
-  ) {
-    run = await updateRun(runId, (current) => ({
-      ...current,
-      normalizedLineCount: nextNormalizedLineCount,
-      normalizedByteOffset: nextNormalizedByteOffset,
-      normalizedEventCount: nextNormalizedEventCount,
-      lastNormalizedAt: nowIso(),
-    })) || run;
-  }
-
-  if (run.claudeSessionId || run.codexThreadId) {
-    sessionChanged = await persistResumeIds(sessionId, run.claudeSessionId, run.codexThreadId) || sessionChanged;
-  }
-
-  if (!runtimeInvocation) {
-    runtimeInvocation = await createToolInvocation(manifest.tool, '', {
-      model: manifest.options?.model,
-      effort: manifest.options?.effort,
-      thinking: manifest.options?.thinking,
-    });
-  }
-
-  const isStructuredRuntime = runtimeInvocation.isClaudeFamily || runtimeInvocation.isCodexFamily;
-  const result = await getRunResult(runId);
-  const inferredState = deriveRunStateFromResult(run, result);
-  const completedAt = typeof result?.completedAt === 'string' && result.completedAt
-    ? result.completedAt
-    : null;
-  const previewFromDelta = spoolRecords
-    .filter((record) => ['stdout', 'stderr', 'error'].includes(record.stream))
-    .map((record) => typeof record?.line === 'string' ? clipFailurePreview(record.line) : '')
-    .filter(Boolean)
-    .slice(-3)
-    .join(' | ');
-  const zeroStructuredOutputReason = (
-    isStructuredRuntime
-    && inferredState === 'completed'
-    && nextNormalizedEventCount === 0
-  )
-    ? await deriveStructuredRuntimeFailureReason(runId, previewFromDelta)
-    : null;
-
-  if (zeroStructuredOutputReason) {
-    run = await updateRun(runId, (current) => ({
-      ...current,
-      state: 'failed',
-      completedAt,
-      result,
-      failureReason: zeroStructuredOutputReason,
-    })) || run;
-  }
-
-  if (!isTerminalRunState(run.state)) {
-    if (inferredState && completedAt) {
-      run = await updateRun(runId, (current) => ({
-        ...current,
-        state: inferredState,
-        completedAt,
-        result,
-        failureReason: inferredState === 'failed'
-          ? deriveRunFailureReasonFromResult(current, result)
-          : null,
-      })) || run;
-    }
-  }
-
-  if (isTerminalRunState(run.state) && !run.finalizedAt) {
-    const finalized = await finalizeDetachedRun(sessionId, run, manifest);
-    historyChanged = historyChanged || finalized.historyChanged;
-    sessionChanged = sessionChanged || finalized.sessionChanged;
-    run = await getRun(runId) || run;
-  }
-
-  if (historyChanged || sessionChanged) {
-    broadcastSessionInvalidation(sessionId);
-  }
-  if (isTerminalRunState(run.state)) {
-    stopObservedRun(runId);
-  }
-  return run;
+  runSyncPromises.set(runId, promise);
+  return promise;
 }
 
 export async function startDetachedRunObservers() {
@@ -2451,7 +2525,7 @@ export async function listSessions({
   includeQueuedMessages = false,
   includeBoardData = true,
 } = {}) {
-  const metas = await reconcileSessionsMetaList(await loadSessionsMeta());
+  const metas = await loadSessionsMeta();
   const taskBoardState = includeBoardData ? await resolveVisibleTaskBoardState(metas) : null;
   const normalizedAppId = normalizeAppId(appId);
   const normalizedSourceId = normalizeAppId(sourceId);
@@ -2473,17 +2547,23 @@ export async function listSessions({
 }
 
 export async function getSession(id, options = {}) {
-  const metas = await reconcileSessionsMetaList(await loadSessionsMeta());
+  const metas = await loadSessionsMeta();
   const includeBoardData = options?.includeBoardData !== false;
   const taskBoardState = includeBoardData ? await resolveVisibleTaskBoardState(metas) : null;
-  const meta = await reconcileSessionMeta(metas.find((entry) => entry.id === id) || await findSessionMeta(id));
+  const meta = metas.find((entry) => entry.id === id) || await findSessionMeta(id);
   if (!meta) return null;
   return enrichSessionMetaForClient(meta, { ...options, includeBoardData, taskBoardState });
 }
 
 export async function getSessionEventsAfter(sessionId, afterSeq = 0, options = {}) {
-  await reconcileSessionMeta(await findSessionMeta(sessionId));
-  return readEventsAfter(sessionId, afterSeq, options);
+  const events = await buildSessionTimelineEvents(sessionId, {
+    includeBodies: options?.includeBodies !== false,
+  });
+  return (Array.isArray(events) ? events : []).filter((event) => Number.isInteger(event?.seq) && event.seq > afterSeq);
+}
+
+export async function getSessionTimelineEvents(sessionId, options = {}) {
+  return buildSessionTimelineEvents(sessionId, options);
 }
 
 export async function getRunState(runId) {

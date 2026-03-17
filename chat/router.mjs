@@ -29,6 +29,7 @@ import {
   getSessionBoardLayout,
   getTaskBoardState,
   getSessionEventsAfter,
+  getSessionTimelineEvents,
   listSessions,
   rebuildSessionBoardLayout,
   rebuildTaskBoardState,
@@ -1261,8 +1262,8 @@ export async function handleRequest(req, res) {
       writeJson(res, 404, { error: 'Session not found' });
       return;
     }
-    const history = await getHistory(sessionId);
-    const events = buildSessionDisplayEvents(history, {
+    const timeline = await getSessionTimelineEvents(sessionId);
+    const events = buildSessionDisplayEvents(timeline, {
       sessionRunning: session?.activity?.run?.state === 'running',
     });
     writeJsonCached(req, res, { sessionId, filter: 'visible', events });
@@ -1281,8 +1282,8 @@ export async function handleRequest(req, res) {
       writeJson(res, 404, { error: 'Session not found' });
       return;
     }
-    const history = await getHistory(sessionId);
-    const events = buildEventBlockEvents(history, startSeq, endSeq);
+    const timeline = await getSessionTimelineEvents(sessionId);
+    const events = buildEventBlockEvents(timeline, startSeq, endSeq);
     if (events.length === 0) {
       writeJson(res, 404, { error: 'Event block not found' });
       return;

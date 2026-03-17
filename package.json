@@ -63,6 +63,7 @@
     "voice:connect": "node scripts/voice-connector.mjs",
     "observer:run": "node scripts/proactive-observer.mjs",
     "observer:instance": "./scripts/proactive-observer-instance.sh start",
+    "transcript:measure": "node scripts/measure-transcript-overhead.mjs",
     "board:refresh": "node scripts/rebuild-task-board.mjs",
     "board:refresh:full": "node scripts/rebuild-task-board.mjs && node scripts/rebuild-board-layout.mjs",
     "session-board:refresh": "node scripts/rebuild-board-layout.mjs",

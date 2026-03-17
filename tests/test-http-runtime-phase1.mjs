@@ -845,6 +845,62 @@ async function phase14SessionSpawnCli() {
   }
 }
 
+async function phase15NoDuplicateDuringReadHammer() {
+  const { home } = setupTempHome();
+  const port = randomPort();
+  const server = await startServer({ home, port, delayMs: 1200 });
+  try {
+    const session = await createSession(port, {
+      name: 'Read hammer',
+      group: 'Tests',
+      description: 'Repeated read requests should not duplicate transcript output',
+    });
+
+    const submit = await submitMessage(port, session.id, 'req-read-hammer', 'Hammer the read paths while the fake run is active');
+    await waitForRunState(port, submit.json.run.id, 'running');
+
+    for (let round = 0; round < 6; round += 1) {
+      const batch = [];
+      for (let index = 0; index < 6; index += 1) {
+        batch.push(request(port, 'GET', `/api/sessions/${session.id}`));
+        batch.push(request(port, 'GET', `/api/sessions/${session.id}?view=sidebar`));
+        batch.push(request(port, 'GET', `/api/sessions/${session.id}/events`));
+        batch.push(request(port, 'GET', `/api/runs/${submit.json.run.id}`));
+      }
+      const responses = await Promise.all(batch);
+      for (const response of responses) {
+        assert.equal(response.status, 200, 'repeated read hammer requests should succeed');
+      }
+      await sleep(60);
+    }
+
+    await waitForRunTerminal(port, submit.json.run.id);
+    await waitFor(async () => {
+      const detail = await request(port, 'GET', `/api/sessions/${session.id}`);
+      if (detail.status !== 200) return false;
+      return detail.json.session?.activity?.run?.state === 'idle';
+    }, 'session should settle after the read hammer', 12000);
+
+    const fullEvents = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=all`);
+    assert.equal(fullEvents.status, 200, 'full event list should load after the read hammer');
+
+    const assistantMessages = (fullEvents.json?.events || []).filter(
+      (event) => event.type === 'message' && event.role === 'assistant' && event.content === 'finished from fake codex',
+    );
+    assert.equal(assistantMessages.length, 1, 'final assistant message should be committed exactly once');
+
+    const toolResults = (fullEvents.json?.events || []).filter(
+      (event) => event.type === 'tool_result' && event.output === 'fake',
+    );
+    assert.equal(toolResults.length, 1, 'tool result should be committed exactly once');
+
+    console.log('phase15-no-duplicate-during-read-hammer: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 const phase = process.argv[2] || 'all';
 const phases = {
   phase1: phase1Contract,
@@ -862,6 +918,7 @@ const phases = {
   phase12: phase12QueuedMessageRouteContract,
   phase13: phase13DelegateSession,
   phase14: phase14SessionSpawnCli,
+  phase15: phase15NoDuplicateDuringReadHammer,
 };
 
 if (phase === 'all') {
