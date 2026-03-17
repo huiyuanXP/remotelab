@@ -77,6 +77,18 @@ function createBaseContext() {
     getEffectiveSessionAppId(session) {
       return session?.appId || 'chat';
     },
+    normalizeSessionReviewStamp(value) {
+      const trimmed = typeof value === 'string' ? value.trim() : '';
+      if (!trimmed) return '';
+      const time = new Date(trimmed).getTime();
+      return Number.isFinite(time) ? new Date(time).toISOString() : '';
+    },
+    getLocalSessionReviewedAt() {
+      return '';
+    },
+    getSessionReviewBaselineAt() {
+      return '';
+    },
   };
   context.globalThis = context;
   return context;
@@ -165,6 +177,7 @@ let attentionRefreshes = 0;
 let scheduledRefreshes = 0;
 let appliedSession = null;
 let requestPayload = null;
+const finalizedRequestIds = [];
 
 dispatchContext.currentSessionId = 'session-send';
 dispatchContext.createRequestId = () => 'req-test';
@@ -195,6 +208,10 @@ dispatchContext.renderSessionList = () => {
 };
 dispatchContext.applyAttachedSessionState = (id, session) => {
   appliedSession = { id, session };
+};
+dispatchContext.finalizeComposerPendingSend = (requestId) => {
+  finalizedRequestIds.push(requestId);
+  return true;
 };
 dispatchContext.refreshSidebarSession = async () => null;
 dispatchContext.savePendingMessage = () => {
@@ -234,6 +251,7 @@ assert.deepEqual(
 );
 assert.equal(refreshCalls, 2, 'accepted sends should retry the session refresh after a transient failure');
 assert.equal(scheduledRefreshes, 1, 'accepted sends should schedule exactly one async refresh retry');
+assert.deepEqual(finalizedRequestIds, ['req-test'], 'accepted sends should immediately finalize the pending composer request from the HTTP acknowledgment');
 assert.equal(savedPendingCalls, 0, 'frontend should not persist pending-send state');
 assert.equal(clearedPendingCalls, 0, 'frontend should not clear any pending-send cache because none exists');
 assert.equal(attentionRefreshes, 0, 'frontend should not synthesize unread or send-failure attention state');

@@ -230,6 +230,9 @@ async function dispatchAction(msg) {
                 ...(msg.thinking ? { thinking: true } : {}),
               }),
             });
+        if (typeof finalizeComposerPendingSend === "function") {
+          finalizeComposerPendingSend(data.requestId || requestId);
+        }
         if (data.session) {
           const session = upsertSession(data.session) || data.session;
           renderSessionList();

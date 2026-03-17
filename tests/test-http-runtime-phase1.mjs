@@ -722,12 +722,16 @@ async function phase12QueuedMessageRouteContract() {
     assert.equal(queued.json.session?.activity?.run?.state, 'running', 'session activity should expose the active run state');
     assert.equal(queued.json.session?.activity?.queue?.state, 'queued', 'session activity should expose the queued follow-up state');
     assert.equal(queued.json.session?.activity?.queue?.count, 1, 'session activity should expose the queued follow-up count');
+    assert.equal(Array.isArray(queued.json.session?.queuedMessages), true, 'queued follow-up responses should include queued message details for the attached session view');
+    assert.equal(queued.json.session?.queuedMessages?.[0]?.requestId, 'req-queued-second', 'queued follow-up responses should preserve the original queued request id');
 
     const duplicateQueued = await submitMessage(port, session.id, 'req-queued-second', 'Duplicate queued follow-up');
     assert.equal(duplicateQueued.status, 200, 'duplicate queued follow-up should return idempotent 200');
     assert.equal(duplicateQueued.json.duplicate, true, 'duplicate queued follow-up should report duplicate');
     assert.equal(duplicateQueued.json.queued, true, 'duplicate queued follow-up should still report queued');
     assert.equal(duplicateQueued.json.run, null, 'duplicate queued follow-up should not create a new run');
+    assert.equal(Array.isArray(duplicateQueued.json.session?.queuedMessages), true, 'duplicate queued follow-up responses should still include queued message details while the queue entry exists');
+    assert.equal(duplicateQueued.json.session?.queuedMessages?.[0]?.requestId, 'req-queued-second', 'duplicate queued follow-up responses should keep the queued request id stable');
 
     await waitForRunTerminal(port, first.json.run.id);
     await waitFor(async () => {
