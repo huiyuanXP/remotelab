@@ -3,14 +3,14 @@ import { createHash } from 'crypto';
 import { homedir } from 'os';
 import { join, resolve, dirname, basename } from 'path';
 import { parse as parseUrl, fileURLToPath } from 'url';
-import { SESSION_EXPIRY, CHAT_IMAGES_DIR, QUICK_REPLIES_FILE, REPORT_TO_FILE } from '../lib/config.mjs';
+import { SESSION_EXPIRY, CHAT_IMAGES_DIR, QUICK_REPLIES_FILE, REPORT_TO_FILE, UI_SETTINGS_FILE } from '../lib/config.mjs';
 import {
   sessions, saveAuthSessions,
   verifyToken, verifyPassword, generateToken,
   parseCookies, setCookie, clearCookie,
 } from '../lib/auth.mjs';
 import { getAvailableTools } from '../lib/tools.mjs';
-import { listSessions, getSession, createSession, deleteSession, sendMessage, getHistory, waitForIdle, receiveHookRequest, getLabels, addLabel, removeLabel, updateLabel, setSessionLabel, archiveSession } from './session-manager.mjs';
+import { listSessions, getSession, createSession, deleteSession, sendMessage, getHistory, waitForIdle, receiveHookRequest, getLabels, addLabel, removeLabel, updateLabel, setSessionLabel, archiveSession, restartServer } from './session-manager.mjs';
 import { executeWorkflow, listWorkflowRuns } from './workflow-engine.mjs';
 import { getSidebarState } from './summarizer.mjs';
 import { readBody, readBodyBinary } from '../lib/utils.mjs';
@@ -548,6 +548,22 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  // POST /api/restart — restart the chat server
+  if (pathname === '/api/restart' && req.method === 'POST') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const triggerSessionId = body.session_id || null;
+      restartServer(triggerSessionId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, message: 'Server restarting...' }));
+    } catch {
+      restartServer(null);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, message: 'Server restarting...' }));
+    }
+    return;
+  }
+
   // GET /api/folders — list folders with session counts
   if (pathname === '/api/folders' && req.method === 'GET') {
     const allSessions = listSessions().filter(s => !s.hidden);
@@ -639,6 +655,32 @@ export async function handleRequest(req, res) {
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/ui-settings' && req.method === 'GET') {
+    let data = {};
+    try { data = JSON.parse(readFileSync(UI_SETTINGS_FILE, 'utf8')); } catch {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+    return;
+  }
+
+  if (pathname === '/api/ui-settings' && req.method === 'PATCH') {
+    let body;
+    try { body = await readBody(req, 65536); } catch { body = '{}'; }
+    try {
+      const patch = JSON.parse(body);
+      let data = {};
+      try { data = JSON.parse(readFileSync(UI_SETTINGS_FILE, 'utf8')); } catch {}
+      Object.assign(data, patch);
+      writeFileSync(UI_SETTINGS_FILE, JSON.stringify(data, null, 2));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid body' }));
     }
     return;
   }

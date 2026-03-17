@@ -64,6 +64,7 @@
   let sessions = [];
   let workflowSessions = []; // hidden sessions created by workflow engine
   let archivedSessions = []; // archived sessions (hidden from main list)
+  let knownFolders = new Set(); // all folders ever seen (active + archived) — avoids O(n) scan per render
   let showArchived = false;
   let currentHistory = []; // raw events for current session (used by Recover)
   let sessionContextTotal = 0; // latest total context tokens (input + cache)
@@ -308,6 +309,7 @@
         sessions = (msg.sessions || []).filter(s => !s.hidden && !s.archived);
         workflowSessions = (msg.sessions || []).filter(s => s.hidden);
         archivedSessions = (msg.sessions || []).filter(s => !s.hidden && s.archived);
+        rebuildKnownFolders();
         renderSessionList();
         break;
 
@@ -341,6 +343,7 @@
           const idx = targetArr.findIndex((s) => s.id === msg.session.id);
           if (idx >= 0) targetArr[idx] = msg.session;
           else targetArr.push(msg.session);
+          rebuildKnownFolders();
           // Update header title if current session was renamed (e.g. auto-title)
           if (msg.session.id === currentSessionId && msg.session.name) {
             headerTitle.textContent = msg.session.name;
@@ -378,6 +381,7 @@
         sessions = sessions.filter((s) => s.id !== msg.sessionId);
         workflowSessions = workflowSessions.filter((s) => s.id !== msg.sessionId);
         archivedSessions = archivedSessions.filter((s) => s.id !== msg.sessionId);
+        rebuildKnownFolders();
         if (currentSessionId === msg.sessionId) {
           currentSessionId = null;
           clearMessages();
@@ -1242,6 +1246,21 @@
     } catch {}
   }
 
+  async function loadUiSettings() {
+    try {
+      const res = await fetch('/api/ui-settings');
+      const data = await res.json();
+      if (data.folderOrder) {
+        folderOrderList = data.folderOrder;
+        localStorage.setItem("folderOrder", JSON.stringify(folderOrderList));
+      }
+      if (data.collapsedFolders) {
+        collapsedFolders = data.collapsedFolders;
+        localStorage.setItem("collapsedFolders", JSON.stringify(collapsedFolders));
+      }
+    } catch {}
+  }
+
   function getLabelById(id) {
     return sessionLabels.find(l => l.id === id) || null;
   }
@@ -1398,6 +1417,13 @@
   function saveFolderOrder(order) {
     folderOrderList = order;
     localStorage.setItem("folderOrder", JSON.stringify(order));
+    fetch('/api/ui-settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folderOrder: order }) }).catch(() => {});
+  }
+
+  function rebuildKnownFolders() {
+    knownFolders = new Set();
+    for (const s of sessions) knownFolders.add(s.folder || "?");
+    for (const s of archivedSessions) knownFolders.add(s.folder || "?");
   }
 
   // Shared rendering logic for both sessions and workflow sessions.
@@ -1414,8 +1440,7 @@
       groups.get(folder).push(s);
     }
     // Keep folders visible even when all their sessions are archived
-    for (const s of archivedSessions) {
-      const folder = s.folder || "?";
+    for (const folder of knownFolders) {
       if (!groups.has(folder)) groups.set(folder, []);
     }
 
@@ -1476,6 +1501,7 @@
         header.classList.toggle("collapsed");
         collapsedFolders[folder] = header.classList.contains("collapsed");
         localStorage.setItem("collapsedFolders", JSON.stringify(collapsedFolders));
+        fetch('/api/ui-settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collapsedFolders }) }).catch(() => {});
       });
       if (allowAdd) {
         header.querySelector(".folder-add-btn").addEventListener("click", (e) => {
@@ -2849,5 +2875,6 @@
   loadInlineTools();
   loadInlineModels();
   loadSessionLabels();
+  loadUiSettings();
   connect();
 })();
