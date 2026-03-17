@@ -71,6 +71,7 @@
   let pendingSummary = new Set(); // sessionIds awaiting summary generation
   let currentTaskDetailId = null; // currently viewed task in main content area
   let taskDetailCountdownInterval = null; // interval for next-run countdown in task detail panel
+  let activeRunPollInterval = null; // interval for polling a live run's status
   let lastSidebarUpdatedAt = {}; // sessionId -> last known updatedAt
 
   let sessionLastMessage = {}; // sessionId -> last sent message text
@@ -320,6 +321,11 @@
         if (msg.session) {
           const isHidden = !!msg.session.hidden;
           const isArchived = !!msg.session.archived;
+          // Save original position before removing (to preserve list order on updates)
+          const prevSessionIdx = sessions.findIndex(s => s.id === msg.session.id);
+          const prevEntry = sessions.find(s => s.id === msg.session.id)
+            || archivedSessions.find(s => s.id === msg.session.id)
+            || workflowSessions.find(s => s.id === msg.session.id);
           // Determine target array and remove from any other array to handle moves
           if (!isHidden) {
             sessions = sessions.filter(s => s.id !== msg.session.id);
@@ -329,7 +335,6 @@
           const prevStatus = sessionStatus;
           sessionStatus = msg.session.status || "idle";
           updateStatus("connected", sessionStatus);
-          const prevEntry = targetArr.find((s) => s.id === msg.session.id);
           const wasRunning = prevEntry?.status === "running";
           if (
             msg.session.id === currentSessionId &&
@@ -344,8 +349,14 @@
             if (activeTab === "progress") renderProgressPanel(lastProgressState);
           }
           const idx = targetArr.findIndex((s) => s.id === msg.session.id);
-          if (idx >= 0) targetArr[idx] = msg.session;
-          else targetArr.push(msg.session);
+          if (idx >= 0) {
+            targetArr[idx] = msg.session;
+          } else if (prevSessionIdx >= 0 && targetArr === sessions) {
+            // Re-insert at original position to prevent reordering on update
+            sessions.splice(prevSessionIdx, 0, msg.session);
+          } else {
+            targetArr.push(msg.session);
+          }
           rebuildKnownFolders();
           // Update header title if current session was renamed (e.g. auto-title)
           if (msg.session.id === currentSessionId && msg.session.name) {
@@ -1915,7 +1926,9 @@
         const toggleInput = headerRow.querySelector(".task-item-toggle input");
 
         // Toggle enable/disable (stop propagation so card click doesn't fire)
-        toggleInput.addEventListener("click", (e) => e.stopPropagation());
+        // Must stop on the <label> itself, not just <input>, because clicking
+        // toggle-track/toggle-thumb hits the label first and would bubble to item
+        headerRow.querySelector(".task-item-toggle").addEventListener("click", (e) => e.stopPropagation());
         toggleInput.addEventListener("change", async () => {
           const newEnabled = toggleInput.checked;
           enabled = newEnabled;
@@ -1976,10 +1989,14 @@
   }
 
   async function openTaskDetail(scheduleId) {
-    // Clear any previous countdown interval before opening a new detail panel
+    // Clear any previous countdown/poll intervals before opening a new detail panel
     if (taskDetailCountdownInterval) {
       clearInterval(taskDetailCountdownInterval);
       taskDetailCountdownInterval = null;
+    }
+    if (activeRunPollInterval) {
+      clearInterval(activeRunPollInterval);
+      activeRunPollInterval = null;
     }
     currentTaskDetailId = scheduleId;
     showTaskDetailView();
@@ -2107,6 +2124,11 @@
         panelRunBtn.textContent = "Running…";
         try {
           const res = await fetch("/api/schedules/" + encodeURIComponent(sched.id) + "/trigger", { method: "POST" });
+          const data = await res.json();
+          if (res.ok && data.runId) {
+            addLiveRunEntry(data.runId, runSection);
+            pollRunStatus(data.runId, runSection);
+          }
           panelRunBtn.textContent = res.ok ? "Triggered!" : "Error";
         } catch { panelRunBtn.textContent = "Error"; }
         setTimeout(() => { panelRunBtn.textContent = "Run Now"; panelRunBtn.disabled = false; }, 2500);
@@ -2386,6 +2408,10 @@
     if (taskDetailCountdownInterval) {
       clearInterval(taskDetailCountdownInterval);
       taskDetailCountdownInterval = null;
+    }
+    if (activeRunPollInterval) {
+      clearInterval(activeRunPollInterval);
+      activeRunPollInterval = null;
     }
 
     currentSessionId = id;
@@ -2982,6 +3008,76 @@
     }
   }
 
+
+  // ---- Live run helpers ----
+
+  function addLiveRunEntry(runId, runSection) {
+    const entry = document.createElement("div");
+    entry.id = `run-${runId}`;
+    entry.innerHTML = `
+      <div class="tdp-run-entry">
+        <span class="tdp-run-id">${runId.slice(0, 8)}</span>
+        <span class="tdp-run-status running">running</span>
+        <span class="tdp-run-time">just now</span>
+      </div>
+      <div class="tdp-run-detail open">
+        <div class="tdp-run-live-status" style="padding:8px;font-size:11px;color:var(--text-muted)">
+          Starting workflow…
+        </div>
+      </div>
+    `;
+    const title = runSection.querySelector(".tdp-section-title");
+    if (title && title.nextSibling) {
+      runSection.insertBefore(entry, title.nextSibling);
+    } else {
+      runSection.appendChild(entry);
+    }
+    const empty = runSection.querySelector(".tdp-empty");
+    if (empty) empty.remove();
+  }
+
+  function pollRunStatus(runId, runSection) {
+    if (activeRunPollInterval) clearInterval(activeRunPollInterval);
+    activeRunPollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/workflow-runs/${encodeURIComponent(runId)}`);
+        if (!res.ok) return;
+        const meta = await res.json();
+
+        const entry = document.getElementById(`run-${runId}`);
+        if (!entry) { clearInterval(activeRunPollInterval); activeRunPollInterval = null; return; }
+
+        const statusEl = entry.querySelector(".tdp-run-status");
+        if (statusEl) {
+          statusEl.textContent = meta.status;
+          statusEl.className = `tdp-run-status ${meta.status}`;
+        }
+
+        const liveStatus = entry.querySelector(".tdp-run-live-status");
+        if (liveStatus && meta.steps) {
+          const stepEntries = Object.entries(meta.steps);
+          if (stepEntries.length === 0) {
+            liveStatus.textContent = "Starting workflow…";
+          } else {
+            liveStatus.innerHTML = stepEntries.map(([stepId, step]) =>
+              `<div><strong>${escapeHtml(stepId)}</strong>: ${escapeHtml(step.status)}</div>`
+            ).join('');
+          }
+        }
+
+        if (meta.status === 'completed' || meta.status === 'failed') {
+          clearInterval(activeRunPollInterval);
+          activeRunPollInterval = null;
+          if (liveStatus) {
+            liveStatus.innerHTML = '';
+            buildRunTasksHtml(meta, liveStatus);
+          }
+        }
+      } catch (err) {
+        console.warn('Poll run status failed:', err);
+      }
+    }, 3000);
+  }
 
   // ---- Workflow main view (reserved for future run history detail) ----
   function buildRunTasksHtml(run, container) {

@@ -119,7 +119,7 @@ export async function executeWorkflow(workflowName, options = {}) {
     workflow = JSON.parse(readFileSync(workflowPath, 'utf8'));
   }
 
-  const runId = randomBytes(8).toString('hex');
+  const runId = options.runId || randomBytes(8).toString('hex');
   const runDir = join(RUNS_DIR, runId);
   mkdirSync(runDir, { recursive: true });
 

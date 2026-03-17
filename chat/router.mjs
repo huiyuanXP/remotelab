@@ -1,5 +1,5 @@
 import { existsSync, statSync, readdirSync, readFileSync, mkdirSync, writeFileSync, renameSync } from 'fs';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { homedir } from 'os';
 import { join, resolve, dirname, basename } from 'path';
 import { parse as parseUrl, fileURLToPath } from 'url';
@@ -889,6 +889,23 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  // GET /api/workflow-runs/:runId — read a single run's meta.json
+  const runDetailMatch = pathname.match(/^\/api\/workflow-runs\/([a-f0-9]+)$/);
+  if (runDetailMatch && req.method === 'GET') {
+    const [, runId] = runDetailMatch;
+    const runsDir = join(homedir(), '.config', 'claude-web', 'workflow-runs');
+    const metaFile = join(runsDir, runId, 'meta.json');
+    if (!existsSync(metaFile)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Run not found' }));
+      return;
+    }
+    const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(meta));
+    return;
+  }
+
   // GET /api/workflow-runs/:runId/task/:taskId — read task output text
   const taskOutputMatch = pathname.match(/^\/api\/workflow-runs\/([a-f0-9]+)\/task\/([^/]+)$/);
   if (taskOutputMatch && req.method === 'GET') {
@@ -923,16 +940,18 @@ export async function handleRequest(req, res) {
       }
       // Update lastRun immediately (same behavior as auto cron trigger)
       updateLastRun(scheduleId);
-      // Fire-and-forget; return run ID immediately
+      // Pre-generate runId so we can return it immediately before the workflow finishes
+      const runId = randomBytes(8).toString('hex');
       const runPromise = executeWorkflow(schedule.workflow, {
         schedule,
+        runId,
         inlineWorkflow: schedule.inlineWorkflow || null,
       });
       runPromise
-        .then(({ runId }) => console.log(`[router] Manual trigger run=${runId} completed`))
+        .then(() => console.log(`[router] Manual trigger run=${runId} completed`))
         .catch(err => console.error(`[router] Manual trigger failed: ${err.message}`));
       res.writeHead(202, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, workflow: schedule.workflow, status: 'triggered' }));
+      res.end(JSON.stringify({ ok: true, runId, workflow: schedule.workflow, status: 'triggered' }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
