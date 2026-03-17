@@ -630,7 +630,7 @@ export async function handleRequest(req, res) {
   if (pathname === '/api/quick-replies' && req.method === 'GET') {
     const folder = parsedUrl.query.folder || '';
     let data = {};
-    try { data = JSON.parse(readFileSync(QUICK_REPLIES_FILE, 'utf8')); } catch {}
+    try { data = JSON.parse(readFileSync(QUICK_REPLIES_FILE, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') console.warn('[router] Failed to parse config file:', err.message); }
     const buttons = data[folder] || data.__default__ || ['Continue', 'Agree', 'Commit this', 'Run tests', 'Show diff'];
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ buttons, isDefault: !data[folder] }));
@@ -648,7 +648,7 @@ export async function handleRequest(req, res) {
         return;
       }
       let data = {};
-      try { data = JSON.parse(readFileSync(QUICK_REPLIES_FILE, 'utf8')); } catch {}
+      try { data = JSON.parse(readFileSync(QUICK_REPLIES_FILE, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') console.warn('[router] Failed to parse config file:', err.message); }
       data[folder] = buttons.map(b => String(b).slice(0, 100)).slice(0, 20);
       writeFileSync(QUICK_REPLIES_FILE, JSON.stringify(data, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -662,7 +662,7 @@ export async function handleRequest(req, res) {
 
   if (pathname === '/api/ui-settings' && req.method === 'GET') {
     let data = {};
-    try { data = JSON.parse(readFileSync(UI_SETTINGS_FILE, 'utf8')); } catch {}
+    try { data = JSON.parse(readFileSync(UI_SETTINGS_FILE, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') console.warn('[router] Failed to parse config file:', err.message); }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
     return;
@@ -674,7 +674,7 @@ export async function handleRequest(req, res) {
     try {
       const patch = JSON.parse(body);
       let data = {};
-      try { data = JSON.parse(readFileSync(UI_SETTINGS_FILE, 'utf8')); } catch {}
+      try { data = JSON.parse(readFileSync(UI_SETTINGS_FILE, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') console.warn('[router] Failed to parse config file:', err.message); }
       Object.assign(data, patch);
       writeFileSync(UI_SETTINGS_FILE, JSON.stringify(data, null, 2));
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -854,7 +854,7 @@ export async function handleRequest(req, res) {
         ? readdirSync(workflowsDir).filter(f => f.endsWith('.json') && f !== 'schedules.json')
         : [];
       const workflows = files.map(f => {
-        try { return JSON.parse(readFileSync(join(workflowsDir, f), 'utf8')); } catch { return null; }
+        try { return JSON.parse(readFileSync(join(workflowsDir, f), 'utf8')); } catch (err) { console.error('[router] Failed to parse workflow file:', f, err.message); return null; }
       }).filter(Boolean);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ workflows }));

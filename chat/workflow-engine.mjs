@@ -59,7 +59,8 @@ async function runTask(task, runDir, sessionIds) {
 function loadSchedules() {
   try {
     return JSON.parse(readFileSync(SCHEDULES_FILE, 'utf8'));
-  } catch {
+  } catch (err) {
+    console.error('[Workflow] Failed to parse schedules.json:', err.message);
     return { schedules: [] };
   }
 }
@@ -153,6 +154,11 @@ export async function executeWorkflow(workflowName, options = {}) {
             return [task.id, output];
           })
         );
+        for (const [i, r] of settled.entries()) {
+          if (r.status === 'rejected') {
+            console.error(`[Workflow] Task "${resolvedTasks[i].id}" failed in parallel step:`, r.reason?.message);
+          }
+        }
         results[step.id] = Object.fromEntries(
           settled.map((r, i) => [
             resolvedTasks[i].id,
@@ -176,6 +182,7 @@ export async function executeWorkflow(workflowName, options = {}) {
   } catch (err) {
     meta.status = 'failed';
     meta.error = err.message;
+    meta.errorStack = err.stack;
     meta.failedAt = new Date().toISOString();
     console.error(`[Workflow] "${workflowName}" run=${runId} failed:`, err.message);
   }
@@ -204,12 +211,14 @@ export function listWorkflowRuns(limit = 10) {
       .map(({ name }) => {
         try {
           return JSON.parse(readFileSync(join(RUNS_DIR, name, 'meta.json'), 'utf8'));
-        } catch {
+        } catch (err) {
+          console.error(`[Workflow] Failed to load workflow run "${name}":`, err.message);
           return { runId: name, status: 'unknown' };
         }
       });
     return dirs;
-  } catch {
+  } catch (err) {
+    console.error('[Workflow] Failed to list workflow runs:', err.message);
     return [];
   }
 }

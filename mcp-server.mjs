@@ -136,7 +136,10 @@ async function watchSession(sessionId, eventCountBefore, sessionName, reportToSe
       if (!activeWatchers.has(sessionId)) return; // was cancelled
 
       const statusRes = await apiRequest('GET', `/api/sessions/${sessionId}`);
-      if (statusRes.status !== 200) continue;
+      if (statusRes.status !== 200) {
+        process.stderr.write(`[mcp] Session ${sessionId.slice(0,8)} status check failed: ${statusRes.status}\n`);
+        continue;
+      }
       if (statusRes.data.session?.status !== 'idle') continue;
 
       // Session finished — build compact notification
@@ -568,13 +571,16 @@ async function executeTool(name, args) {
       let data;
       try {
         data = JSON.parse(readFileSync(SCHEDULES_FILE, 'utf8'));
-      } catch {
+      } catch (err) {
+        process.stderr.write(`[mcp] Failed to parse schedules.json: ${err.message}\n`);
         data = { schedules: [] };
       }
       data.schedules.push(newSchedule);
       const tmp = SCHEDULES_FILE + '.tmp.' + process.pid;
       writeFileSync(tmp, JSON.stringify(data, null, 2));
       renameSync(tmp, SCHEDULES_FILE);
+
+      process.stderr.write(`[mcp] schedule_message registered: id=${scheduleId} runAt=${runAt} target=${args.session_id.slice(0,8)}\n`);
 
       // Tell the scheduler to pick it up
       try {
