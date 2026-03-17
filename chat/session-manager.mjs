@@ -57,6 +57,7 @@ import {
   requestRunCancel,
   runDir,
   updateRun,
+  writeRunResult,
 } from './runs.mjs';
 import { spawnDetachedRunner } from './runner-supervisor.mjs';
 import {
@@ -194,6 +195,49 @@ const runSyncPromises = new Map();
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function isRecordedProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    return true;
+  }
+}
+
+async function synthesizeDetachedRunTermination(runId, run) {
+  const hasRecordedProcess = Number.isInteger(run?.runnerProcessId) || Number.isInteger(run?.toolProcessId);
+  if (!hasRecordedProcess || isTerminalRunState(run?.state)) {
+    return null;
+  }
+  const runnerAlive = isRecordedProcessAlive(run?.runnerProcessId);
+  const toolAlive = isRecordedProcessAlive(run?.toolProcessId);
+  if (runnerAlive || toolAlive) {
+    return null;
+  }
+
+  const completedAt = nowIso();
+  const cancelled = run?.cancelRequested === true;
+  const error = cancelled ? null : 'Detached runner disappeared before writing a result';
+  const result = {
+    completedAt,
+    exitCode: 1,
+    signal: null,
+    cancelled,
+    ...(error ? { error } : {}),
+  };
+
+  await writeRunResult(runId, result);
+  return await updateRun(runId, (current) => ({
+    ...current,
+    state: cancelled ? 'cancelled' : 'failed',
+    completedAt,
+    result,
+    failureReason: error,
+  })) || run;
 }
 
 function deriveRunStateFromResult(run, result) {
@@ -942,7 +986,14 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   }
 
   const isStructuredRuntime = projection.runtimeInvocation.isClaudeFamily || projection.runtimeInvocation.isCodexFamily;
-  const result = await getRunResult(runId);
+  let result = await getRunResult(runId);
+  if (!result && !isTerminalRunState(run.state)) {
+    const reconciled = await synthesizeDetachedRunTermination(runId, run);
+    if (reconciled) {
+      run = reconciled;
+      result = await getRunResult(runId);
+    }
+  }
   const inferredState = deriveRunStateFromResult(run, result);
   const completedAt = typeof result?.completedAt === 'string' && result.completedAt
     ? result.completedAt

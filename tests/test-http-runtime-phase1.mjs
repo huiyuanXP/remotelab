@@ -905,6 +905,71 @@ async function phase15NoDuplicateDuringReadHammer() {
   }
 }
 
+async function phase16StaleMissingRunnerReconciliation() {
+  const { home, configDir } = setupTempHome();
+  const port = randomPort();
+  let server = await startServer({ home, port });
+  try {
+    const session = await createSession(port, {
+      name: 'Stale missing runner',
+      group: 'Tests',
+      description: 'Missing detached runner should reconcile to terminal state',
+    });
+    const submit = await submitMessage(port, session.id, 'req-stale-missing-runner');
+    const finishedRun = await waitForRunTerminal(port, submit.json.run.id);
+    assert.equal(finishedRun.state, 'completed', 'initial run should complete');
+
+    await stopServer(server);
+    server = null;
+
+    const sessionsPath = join(configDir, 'chat-sessions.json');
+    const runDir = join(configDir, 'chat-runs', submit.json.run.id);
+    const runStatusPath = join(runDir, 'status.json');
+    const runResultPath = join(runDir, 'result.json');
+    const sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
+    const sessionRecord = sessions.find((entry) => entry.id === session.id);
+    assert.ok(sessionRecord, 'session record should exist');
+    sessionRecord.activeRunId = submit.json.run.id;
+    writeFileSync(sessionsPath, JSON.stringify(sessions, null, 2), 'utf8');
+
+    const status = JSON.parse(readFileSync(runStatusPath, 'utf8'));
+    status.state = 'running';
+    status.completedAt = null;
+    status.finalizedAt = null;
+    status.result = null;
+    status.failureReason = null;
+    status.cancelRequested = true;
+    status.cancelRequestedAt = new Date().toISOString();
+    status.runnerProcessId = 999991;
+    status.toolProcessId = 999992;
+    writeFileSync(runStatusPath, JSON.stringify(status, null, 2), 'utf8');
+    rmSync(runResultPath, { force: true });
+
+    server = await startServer({ home, port });
+
+    const recoveredRun = await waitFor(async () => {
+      const res = await request(port, 'GET', `/api/runs/${submit.json.run.id}`);
+      if (res.status !== 200) return false;
+      if (res.json.run.state !== 'cancelled') return false;
+      return res.json.run;
+    }, 'stale missing-runner run should reconcile to cancelled');
+    assert.equal(recoveredRun.cancelRequested, true, 'recovered run should remain marked cancelled');
+    assert.ok(recoveredRun.completedAt, 'recovered run should gain completedAt');
+
+    const detail = await request(port, 'GET', `/api/sessions/${session.id}`);
+    assert.equal(detail.status, 200, 'session detail should load after stale missing-runner reconciliation');
+    assert.equal(detail.json.session.activity?.run?.state, 'idle', 'session should no longer appear running');
+
+    const retry = await submitMessage(port, session.id, 'req-stale-missing-runner-retry', 'retry after stale missing runner');
+    const retriedRun = await waitForRunTerminal(port, retry.json.run.id);
+    assert.equal(retriedRun.state, 'completed', 'session should accept a new run after stale missing-runner reconciliation');
+    console.log('phase16-stale-missing-runner-reconciliation: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 const phase = process.argv[2] || 'all';
 const phases = {
   phase1: phase1Contract,
@@ -923,6 +988,7 @@ const phases = {
   phase13: phase13DelegateSession,
   phase14: phase14SessionSpawnCli,
   phase15: phase15NoDuplicateDuringReadHammer,
+  phase16: phase16StaleMissingRunnerReconciliation,
 };
 
 if (phase === 'all') {
