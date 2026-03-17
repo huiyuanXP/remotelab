@@ -186,11 +186,12 @@ This one-stage setup is the simplest validation path:
 This repo now ships a generic Python wake path that keeps the core logic outside the main server and outside platform-specific app code:
 
 - `scripts/voice-wake-loop.py` — always-on wake listener using short microphone chunks plus local `mlx_whisper`
+- `scripts/voice-capture-until-silence.py` — one-shot follow-up capture that waits for speech and stops after trailing silence
 - `scripts/voice-record-once.py` — one-shot microphone capture helper using `sounddevice` when available, with `ffmpeg` fallback
 - `scripts/voice-transcribe-mlx.py` — one-shot local transcription helper using `mlx_whisper`
 - `scripts/voice-connector-instance.sh` — start/stop/status helper for the persistent connector process
 
-On macOS, microphone permissions are app-context-sensitive. The default instance helper therefore launches the persistent connector through `Terminal.app` so the Python wake loop inherits a microphone-authorized GUI app context instead of silently recording zeros from a headless background process.
+On macOS, microphone permissions are app-context-sensitive. A fully headless `nohup` process launched from a non-authorized host can look "alive" while actually recording zeros. The default instance helper therefore uses `Terminal.app` only as a short permission bootstrap on startup, then detaches the real connector into the background and closes the Terminal window.
 
 ## Optional macOS prototype helpers
 

@@ -37,12 +37,12 @@ resolved_start_mode() {
   case "$START_MODE" in
     auto)
       if [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
-        printf '%s\n' 'terminal'
+        printf '%s\n' 'bootstrap'
       else
         printf '%s\n' 'nohup'
       fi
       ;;
-    terminal|nohup)
+    bootstrap|terminal|nohup)
       printf '%s\n' "$START_MODE"
       ;;
     *)
@@ -87,6 +87,39 @@ end tell
 APPLESCRIPT
 }
 
+start_instance_bootstrap() {
+  cat > "$LAUNCHER_PATH" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd $(printf '%q' "$ROOT_DIR")
+nohup env \
+  PATH=$(printf '%q' "$PATH") \
+  HOME=$(printf '%q' "$HOME") \
+  USER=$(printf '%q' "${USER:-}") \
+  SHELL=$(printf '%q' "${SHELL:-/bin/bash}") \
+  $(printf '%q' "$NODE_BIN") scripts/voice-connector.mjs --config $(printf '%q' "$CONFIG_PATH") >> $(printf '%q' "$LOG_PATH") 2>&1 < /dev/null &
+echo \$! > $(printf '%q' "$PID_FILE")
+exit 0
+EOF
+  chmod +x "$LAUNCHER_PATH"
+
+  osascript <<APPLESCRIPT >/dev/null
+tell application "Terminal"
+  set bootstrapTab to do script "bash $(printf '%q' "$LAUNCHER_PATH")"
+  repeat 20 times
+    delay 0.2
+    try
+      if not (busy of bootstrapTab) then exit repeat
+    end try
+  end repeat
+  try
+    set bootstrapWindow to first window whose selected tab is bootstrapTab
+    close bootstrapWindow saving no
+  end try
+end tell
+APPLESCRIPT
+}
+
 start_instance() {
   local pid mode
   if pid="$(running_pid)"; then
@@ -105,7 +138,9 @@ start_instance() {
 
   rm -f "$PID_FILE"
   mode="$(resolved_start_mode)"
-  if [[ "$mode" == "terminal" ]]; then
+  if [[ "$mode" == "bootstrap" ]]; then
+    start_instance_bootstrap
+  elif [[ "$mode" == "terminal" ]]; then
     start_instance_terminal
   else
     start_instance_nohup
