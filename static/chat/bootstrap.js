@@ -300,7 +300,14 @@ const renderedEventState = {
   latestSeq: 0,
   eventCount: 0,
   eventKeys: [],
+  runState: "idle",
+  runningBlockExpanded: false,
 };
+
+function setRunningEventBlockExpanded(sessionId, expanded) {
+  if (!sessionId || renderedEventState.sessionId !== sessionId) return;
+  renderedEventState.runningBlockExpanded = expanded === true;
+}
 
 function shouldUseVisitorRequests() {
   if (visitorMode) return true;

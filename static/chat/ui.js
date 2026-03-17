@@ -435,18 +435,33 @@ function renderThinkingBlockEvent(evt) {
   }
 
   const sessionId = currentSessionId;
+  const expandedByDefault = renderedEventState?.runningBlockExpanded === true;
   const thinking = createDeferredThinkingBlock(evt.label || "Thinking…", {
-    collapsed: true,
+    collapsed: !expandedByDefault,
   });
   thinking.body.dataset.blockLoaded = "idle";
 
+  if (typeof setRunningEventBlockExpanded === "function") {
+    setRunningEventBlockExpanded(sessionId, expandedByDefault);
+  }
+
   thinking.header.addEventListener("click", () => {
     thinking.block.classList.toggle("collapsed");
-    if (thinking.block.classList.contains("collapsed")) return;
+    const expanded = !thinking.block.classList.contains("collapsed");
+    if (typeof setRunningEventBlockExpanded === "function") {
+      setRunningEventBlockExpanded(sessionId, expanded);
+    }
+    if (!expanded) return;
     ensureEventBlockLoaded(sessionId, thinking.body, evt).catch(() => {});
+    if (typeof refreshCurrentSession === "function") {
+      refreshCurrentSession().catch(() => {});
+    }
   });
 
   messagesInner.appendChild(thinking.block);
+  if (expandedByDefault) {
+    ensureEventBlockLoaded(sessionId, thinking.body, evt).catch(() => {});
+  }
 }
 
 function renderToolUse(evt) {

@@ -49,4 +49,23 @@ assert.deepEqual(
 assert.equal(leadingVisibleDisplay[1].blockStartSeq, 2, 'collapsed range should include visible intermediate status events before hidden work');
 assert.equal(leadingVisibleDisplay[1].blockEndSeq, 4, 'collapsed range should end at the last hidden implementation event before the summary');
 
+const runningTurnHistory = [
+  { seq: 1, type: 'message', role: 'user', content: 'Work on this task' },
+  { seq: 2, type: 'status', role: 'system', content: 'Preparing environment' },
+  { seq: 3, type: 'reasoning', role: 'assistant', content: 'Inspecting files' },
+  { seq: 4, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'rg TODO' },
+  { seq: 5, type: 'tool_result', role: 'system', output: 'matches', exitCode: 0 },
+  { seq: 6, type: 'message', role: 'assistant', content: 'partial draft that should stay hidden while running' },
+];
+
+const runningDisplay = buildSessionDisplayEvents(runningTurnHistory, { sessionRunning: true });
+assert.deepEqual(
+  runningDisplay.map((event) => event.type),
+  ['message', 'thinking_block'],
+  'running turns should collapse into a single thinking block instead of streaming multiple visible intermediate fragments',
+);
+assert.equal(runningDisplay[1].label, 'Earlier reasoning & tool steps · using bash', 'running turns should reuse the earlier reasoning affordance instead of a separate live transcript label');
+assert.equal(runningDisplay[1].blockStartSeq, 2, 'running collapsed block should start with the first non-user event in the turn');
+assert.equal(runningDisplay[1].blockEndSeq, 6, 'running collapsed block should extend through the latest in-flight event');
+
 console.log('test-session-display-events: ok');

@@ -51,9 +51,9 @@ function buildCollapsedBlockLabel(hiddenEvents, state = 'completed') {
   const toolNames = collectToolNames(hiddenEvents);
   if (state === 'running') {
     if (toolNames.length > 0) {
-      return `Thinking… · using ${toolNames.join(', ')}`;
+      return `Earlier reasoning & tool steps · using ${toolNames.join(', ')}`;
     }
-    return 'Thinking…';
+    return 'Earlier reasoning & tool steps';
   }
   if (toolNames.length > 0) {
     return `Earlier reasoning & tool steps · used ${toolNames.join(', ')}`;
@@ -122,6 +122,11 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
 
   const bodyEvents = getTurnEventsWithoutIgnoredStatuses(turn.body);
   if (bodyEvents.length === 0) return;
+
+  if (sessionRunning) {
+    target.push(buildCollapsedBlockEvent(bodyEvents, 'running'));
+    return;
+  }
 
   const lastHiddenIndex = findLastHiddenEventIndex(bodyEvents);
   if (lastHiddenIndex < 0) {

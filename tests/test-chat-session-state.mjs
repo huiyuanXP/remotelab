@@ -238,6 +238,87 @@ assert.equal(savedPendingCalls, 0, 'frontend should not persist pending-send sta
 assert.equal(clearedPendingCalls, 0, 'frontend should not clear any pending-send cache because none exists');
 assert.equal(attentionRefreshes, 0, 'frontend should not synthesize unread or send-failure attention state');
 
+const attachReuseContext = createBaseContext();
+let attachRefreshCalls = 0;
+let attachStateCalls = 0;
+let attachEventCalls = 0;
+let attachRequested = null;
+
+attachReuseContext.sessions = [
+  {
+    id: 'session-attach-existing',
+    activity: createSessionActivity({ runState: 'idle', queueState: 'idle', queueCount: 0 }),
+  },
+];
+attachReuseContext.getCurrentSession = () => attachReuseContext.sessions.find((session) => session.id === attachReuseContext.currentSessionId) || null;
+attachReuseContext.getSessionRunState = (session) => session?.activity?.run?.state || 'idle';
+attachReuseContext.fetchSessionEvents = async (sessionId, options = {}) => {
+  attachEventCalls += 1;
+  attachRequested = { sessionId, options };
+  return [];
+};
+attachReuseContext.fetchSessionState = async () => {
+  attachStateCalls += 1;
+  return null;
+};
+attachReuseContext.refreshCurrentSession = async () => {
+  attachRefreshCalls += 1;
+  return null;
+};
+
+vm.runInNewContext(dispatchActionSnippet, attachReuseContext, {
+  filename: 'chat-dispatch-action-attach-runtime.js',
+});
+
+const attachReused = await attachReuseContext.dispatchAction({ action: 'attach', sessionId: 'session-attach-existing' });
+assert.equal(attachReused, true, 'attach should succeed when the session is already available in local state');
+assert.equal(attachReuseContext.currentSessionId, 'session-attach-existing', 'attach should still update the current session id');
+assert.equal(attachReuseContext.hasAttachedSession, true, 'attach should still mark the UI as attached');
+assert.equal(attachEventCalls, 1, 'attach should fetch visible events for an already-known session');
+assert.equal(attachStateCalls, 0, 'attach should skip the redundant detail fetch when the sidebar metadata is already present');
+assert.equal(attachRefreshCalls, 0, 'attach should avoid the full refresh path when local metadata is already sufficient');
+assert.equal(attachRequested?.sessionId, 'session-attach-existing', 'attach should request events for the selected session');
+assert.equal(attachRequested?.options?.runState, 'idle', 'attach should carry the existing run state into the event refresh path');
+
+const attachQueuedContext = createBaseContext();
+let queuedAttachStateCalls = 0;
+let queuedAttachEventCalls = 0;
+let queuedAttachRefreshCalls = 0;
+
+attachQueuedContext.sessions = [
+  {
+    id: 'session-attach-queued',
+    activity: createSessionActivity({ runState: 'running', queueState: 'queued', queueCount: 2 }),
+  },
+];
+attachQueuedContext.getCurrentSession = () => attachQueuedContext.sessions.find((session) => session.id === attachQueuedContext.currentSessionId) || null;
+attachQueuedContext.getSessionRunState = (session) => session?.activity?.run?.state || 'idle';
+attachQueuedContext.fetchSessionEvents = async () => {
+  queuedAttachEventCalls += 1;
+  return [];
+};
+attachQueuedContext.fetchSessionState = async () => {
+  queuedAttachStateCalls += 1;
+  return {
+    id: 'session-attach-queued',
+    queuedMessages: [{ text: 'queued follow-up' }],
+  };
+};
+attachQueuedContext.refreshCurrentSession = async () => {
+  queuedAttachRefreshCalls += 1;
+  return null;
+};
+
+vm.runInNewContext(dispatchActionSnippet, attachQueuedContext, {
+  filename: 'chat-dispatch-action-attach-queued-runtime.js',
+});
+
+const attachQueued = await attachQueuedContext.dispatchAction({ action: 'attach', sessionId: 'session-attach-queued' });
+assert.equal(attachQueued, true, 'attach should succeed for queued sessions');
+assert.equal(queuedAttachEventCalls, 1, 'attach should still fetch events for queued sessions');
+assert.equal(queuedAttachStateCalls, 1, 'attach should fetch detail only when queued follow-up bodies are actually needed');
+assert.equal(queuedAttachRefreshCalls, 0, 'queued attach should still avoid the older full refresh path');
+
 const archiveContext = createBaseContext();
 let archiveFilterRefreshes = 0;
 let archiveRequest = null;

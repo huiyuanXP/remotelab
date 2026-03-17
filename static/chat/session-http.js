@@ -290,6 +290,8 @@ function resetRenderedEventState(sessionId = null) {
   renderedEventState.latestSeq = 0;
   renderedEventState.eventCount = 0;
   renderedEventState.eventKeys = [];
+  renderedEventState.runState = "idle";
+  renderedEventState.runningBlockExpanded = false;
 }
 
 function getEventBoundarySeq(event) {
@@ -304,7 +306,10 @@ function getEventRenderKey(event) {
   const type = typeof event?.type === "string" ? event.type : "unknown";
   if (type === "collapsed_block" || type === "thinking_block") {
     const state = typeof event?.state === "string" ? event.state : "";
-    return `${seq}:${type}:${state}`;
+    const dynamicBoundary = type === "thinking_block" && renderedEventState.runningBlockExpanded === true
+      ? `:${Number.isInteger(event?.blockEndSeq) ? event.blockEndSeq : 0}`
+      : "";
+    return `${seq}:${type}:${state}${dynamicBoundary}`;
   }
   return `${seq}:${type}`;
 }
@@ -336,13 +341,37 @@ function getLatestEventSeq(events) {
   return latestSeq;
 }
 
-function updateRenderedEventState(sessionId, events) {
+function updateRenderedEventState(sessionId, events, { runState = "idle" } = {}) {
   renderedEventState.sessionId = sessionId;
   renderedEventState.latestSeq = getLatestEventSeq(events);
   renderedEventState.eventCount = Array.isArray(events) ? events.length : 0;
   renderedEventState.eventKeys = Array.isArray(events)
     ? events.map((event) => getEventRenderKey(event))
     : [];
+  renderedEventState.runState = runState === "running" ? "running" : "idle";
+  if (renderedEventState.runState !== "running") {
+    renderedEventState.runningBlockExpanded = false;
+  }
+}
+
+function getSessionRunState(session) {
+  return session?.activity?.run?.state === "running" ? "running" : "idle";
+}
+
+function hasRenderedEventSnapshot(sessionId) {
+  const sameSession = renderedEventState.sessionId === sessionId;
+  return sameSession && (
+    renderedEventState.eventCount > 0
+    || emptyState.parentNode === messagesInner
+  );
+}
+
+function shouldFetchSessionEventsForRefresh(sessionId, session) {
+  const runState = getSessionRunState(session);
+  if (runState !== "running") return true;
+  if (!hasRenderedEventSnapshot(sessionId)) return true;
+  if (renderedEventState.runState !== "running") return true;
+  return renderedEventState.runningBlockExpanded === true;
 }
 
 function getEventRenderPlan(sessionId, events) {
@@ -706,7 +735,7 @@ async function fetchSessionState(sessionId) {
   return normalized;
 }
 
-async function fetchSessionEvents(sessionId) {
+async function fetchSessionEvents(sessionId, { runState = "idle" } = {}) {
   const hadRenderedMessages =
     messagesInner.children.length > 0 && emptyState.parentNode !== messagesInner;
   const shouldStickToBottom =
@@ -731,7 +760,7 @@ async function fetchSessionEvents(sessionId) {
     if (messagesInner.children.length === 0) {
       showEmpty();
     }
-    updateRenderedEventState(sessionId, events);
+    updateRenderedEventState(sessionId, events, { runState });
     const latestTurnStart = applyFinishedTurnCollapseState();
     if (shouldFocusLatestTurnStart(latestTurnStart)) {
       scrollNodeToTop(latestTurnStart);
@@ -746,7 +775,7 @@ async function fetchSessionEvents(sessionId) {
       reconcilePendingMessageState(event);
       renderEvent(event, false);
     }
-    updateRenderedEventState(sessionId, events);
+    updateRenderedEventState(sessionId, events, { runState });
     const latestTurnStart = applyFinishedTurnCollapseState();
     if (shouldFocusLatestTurnStart(latestTurnStart)) {
       scrollNodeToTop(latestTurnStart);
@@ -756,7 +785,7 @@ async function fetchSessionEvents(sessionId) {
     return renderPlan.events;
   }
 
-  updateRenderedEventState(sessionId, events);
+  updateRenderedEventState(sessionId, events, { runState });
   const latestTurnStart = applyFinishedTurnCollapseState();
   if (shouldFocusLatestTurnStart(latestTurnStart)) {
     scrollNodeToTop(latestTurnStart);
@@ -767,7 +796,13 @@ async function fetchSessionEvents(sessionId) {
 async function runCurrentSessionRefresh(sessionId) {
   const session = await fetchSessionState(sessionId);
   if (currentSessionId !== sessionId) return session;
-  await fetchSessionEvents(sessionId);
+  const runState = getSessionRunState(session);
+  if (shouldFetchSessionEventsForRefresh(sessionId, session)) {
+    await fetchSessionEvents(sessionId, { runState });
+    return session;
+  }
+  renderedEventState.sessionId = sessionId;
+  renderedEventState.runState = runState;
   return session;
 }
 

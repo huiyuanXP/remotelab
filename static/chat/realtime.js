@@ -55,11 +55,31 @@ async function dispatchAction(msg) {
       case "list":
         await fetchSessionsList();
         return true;
-      case "attach":
+      case "attach": {
         currentSessionId = msg.sessionId;
         hasAttachedSession = true;
-        await refreshCurrentSession();
+        const attachedSession = getCurrentSession();
+        if (!attachedSession || attachedSession.id !== msg.sessionId) {
+          await refreshCurrentSession();
+          return true;
+        }
+        const runState = typeof getSessionRunState === "function"
+          ? getSessionRunState(attachedSession)
+          : "idle";
+        const eventsPromise = fetchSessionEvents(msg.sessionId, { runState });
+        const queueCount = Number.isInteger(attachedSession?.activity?.queue?.count)
+          ? attachedSession.activity.queue.count
+          : 0;
+        if (queueCount > 0 && !Array.isArray(attachedSession?.queuedMessages)) {
+          await Promise.all([
+            fetchSessionState(msg.sessionId),
+            eventsPromise,
+          ]);
+        } else {
+          await eventsPromise;
+        }
         return true;
+      }
       case "create": {
         const data = await fetchJsonOrRedirect("/api/sessions", {
           method: "POST",
