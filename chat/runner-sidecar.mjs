@@ -16,7 +16,7 @@ import {
   updateRun,
   writeRunResult,
 } from './runs.mjs';
-import { fullPath } from '../lib/tools.mjs';
+import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 
 const runId = process.argv[2];
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,7 +27,7 @@ function nowIso() {
 }
 
 function cleanEnv(manifest = {}) {
-  const env = { ...process.env, PATH: fullPath };
+  const env = buildToolProcessEnv();
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
   env.REMOTELAB_CHAT_BASE_URL = process.env.REMOTELAB_CHAT_BASE_URL || `http://127.0.0.1:${CHAT_PORT}`;

@@ -1,7 +1,7 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { readLastTurnEvents } from './history.mjs';
-import { fullPath } from '../lib/tools.mjs';
+import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
 import {
   normalizeGeneratedSessionTitle,
@@ -110,7 +110,7 @@ async function runToolJsonPrompt(sessionMeta, prompt) {
     `[summarizer] Calling tool=${tool} cmd=${resolvedCmd} model=${model || 'default'} effort=${effort || 'default'} thinking=${!!thinking} for session ${sessionId.slice(0, 8)}`
   );
 
-  const subEnv = { ...process.env, PATH: fullPath };
+  const subEnv = buildToolProcessEnv();
   delete subEnv.CLAUDECODE;
   delete subEnv.CLAUDE_CODE_ENTRYPOINT;
 
