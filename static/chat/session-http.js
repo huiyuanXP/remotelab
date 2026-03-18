@@ -933,7 +933,7 @@ function applyAttachedSessionState(id, session) {
 
   const displayName = getSessionDisplayName(session);
   headerTitle.textContent = displayName;
-  if (shareSnapshotMode) {
+  if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) {
     const titleSuffix = getShareSnapshotViewValue("titleSuffix", "Shared Snapshot");
     document.title = `${displayName} · ${titleSuffix}`;
   }
