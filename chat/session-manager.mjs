@@ -2120,6 +2120,47 @@ async function applyCompactionWorkerResult(targetSessionId, run, manifest) {
   return true;
 }
 
+function findLatestUpgradeControl(events = []) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== 'message' || event.role !== 'assistant') continue;
+    if (event.controlAction !== 'upgrade') continue;
+    const tool = typeof event.controlTool === 'string' ? event.controlTool.trim() : '';
+    if (!tool) continue;
+    return {
+      tool,
+      reason: typeof event.controlReason === 'string' ? event.controlReason.trim() : '',
+    };
+  }
+  return null;
+}
+
+async function maybeApplyRunUpgradeControl(sessionId, normalizedEvents = []) {
+  const control = findLatestUpgradeControl(normalizedEvents);
+  if (!control) return { historyChanged: false, sessionChanged: false };
+
+  const currentSession = await getSession(sessionId);
+  if (!currentSession || currentSession.tool === control.tool) {
+    return { historyChanged: false, sessionChanged: false };
+  }
+
+  const targetTool = await getToolDefinitionAsync(control.tool);
+  if (!targetTool) {
+    await appendEvent(sessionId, statusEvent(`Ignored upgrade request to unavailable tool "${control.tool}"`));
+    return { historyChanged: true, sessionChanged: false };
+  }
+
+  const cleared = await clearPersistedResumeIds(sessionId);
+  const updated = await updateSessionTool(sessionId, control.tool);
+  if (!updated) {
+    return { historyChanged: false, sessionChanged: cleared };
+  }
+
+  const reasonSuffix = control.reason ? ` — ${control.reason}` : '';
+  await appendEvent(sessionId, statusEvent(`Next turn will use ${targetTool.name || control.tool}${reasonSuffix}`));
+  return { historyChanged: true, sessionChanged: true };
+}
+
 async function finalizeDetachedRun(sessionId, run, manifest, normalizedEvents = []) {
   let historyChanged = false;
   let sessionChanged = false;
@@ -2241,7 +2282,13 @@ async function finalizeDetachedRun(sessionId, run, manifest, normalizedEvents = 
     return { historyChanged, sessionChanged };
   }
 
-  const latestSession = finalizedMeta.meta ? await enrichSessionMeta(finalizedMeta.meta) : await getSession(sessionId);
+  if (run.state === 'completed') {
+    const appliedUpgrade = await maybeApplyRunUpgradeControl(sessionId, normalizedEvents);
+    historyChanged = historyChanged || appliedUpgrade.historyChanged;
+    sessionChanged = sessionChanged || appliedUpgrade.sessionChanged;
+  }
+
+  const latestSession = await getSession(sessionId);
   if (!latestSession) {
     return { historyChanged, sessionChanged };
   }
