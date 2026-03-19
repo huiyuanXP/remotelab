@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const defaultRootDir = resolve(__dirname, '..');
+export const DEFAULT_BASELINE_FILE = 'scripts/oversized-files-baseline.json';
 
 export const SOURCE_EXTENSIONS = new Set(['.mjs', '.js', '.html', '.css']);
 export const IGNORED_PATH_SEGMENTS = new Set([
@@ -103,13 +104,51 @@ function resolveLineLimit(limits, extension, fallback) {
   return fallback;
 }
 
+function normalizeBaselineFiles(baselineFiles = {}) {
+  const normalized = {};
+  const source = baselineFiles && typeof baselineFiles === 'object'
+    ? (baselineFiles.files && typeof baselineFiles.files === 'object' ? baselineFiles.files : baselineFiles)
+    : {};
+
+  for (const [pathname, lines] of Object.entries(source)) {
+    const normalizedPath = normalizeRelativePath(pathname);
+    if (!normalizedPath || !Number.isInteger(lines) || lines < 1) continue;
+    normalized[normalizedPath] = lines;
+  }
+
+  return normalized;
+}
+
+export function loadOversizedFilesBaseline(rootDir = defaultRootDir, baselineFile = DEFAULT_BASELINE_FILE) {
+  const resolvedRoot = resolve(rootDir);
+  const baselinePath = resolve(resolvedRoot, baselineFile || DEFAULT_BASELINE_FILE);
+  try {
+    const parsed = JSON.parse(readFileSync(baselinePath, 'utf8'));
+    return {
+      path: baselinePath,
+      files: normalizeBaselineFiles(parsed),
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        path: baselinePath,
+        files: {},
+      };
+    }
+    throw error;
+  }
+}
+
 export function scanOversizedFiles(rootDir = defaultRootDir, {
   warnLineLimits = DEFAULT_WARN_LINE_LIMITS,
   failLineLimits = DEFAULT_FAIL_LINE_LIMITS,
+  baselineFiles = null,
 } = {}) {
   const resolvedRoot = resolve(rootDir);
   const files = listCandidateFiles(resolvedRoot);
-  const oversizedFiles = [];
+  const allOversizedFiles = [];
+  const baselineActive = baselineFiles !== null && baselineFiles !== undefined;
+  const normalizedBaselineFiles = normalizeBaselineFiles(baselineActive ? baselineFiles : {});
 
   for (const relativePath of files) {
     const extension = extname(relativePath).toLowerCase();
@@ -123,7 +162,8 @@ export function scanOversizedFiles(rootDir = defaultRootDir, {
     const text = readFileSync(absolutePath, 'utf8');
     const lines = countLines(text);
     if (lines < warnLimit) continue;
-    oversizedFiles.push({
+    const baselineLines = normalizedBaselineFiles[relativePath] || 0;
+    allOversizedFiles.push({
       path: relativePath,
       extension,
       lines,
@@ -131,20 +171,35 @@ export function scanOversizedFiles(rootDir = defaultRootDir, {
       warnLimit,
       failLimit,
       severity: lines >= failLimit ? 'fail' : 'warn',
+      ...(baselineLines > 0 ? { baselineLines, baselineDelta: lines - baselineLines } : {}),
     });
   }
 
-  oversizedFiles.sort((left, right) => {
+  allOversizedFiles.sort((left, right) => {
     const severityRank = { fail: 0, warn: 1 };
     return severityRank[left.severity] - severityRank[right.severity]
       || right.lines - left.lines
       || left.path.localeCompare(right.path);
   });
 
+  const oversizedFiles = [];
+  const suppressedOversizedFiles = [];
+  for (const entry of allOversizedFiles) {
+    if (Number.isInteger(entry.baselineLines) && entry.baselineLines > 0 && entry.lines <= entry.baselineLines) {
+      suppressedOversizedFiles.push(entry);
+      continue;
+    }
+    oversizedFiles.push(entry);
+  }
+
   return {
     rootDir: resolvedRoot,
     scannedFileCount: files.length,
+    baselineActive,
+    allOversizedFiles,
     oversizedFiles,
+    suppressedOversizedFiles,
+    baselineSuppressedCount: suppressedOversizedFiles.length,
     warningCount: oversizedFiles.filter((entry) => entry.severity === 'warn').length,
     failCount: oversizedFiles.filter((entry) => entry.severity === 'fail').length,
   };
@@ -154,7 +209,18 @@ export function formatOversizedFilesReport(report, {
   githubActions = false,
 } = {}) {
   const oversizedFiles = Array.isArray(report?.oversizedFiles) ? report.oversizedFiles : [];
+  const suppressedOversizedFiles = Array.isArray(report?.suppressedOversizedFiles) ? report.suppressedOversizedFiles : [];
+  const baselineActive = report?.baselineActive === true;
   if (oversizedFiles.length === 0) {
+    if (suppressedOversizedFiles.length > 0) {
+      return {
+        text: [
+          `Oversized source file report: no regressions across ${report?.scannedFileCount || 0} scanned file(s).`,
+          `${suppressedOversizedFiles.length} baseline oversized file(s) remain tracked but unchanged.`,
+        ].join(' '),
+        annotations: [],
+      };
+    }
     return {
       text: `Oversized source file report: none found across ${report?.scannedFileCount || 0} files.`,
       annotations: [],
@@ -167,15 +233,31 @@ export function formatOversizedFilesReport(report, {
     `(${report?.failCount || 0} at or above fail threshold).`,
   ].join(' ');
 
-  const detailLines = oversizedFiles.map((entry) => [
-    entry.severity === 'fail' ? '!' : '-',
-    `${entry.path}`,
-    `${entry.lines} lines`,
-    `(warn ${entry.warnLimit}, fail ${entry.failLimit})`,
-  ].join(' '));
+  const detailLines = oversizedFiles.map((entry) => {
+    const baselineNote = !baselineActive
+      ? ''
+      : (Number.isInteger(entry.baselineLines) && entry.baselineLines > 0
+          ? `(+${entry.lines - entry.baselineLines} vs baseline ${entry.baselineLines})`
+          : '(new oversized file)');
+    return [
+      entry.severity === 'fail' ? '!' : '-',
+      `${entry.path}`,
+      `${entry.lines} lines`,
+      `(warn ${entry.warnLimit}, fail ${entry.failLimit})`,
+      baselineNote,
+    ].filter(Boolean).join(' ');
+  });
 
   const annotations = githubActions
-    ? oversizedFiles.map((entry) => `::warning file=${entry.path}::Oversized source file (${entry.lines} lines; warn ${entry.warnLimit}, fail ${entry.failLimit})`)
+    ? oversizedFiles.map((entry) => {
+      if (!baselineActive) {
+        return `::warning file=${entry.path}::Oversized source file (${entry.lines} lines; warn ${entry.warnLimit}, fail ${entry.failLimit})`;
+      }
+      const detail = Number.isInteger(entry.baselineLines) && entry.baselineLines > 0
+        ? `regression vs baseline ${entry.baselineLines}`
+        : 'new oversized file';
+      return `::warning file=${entry.path}::Oversized source file (${entry.lines} lines; warn ${entry.warnLimit}, fail ${entry.failLimit}; ${detail})`;
+    })
     : [];
 
   return {
@@ -187,8 +269,10 @@ export function formatOversizedFilesReport(report, {
 function parseArgs(argv = []) {
   const options = {
     rootDir: defaultRootDir,
+    baselineFile: DEFAULT_BASELINE_FILE,
     failOnOversizedFiles: process.env.FILESIZE_FAIL === '1',
     githubActions: process.env.GITHUB_ACTIONS === 'true',
+    showAllOversizedFiles: process.env.FILESIZE_ALL === '1',
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -202,12 +286,21 @@ function parseArgs(argv = []) {
       options.failOnOversizedFiles = true;
       continue;
     }
+    if (arg === '--baseline') {
+      options.baselineFile = argv[index + 1] || DEFAULT_BASELINE_FILE;
+      index += 1;
+      continue;
+    }
     if (arg === '--github-actions') {
       options.githubActions = true;
       continue;
     }
+    if (arg === '--all') {
+      options.showAllOversizedFiles = true;
+      continue;
+    }
     if (arg === '--help' || arg === '-h') {
-      console.log('Usage: node scripts/report-oversized-files.mjs [--root <dir>] [--fail] [--github-actions]');
+      console.log('Usage: node scripts/report-oversized-files.mjs [--root <dir>] [--baseline <file>] [--all] [--fail] [--github-actions]');
       process.exit(0);
     }
     throw new Error(`Unknown argument: ${arg}`);
@@ -222,7 +315,12 @@ function isMainModule() {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const report = scanOversizedFiles(options.rootDir);
+  const baseline = options.showAllOversizedFiles
+    ? null
+    : loadOversizedFilesBaseline(options.rootDir, options.baselineFile);
+  const report = scanOversizedFiles(options.rootDir, {
+    baselineFiles: baseline?.files ?? null,
+  });
   const formatted = formatOversizedFilesReport(report, {
     githubActions: options.githubActions,
   });

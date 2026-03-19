@@ -191,5 +191,6 @@ try {
   console.log('test-session-follow-up-queue: ok');
 } finally {
   killAll();
+  await sleep(250);
   rmSync(home, { recursive: true, force: true });
 }

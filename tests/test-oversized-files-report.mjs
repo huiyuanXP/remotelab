@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   formatOversizedFilesReport,
+  loadOversizedFilesBaseline,
   scanOversizedFiles,
 } from '../scripts/report-oversized-files.mjs';
 
@@ -58,6 +59,38 @@ try {
     ],
     'formatter should emit GitHub Actions warnings when requested',
   );
+
+  writeFileSync(
+    join(tempRoot, 'oversized-baseline.json'),
+    JSON.stringify({
+      files: {
+        'chat/warn.mjs': 5,
+        'static/chat/fail.css': 9,
+      },
+    }, null, 2),
+    'utf8',
+  );
+
+  const baseline = loadOversizedFilesBaseline(tempRoot, 'oversized-baseline.json');
+  const ratchetedReport = scanOversizedFiles(tempRoot, {
+    warnLineLimits: {
+      '.mjs': 4,
+      '.css': 4,
+    },
+    failLineLimits: {
+      '.mjs': 8,
+      '.css': 8,
+    },
+    baselineFiles: baseline.files,
+  });
+
+  assert.equal(ratchetedReport.oversizedFiles.length, 0, 'unchanged oversized files should be suppressed by baseline');
+  assert.equal(ratchetedReport.baselineSuppressedCount, 2, 'baseline should track unchanged oversized files');
+
+  const ratchetedFormatted = formatOversizedFilesReport(ratchetedReport, { githubActions: true });
+  assert.equal(ratchetedFormatted.annotations.length, 0, 'unchanged baseline debt should not emit GitHub Actions warnings');
+  assert.match(ratchetedFormatted.text, /no regressions across 3 scanned file\(s\)/i);
+  assert.match(ratchetedFormatted.text, /2 baseline oversized file\(s\) remain tracked/i);
 
   console.log('test-oversized-files-report: ok');
 } finally {
