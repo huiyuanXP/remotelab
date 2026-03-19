@@ -29,6 +29,7 @@
   const msgInput = document.getElementById("msgInput");
   const sendBtn = document.getElementById("sendBtn");
   const headerTitle = document.getElementById("headerTitle");
+  const headerLeft = headerTitle.closest(".header-left");
   const statusText = document.getElementById("statusText");
   const imgBtn = document.getElementById("imgBtn");
   const imgFileInput = document.getElementById("imgFileInput");
@@ -422,6 +423,10 @@
           };
           ws.addEventListener("message", compactHandler);
         }
+        break;
+
+      case "report:new":
+        if (msg.report) reportManager.handleNewReport(msg.report);
         break;
 
       case "server_restart":
@@ -858,8 +863,8 @@
     }
     headerCtxClear.classList.add("visible");
 
-    // Shrink the title to give space to the bar
-    headerTitle.style.flex = "0 0 auto";
+    // Shrink the left section to give space to the context bar
+    headerLeft.style.flex = "0 1 auto";
     headerCtx.classList.add("visible");
   }
 
@@ -869,7 +874,7 @@
     headerCtxCompress.textContent = "Compress";
     headerCtxClear.disabled = false;
     headerCtxClear.textContent = "Clear";
-    headerTitle.style.flex = "";
+    headerLeft.style.flex = "";
   }
 
   headerCtxCompress.addEventListener("click", () => {
@@ -3167,6 +3172,191 @@
     } catch {}
   }
 
+  // ---- Report System ----
+
+  const reportBell = document.getElementById("reportBell");
+  const reportBadge = document.getElementById("reportBadge");
+  const reportPanel = document.getElementById("reportPanel");
+  const reportPanelClose = document.getElementById("reportPanelClose");
+  const reportListEl = document.getElementById("reportList");
+  const reportDetail = document.getElementById("reportDetail");
+  const reportDetailTitle = document.getElementById("reportDetailTitle");
+  const reportBack = document.getElementById("reportBack");
+  const reportDetailClose = document.getElementById("reportDetailClose");
+  const reportGotoSession = document.getElementById("reportGotoSession");
+  const reportIframe = document.getElementById("reportIframe");
+
+  const reportManager = {
+    reports: [],
+    unreadCount: 0,
+    currentReportId: null,
+
+    async loadReports() {
+      try {
+        const res = await fetch("/api/reports");
+        this.reports = await res.json();
+        this.unreadCount = this.reports.filter((r) => !r.read).length;
+        this.updateBadge();
+        this.renderList();
+      } catch {}
+    },
+
+    updateBadge() {
+      if (this.unreadCount > 0) {
+        reportBadge.textContent = this.unreadCount;
+        reportBadge.classList.remove("hidden");
+      } else {
+        reportBadge.classList.add("hidden");
+      }
+    },
+
+    renderList() {
+      if (this.reports.length === 0) {
+        reportListEl.innerHTML =
+          '<div class="report-list-empty">No reports yet</div>';
+        return;
+      }
+      reportListEl.innerHTML = "";
+      for (const r of this.reports) {
+        const item = document.createElement("div");
+        item.className = "report-item" + (r.read ? "" : " unread");
+        const time = new Date(r.createdAt);
+        const timeStr =
+          time.toLocaleDateString("zh-CN", {
+            month: "short",
+            day: "numeric",
+          }) +
+          " " +
+          time.toLocaleTimeString("zh-CN", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        item.innerHTML =
+          '<div class="report-item-title"></div>' +
+          '<div class="report-item-meta">' +
+          "<span></span>" +
+          "<span></span>" +
+          '<button class="report-item-delete" title="Delete">&times;</button>' +
+          "</div>";
+        item.querySelector(".report-item-title").textContent = r.title;
+        const metaSpans = item.querySelectorAll(".report-item-meta span");
+        metaSpans[0].textContent = r.source;
+        metaSpans[1].textContent = timeStr;
+        item
+          .querySelector(".report-item-delete")
+          .addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.deleteReport(r.id);
+          });
+        item.addEventListener("click", () => this.openDetail(r.id));
+        reportListEl.appendChild(item);
+      }
+    },
+
+    async openDetail(id) {
+      this.currentReportId = id;
+      // Mark as read
+      const report = this.reports.find((r) => r.id === id);
+      if (report && !report.read) {
+        report.read = true;
+        this.unreadCount = Math.max(0, this.unreadCount - 1);
+        this.updateBadge();
+        this.renderList();
+        fetch(`/api/reports/${id}/read`, { method: "PATCH" }).catch(() => {});
+        wsSend({ action: "mark-report-read", reportId: id });
+      }
+      reportDetailTitle.textContent = report?.title || "Report";
+      reportGotoSession.style.display = report?.sessionId ? "" : "none";
+      reportIframe.src = `/api/reports/${id}/html`;
+      reportDetail.classList.remove("hidden");
+    },
+
+    closeDetail() {
+      reportDetail.classList.add("hidden");
+      reportIframe.src = "about:blank";
+      this.currentReportId = null;
+    },
+
+    gotoSession() {
+      const report = this.reports.find(
+        (r) => r.id === this.currentReportId,
+      );
+      if (report?.sessionId) {
+        this.closeDetail();
+        reportPanel.classList.add("hidden");
+        const sess = sessions.find((s) => s.id === report.sessionId);
+        if (sess) attachSession(sess.id, sess);
+      }
+    },
+
+    async deleteReport(id) {
+      try {
+        await fetch(`/api/reports/${id}`, { method: "DELETE" });
+        const idx = this.reports.findIndex((r) => r.id === id);
+        if (idx !== -1) {
+          if (!this.reports[idx].read) {
+            this.unreadCount = Math.max(0, this.unreadCount - 1);
+            this.updateBadge();
+          }
+          this.reports.splice(idx, 1);
+          this.renderList();
+        }
+        if (this.currentReportId === id) this.closeDetail();
+      } catch {}
+    },
+
+    handleNewReport(report) {
+      this.reports.unshift(report);
+      this.unreadCount++;
+      this.updateBadge();
+      this.renderList();
+      // Browser system notification
+      if (
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        const n = new Notification(report.title, {
+          body: `From: ${report.source}`,
+          tag: `report-${report.id}`,
+        });
+        n.onclick = () => {
+          window.focus();
+          this.openDetail(report.id);
+          reportPanel.classList.remove("hidden");
+          n.close();
+        };
+      }
+    },
+
+    togglePanel() {
+      const isHidden = reportPanel.classList.contains("hidden");
+      if (isHidden) {
+        // Request notification permission on first open
+        if (
+          "Notification" in window &&
+          Notification.permission === "default"
+        ) {
+          Notification.requestPermission();
+        }
+        reportPanel.classList.remove("hidden");
+      } else {
+        reportPanel.classList.add("hidden");
+      }
+    },
+  };
+
+  reportBell.addEventListener("click", () => reportManager.togglePanel());
+  reportPanelClose.addEventListener("click", () =>
+    reportPanel.classList.add("hidden"),
+  );
+  reportBack.addEventListener("click", () => reportManager.closeDetail());
+  reportDetailClose.addEventListener("click", () =>
+    reportManager.closeDetail(),
+  );
+  reportGotoSession.addEventListener("click", () =>
+    reportManager.gotoSession(),
+  );
+
   // ---- Init ----
   applyTheme();
   setInterval(applyTheme, 60000); // recheck time every minute for auto mode
@@ -3176,5 +3366,6 @@
   loadInlineModels();
   loadSessionLabels();
   loadUiSettings();
+  reportManager.loadReports();
   connect();
 })();

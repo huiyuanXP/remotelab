@@ -88,11 +88,19 @@ body {
   height: calc(48px + var(--safe-top));
   flex-shrink: 0;
 }
-.header h1 { font-size: 15px; font-weight: 600; flex: 1; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-left {
+  display: flex; align-items: center; gap: 8px;
+  flex: 1; min-width: 0;
+}
+.header-right {
+  display: flex; align-items: center; gap: 4px;
+  flex-shrink: 0;
+}
+.header h1 { font-size: 15px; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- Header context bar ---- */
 .header-ctx {
-  flex: 2;
+  flex: 1;
   display: none;
   align-items: center;
   gap: 6px;
@@ -182,7 +190,96 @@ body {
 .header-logo.active { color: var(--success); }
 .header-logo.active svg { animation: logo-spin 8s linear infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-#statusText { font-size: 12px; color: var(--text-muted); }
+#statusText { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+/* ---- Header mobile responsive ---- */
+@media (max-width: 480px) {
+  .header { gap: 4px; padding: 0 8px; padding-top: var(--safe-top); }
+  .header-left { flex-shrink: 1; max-width: 30%; }
+  .header h1 { font-size: 13px; }
+  #statusText { display: none; }
+  .header-ctx-detail { display: none; }
+  .header-right { gap: 2px; }
+  .header-right .header-btn { width: 28px; height: 28px; padding: 4px; }
+}
+
+/* ---- Report bell & badge ---- */
+.report-bell { position: relative; }
+.report-badge {
+  position: absolute; top: 2px; right: 2px;
+  background: var(--error); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  min-width: 16px; height: 16px; padding: 2px 4px;
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.report-badge.hidden { display: none; }
+
+/* ---- Report panel (right slide-in) ---- */
+.report-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 360px; max-width: 100vw;
+  background: var(--bg); border-left: 1px solid var(--border);
+  z-index: 200; display: flex; flex-direction: column;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.08);
+  transition: transform 0.2s ease;
+}
+.report-panel.hidden { display: none; }
+.report-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.report-panel-header h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.report-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+.report-item {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--bg-tertiary);
+  transition: background 0.15s;
+}
+.report-item:hover { background: var(--bg-secondary); }
+.report-item.unread { border-left: 3px solid var(--accent); }
+.report-item-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.report-item.unread .report-item-title { font-weight: 700; }
+.report-item-meta {
+  font-size: 11px; color: var(--text-secondary);
+  display: flex; gap: 8px; align-items: center;
+}
+.report-item-delete {
+  margin-left: auto; background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 4px; line-height: 1;
+}
+.report-item-delete:hover { background: var(--error-bg); color: var(--error); }
+.report-list-empty {
+  padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px;
+}
+
+/* ---- Report detail overlay ---- */
+.report-detail {
+  position: fixed; inset: 0; z-index: 210;
+  background: var(--bg); display: flex; flex-direction: column;
+}
+.report-detail.hidden { display: none; }
+.report-detail-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.report-detail-title {
+  flex: 1; font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.report-goto-btn {
+  font-size: 12px; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--border-strong); background: transparent;
+  color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+}
+.report-goto-btn:hover { background: var(--bg-tertiary); color: var(--text); }
+.report-iframe {
+  flex: 1; border: none; width: 100%; background: #fff;
+}
 
 /* ---- App container ---- */
 .app-container {
@@ -1056,7 +1153,7 @@ body {
 
 /* ---- Desktop (>= 768px) ---- */
 @media (min-width: 768px) {
-  .header #menuBtn { display: none; }
+  .header-left #menuBtn { display: none; }
 
   .sidebar-overlay {
     display: block !important; position: static; background: none;
@@ -1353,8 +1450,10 @@ body {
 
 <!-- Header -->
 <div class="header">
-  <button class="header-btn" id="menuBtn" title="Sessions">&#9776;</button>
-  <h1 id="headerTitle">RemoteLab Chat</h1>
+  <div class="header-left">
+    <button class="header-btn" id="menuBtn" title="Sessions">&#9776;</button>
+    <h1 id="headerTitle">RemoteLab Chat</h1>
+  </div>
   <div class="header-ctx" id="headerCtx">
     <div class="header-ctx-detail" id="headerCtxDetail"></div>
     <div class="header-ctx-bar-wrap">
@@ -1366,19 +1465,25 @@ body {
     <button class="header-ctx-compress" id="headerCtxCompress">Compress</button>
     <button class="header-ctx-clear" id="headerCtxClear">Clear</button>
   </div>
-  <button class="header-btn" id="themeBtn" title="主题"></button>
-  <div class="header-logo" id="headerLogo">
-    <svg width="18" height="18" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <g stroke="currentColor" stroke-width="5.5" fill="none">
-        <circle cx="50" cy="28" r="19"/>
-        <circle cx="72" cy="50" r="19"/>
-        <circle cx="50" cy="72" r="19"/>
-        <circle cx="28" cy="50" r="19"/>
-      </g>
-      <circle cx="50" cy="50" r="4" fill="currentColor"/>
-    </svg>
+  <div class="header-right">
+    <button class="header-btn report-bell" id="reportBell" title="Reports">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span class="report-badge hidden" id="reportBadge">0</span>
+    </button>
+    <button class="header-btn" id="themeBtn" title="主题"></button>
+    <div class="header-logo" id="headerLogo">
+      <svg width="18" height="18" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g stroke="currentColor" stroke-width="5.5" fill="none">
+          <circle cx="50" cy="28" r="19"/>
+          <circle cx="72" cy="50" r="19"/>
+          <circle cx="50" cy="72" r="19"/>
+          <circle cx="28" cy="50" r="19"/>
+        </g>
+        <circle cx="50" cy="50" r="4" fill="currentColor"/>
+      </svg>
+    </div>
+    <span id="statusText">disconnected</span>
   </div>
-  <span id="statusText">disconnected</span>
 </div>
 
 <div class="app-container">
@@ -1465,6 +1570,26 @@ body {
       <button class="btn-create" id="createSession">Create</button>
     </div>
   </div>
+</div>
+
+<!-- Report panel (slide-in from right) -->
+<div class="report-panel hidden" id="reportPanel">
+  <div class="report-panel-header">
+    <h3>Reports</h3>
+    <button class="header-btn" id="reportPanelClose">&times;</button>
+  </div>
+  <div class="report-list" id="reportList"></div>
+</div>
+
+<!-- Report detail overlay -->
+<div class="report-detail hidden" id="reportDetail">
+  <div class="report-detail-header">
+    <button class="header-btn" id="reportBack">&larr;</button>
+    <span class="report-detail-title" id="reportDetailTitle"></span>
+    <button class="report-goto-btn" id="reportGotoSession">Go to Session</button>
+    <button class="header-btn" id="reportDetailClose">&times;</button>
+  </div>
+  <iframe id="reportIframe" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" class="report-iframe"></iframe>
 </div>
 
 <!-- Floating status logo -->
