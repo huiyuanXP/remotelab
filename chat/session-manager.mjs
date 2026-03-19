@@ -1,10 +1,13 @@
+import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
 import { extname, join } from 'path';
+import { createInterface } from 'readline';
 import { CHAT_IMAGES_DIR } from '../lib/config.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
-import { createToolInvocation } from './process-runner.mjs';
+import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
+import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
 import {
   appendEvent,
   appendEvents,
@@ -124,6 +127,10 @@ const VISITOR_TURN_GUARDRAIL = [
 
 const INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR = 'context_compactor';
 const AUTO_COMPACT_MARKER_TEXT = 'Older messages above this marker are no longer in the model\'s live context. They remain visible in the transcript, but only the compressed handoff and newer messages below are loaded for continued work.';
+const REPLY_SELF_REPAIR_INTERNAL_OPERATION = 'reply_self_repair';
+const REPLY_SELF_CHECK_REVIEWING_STATUS = 'Assistant self-check: reviewing the latest reply for early stop…';
+const REPLY_SELF_CHECK_ACCEPT_STATUS = 'Assistant self-check: kept the latest reply as-is.';
+const REPLY_SELF_CHECK_DEFAULT_REASON = 'the latest reply left avoidable unfinished work';
 
 const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
   'You are RemoteLab\'s hidden context compactor for a user-facing session.',
@@ -1485,6 +1492,281 @@ function extractTaggedBlock(content, tagName) {
   return (match ? match[1] : '').trim();
 }
 
+function parseJsonObjectText(modelText) {
+  const text = typeof modelText === 'string' ? modelText.trim() : '';
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+  }
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeReplySelfCheckSetting(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'micro-agent';
+  if (['0', 'false', 'off', 'disabled', 'disable', 'none'].includes(normalized)) {
+    return 'off';
+  }
+  if (['1', 'true', 'on', 'enabled', 'enable', 'all'].includes(normalized)) {
+    return 'all';
+  }
+  return normalized;
+}
+
+async function shouldRunReplySelfCheck(session, run, manifest) {
+  if (!session?.id || !run?.id) return false;
+  if (manifest?.internalOperation) return false;
+  if (session.archived || isInternalSession(session)) return false;
+  if (run.state !== 'completed') return false;
+  const setting = normalizeReplySelfCheckSetting(process.env.REMOTELAB_REPLY_SELF_CHECK);
+  if (setting === 'off') return false;
+  if (setting === 'all') return true;
+  const toolDefinition = await getToolDefinitionAsync(run.tool || session.tool || '');
+  if (!toolDefinition) return false;
+  if (setting === 'micro-agent') {
+    return toolDefinition.id === 'micro-agent' || toolDefinition.toolProfile === 'micro-agent';
+  }
+  const enabledTools = new Set(setting.split(',').map((entry) => entry.trim()).filter(Boolean));
+  return enabledTools.has(toolDefinition.id || '') || enabledTools.has(toolDefinition.toolProfile || '');
+}
+
+function normalizeReplySelfCheckText(value) {
+  return String(value ?? '').replace(/\r\n/g, '\n').trim();
+}
+
+function clipReplySelfCheckText(value, maxChars = 5000) {
+  const text = normalizeReplySelfCheckText(value);
+  if (!text) return '';
+  if (text.length <= maxChars) return text;
+  const headChars = Math.max(1, Math.floor(maxChars * 0.6));
+  const tailChars = Math.max(1, maxChars - headChars);
+  return `${text.slice(0, headChars).trimEnd()}\n[... truncated by RemoteLab ...]\n${text.slice(-tailChars).trimStart()}`;
+}
+
+function summarizeReplySelfCheckReason(value, fallback = REPLY_SELF_CHECK_DEFAULT_REASON) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return fallback;
+  if (text.length <= 160) return text;
+  return `${text.slice(0, 157).trimEnd()}…`;
+}
+
+async function runDetachedAssistantPrompt(sessionMeta, prompt) {
+  const {
+    folder,
+    tool,
+    model,
+    effort,
+    thinking,
+  } = sessionMeta;
+
+  if (!tool) {
+    throw new Error('Detached assistant prompt requires an explicit tool');
+  }
+
+  const invocation = await createToolInvocation(tool, prompt, {
+    dangerouslySkipPermissions: true,
+    model,
+    effort,
+    thinking,
+    systemPrefix: '',
+  });
+  const resolvedCmd = await resolveCommand(invocation.command);
+  const resolvedFolder = resolveCwd(folder);
+  const env = buildToolProcessEnv();
+  delete env.CLAUDECODE;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(resolvedCmd, invocation.args, {
+      cwd: resolvedFolder,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    proc.stdin.end();
+
+    const rl = createInterface({ input: proc.stdout });
+    const textParts = [];
+
+    rl.on('line', (line) => {
+      const events = invocation.adapter.parseLine(line);
+      for (const evt of events) {
+        if (evt.type === 'message' && evt.role === 'assistant') {
+          textParts.push(evt.content || '');
+        }
+      }
+    });
+
+    proc.on('error', reject);
+
+    proc.on('exit', (code) => {
+      const raw = textParts.join('\n').trim();
+      if (code !== 0 && !raw) {
+        reject(new Error(`${tool} exited with code ${code}`));
+        return;
+      }
+      resolve(raw);
+    });
+  });
+}
+
+async function findLatestUserMessageForRun(sessionId, runId) {
+  const events = await loadHistory(sessionId, { includeBodies: true });
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== 'message' || event.role !== 'user') continue;
+    if (runId && event.runId !== runId) continue;
+    return event;
+  }
+  return null;
+}
+
+function buildReplySelfCheckPrompt({ userMessage, assistantMessage }) {
+  return [
+    'You are RemoteLab\'s hidden end-of-turn completion reviewer.',
+    'Judge only whether the latest assistant reply stopped too early for the current user turn.',
+    'Be conservative: choose "accept" if the reply already gives a meaningful complete result for this turn, even if more detail could be added.',
+    'Choose "continue" only when the reply clearly leaves unfinished work that should have been done now with already available information.',
+    'Strong continue signals include: promising to do the next step later, asking permission to continue without a real blocker, or summarizing a plan while leaving the requested action undone.',
+    'Do not require extra artifacts the user did not ask for. Conceptual discussion can already be complete.',
+    'Real blockers that justify accepting the reply as-is include: missing required user input, genuine ambiguity, or destructive / irreversible actions that need confirmation.',
+    'Return exactly one <hide> JSON object with keys "action", "reason", and "continuationPrompt".',
+    'Valid actions: "accept" or "continue".',
+    'If action is "accept", set continuationPrompt to an empty string.',
+    'If action is "continue", continuationPrompt must tell the next assistant how to finish the missing work immediately without asking permission and without repeating the whole previous reply.',
+    'Write reason and continuationPrompt in the user\'s language.',
+    'Do not output any text outside the <hide> block.',
+    '',
+    'Current user message:',
+    clipReplySelfCheckText(userMessage?.content || '', 3000) || '[none]',
+    '',
+    'Latest assistant reply shown to the user:',
+    clipReplySelfCheckText(assistantMessage?.content || '', 5000) || '[none]',
+  ].join('\n');
+}
+
+function parseReplySelfCheckDecision(content) {
+  const hidden = extractTaggedBlock(content, 'hide');
+  const parsed = parseJsonObjectText(hidden || content);
+  const rawAction = String(parsed?.action || '').trim().toLowerCase();
+  const action = ['continue', 'revise', 'repair', 'retry'].includes(rawAction)
+    ? 'continue'
+    : 'accept';
+  return {
+    action,
+    reason: summarizeReplySelfCheckReason(parsed?.reason || ''),
+    continuationPrompt: String(parsed?.continuationPrompt || '').trim(),
+  };
+}
+
+function buildReplySelfRepairPrompt({ userMessage, assistantMessage, reviewDecision }) {
+  const continuationPrompt = String(reviewDecision?.continuationPrompt || '').trim();
+  const reason = summarizeReplySelfCheckReason(reviewDecision?.reason || 'finish the missing work now');
+  return [
+    'You are continuing the same user-facing reply after a hidden self-check found an avoidable early stop.',
+    'The previous assistant reply is already visible to the user.',
+    'Add only the missing completion now.',
+    'Do not ask for permission to continue.',
+    'Do not mention the hidden self-check or internal review process.',
+    'Do not end with another open offer such as "if you want I can continue" or "I can do that next".',
+    'If you still truly need user input, state exactly what is missing and why it is required.',
+    '',
+    'Original user message:',
+    clipReplySelfCheckText(userMessage?.content || '', 3000) || '[none]',
+    '',
+    'Previous assistant reply already shown to the user:',
+    clipReplySelfCheckText(assistantMessage?.content || '', 5000) || '[none]',
+    '',
+    'Hidden reviewer guidance:',
+    continuationPrompt || `Finish the missing work now. Reviewer reason: ${reason}`,
+    '',
+    'Return only the next user-visible assistant message.',
+  ].join('\n');
+}
+
+async function maybeRunReplySelfCheck(sessionId, session, run, manifest) {
+  if (!await shouldRunReplySelfCheck(session, run, manifest)) {
+    return false;
+  }
+  const latestSession = await getSession(sessionId);
+  if (!latestSession || latestSession.activeRunId || getSessionQueueCount(latestSession) > 0) {
+    return false;
+  }
+
+  const [userMessage, assistantMessage] = await Promise.all([
+    findLatestUserMessageForRun(sessionId, run.id),
+    findLatestAssistantMessageForRun(sessionId, run.id),
+  ]);
+  if (!assistantMessage?.content) {
+    return false;
+  }
+
+  await appendEvent(sessionId, statusEvent(REPLY_SELF_CHECK_REVIEWING_STATUS));
+  broadcastSessionInvalidation(sessionId);
+
+  let reviewText = '';
+  try {
+    reviewText = await runDetachedAssistantPrompt({
+      id: sessionId,
+      folder: session.folder,
+      tool: run.tool || session.tool,
+      model: run.model || undefined,
+      effort: run.effort || undefined,
+      thinking: false,
+    }, buildReplySelfCheckPrompt({ userMessage, assistantMessage }));
+  } catch (error) {
+    await appendEvent(sessionId, statusEvent(`Assistant self-check: review failed — ${summarizeReplySelfCheckReason(error.message, 'background reviewer error')}`));
+    broadcastSessionInvalidation(sessionId);
+    return false;
+  }
+
+  const reviewDecision = parseReplySelfCheckDecision(reviewText);
+  const refreshed = await getSession(sessionId);
+  if (!refreshed || refreshed.activeRunId || getSessionQueueCount(refreshed) > 0) {
+    await appendEvent(sessionId, statusEvent('Assistant self-check: skipped automatic continuation because new work arrived first.'));
+    broadcastSessionInvalidation(sessionId);
+    return false;
+  }
+
+  if (reviewDecision.action !== 'continue') {
+    await appendEvent(sessionId, statusEvent(REPLY_SELF_CHECK_ACCEPT_STATUS));
+    broadcastSessionInvalidation(sessionId);
+    return true;
+  }
+
+  const reason = summarizeReplySelfCheckReason(reviewDecision.reason, REPLY_SELF_CHECK_DEFAULT_REASON);
+  await appendEvent(sessionId, statusEvent(`Assistant self-check: continuing automatically — ${reason}`));
+  broadcastSessionInvalidation(sessionId);
+
+  try {
+    await sendMessage(sessionId, buildReplySelfRepairPrompt({
+      userMessage,
+      assistantMessage,
+      reviewDecision,
+    }), [], {
+      tool: run.tool || session.tool,
+      model: run.model || undefined,
+      effort: run.effort || undefined,
+      thinking: !!run.thinking,
+      recordUserMessage: false,
+      queueIfBusy: false,
+      internalOperation: REPLY_SELF_REPAIR_INTERNAL_OPERATION,
+    });
+  } catch (error) {
+    await appendEvent(sessionId, statusEvent(`Assistant self-check: failed to continue automatically — ${summarizeReplySelfCheckReason(error.message, 'unable to launch follow-up reply')}`));
+    broadcastSessionInvalidation(sessionId);
+    return false;
+  }
+
+  return true;
+}
+
 function parseCompactionWorkerOutput(content) {
   return {
     summary: extractTaggedBlock(content, 'summary'),
@@ -2307,6 +2589,9 @@ async function finalizeDetachedRun(sessionId, run, manifest, normalizedEvents = 
         }
         sendCompletionPush({ ...(updated || latestSession), id: sessionId }).catch(() => {});
       });
+      if (!manifest?.internalOperation) {
+        void maybeRunReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
+      }
       return { historyChanged, sessionChanged };
     }
 
@@ -2317,6 +2602,9 @@ async function finalizeDetachedRun(sessionId, run, manifest, normalizedEvents = 
 
   void maybeAutoCompact(sessionId, latestSession, finalizedRun, manifest);
   sendCompletionPush({ ...latestSession, id: sessionId }).catch(() => {});
+  if (!manifest?.internalOperation) {
+    void maybeRunReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
+  }
   return { historyChanged, sessionChanged };
 }
 
