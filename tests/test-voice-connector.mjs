@@ -41,9 +41,8 @@ assert.equal(loadedConfig.connectorId, 'living-room-speaker')
 assert.equal(loadedConfig.roomName, 'Living Room')
 assert.equal(loadedConfig.sessionTool, 'codex')
 assert.equal(loadedConfig.wake.mode, 'stdin')
-assert.match(loadedConfig.systemPrompt, /spoken aloud/i)
-assert.match(loadedConfig.systemPrompt, /conversational/i)
-assert.match(DEFAULT_SESSION_SYSTEM_PROMPT, /Match the user's language/i)
+assert.equal(loadedConfig.systemPrompt, '')
+assert.match(DEFAULT_SESSION_SYSTEM_PROMPT, /Keep connector-specific overrides minimal/i)
 
 await writeFile(tempConfigPath, `${JSON.stringify({
   connectorId: 'living-room-speaker',
@@ -194,6 +193,9 @@ try {
 
   assert.equal(createPayload?.appId, 'voice')
   assert.equal(createPayload?.appName, 'Voice')
+  assert.equal(createPayload?.sourceId, 'voice')
+  assert.equal(createPayload?.sourceName, 'Voice')
+  assert.equal(createPayload?.systemPrompt, '')
   assert.equal(createPayload?.group, 'Voice')
   assert.equal(createPayload?.externalTriggerId, 'voice:living-room-speaker')
   assert.match(createPayload?.description || '', /Wake-word voice connector/i)

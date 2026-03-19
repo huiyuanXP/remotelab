@@ -28,6 +28,7 @@ const record = tools.find((tool) => tool.id === 'micro-agent-test');
 assert(record, 'installed tool should exist');
 assert.equal(record.name, 'Micro Agent Test');
 assert.equal(record.toolProfile, 'micro-agent');
+assert.equal(record.visibility, 'private');
 assert.equal(record.command, 'codex');
 assert.equal(record.runtimeFamily, 'codex-json');
 assert.equal(Object.hasOwn(record, 'promptMode'), false);

@@ -104,7 +104,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/sessions/sess_1/messages') {
     const payload = JSON.parse(body || '{}');
     assert.equal(payload.requestId.startsWith('mailbox_reply_'), true);
-    assert.match(payload.text, /Original email:/);
+    assert.match(payload.text, /User message:/);
     messageSubmissions.push(payload);
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -204,13 +204,18 @@ try {
   assert.equal(sessionCreates.length, 1);
   assert.equal(sessionCreates[0].appId, 'email');
   assert.equal(sessionCreates[0].appName, 'Email');
+  assert.equal(sessionCreates[0].sourceId, 'email');
+  assert.equal(sessionCreates[0].sourceName, 'Email');
   assert.equal(sessionCreates[0].tool, 'claude');
+  assert.equal(sessionCreates[0].systemPrompt, 'Reply with plain text only.');
   assert.equal(sessionCreates[0].externalTriggerId, expectedThreadTriggerId);
   assert.equal(sessionCreates[0].completionTargets[0].inReplyTo, '<root-thread@example.com>');
   assert.equal(sessionCreates[0].completionTargets[0].references, '<root-thread@example.com>');
   assert.equal(sessionCreates[0].completionTargets[0].subject, 'Re: hello!');
   assert.match(messageSubmissions[0].text, /please take a response to test!/);
-  assert.match(messageSubmissions[0].text, /Prefer completeness, careful troubleshooting, and explicit resolution over speed or brevity\./);
+  assert.match(messageSubmissions[0].text, /^Inbound email\./);
+  assert.match(messageSubmissions[0].text, /User message:/);
+  assert.doesNotMatch(messageSubmissions[0].text, /Prefer completeness, careful troubleshooting/);
   assert.equal(messageSubmissions[0].tool, 'claude');
   assert.equal(messageSubmissions[0].model, 'claude-sonnet-4-5');
   assert.equal(messageSubmissions[0].thinking, true);

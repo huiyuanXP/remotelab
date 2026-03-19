@@ -196,6 +196,7 @@ async function main() {
     assert.match(page.text, /<script src="\/chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/compose\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/voice-input\.js(?:\?v=[^"]*)?"/);
 
     const visitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: visitorCookie });
     assert.equal(visitorPage.status, 200, 'chat page should also render for visitor session');
@@ -221,6 +222,10 @@ async function main() {
     assert.match(page.text, /id="newAppWelcomeInput"/);
     assert.match(page.text, /id="newAppSystemPromptInput"/);
     assert.match(page.text, /id="createAppConfigBtn"/);
+    assert.match(page.text, /id="voiceSettingsMount"/);
+    assert.match(page.text, /id="voiceInputBtn"/);
+    assert.match(page.text, /id="voiceFileInput"/);
+    assert.match(page.text, /id="voiceInputStatus"/);
     assert.match(page.text, /id="tabSettings"/);
     assert.doesNotMatch(page.text, /id="collapseBtn"/, 'desktop sidebar should no longer expose a collapse control');
     assert.doesNotMatch(page.text, /id="tabProgress"/);
@@ -515,6 +520,12 @@ async function main() {
     assert.equal(composeAsset.status, 200, 'compose asset should load');
     assert.match(composeAsset.text, /focusComposer\(\{ force: true, preventScroll: true \}\)/);
     assert.match(composeAsset.text, /window\.RemoteLabLayout\?\.subscribe/);
+
+    const voiceInputAsset = await request(port, 'GET', '/chat/voice-input.js');
+    assert.equal(voiceInputAsset.status, 200, 'voice input asset should load');
+    assert.match(voiceInputAsset.text, /function loadVoiceInputConfig\(/);
+    assert.match(voiceInputAsset.text, /voice-transcriptions/);
+    assert.match(voiceInputAsset.text, /voiceInputBtn/);
 
     const initAsset = await request(port, 'GET', '/chat/init.js');
     assert.equal(initAsset.status, 200, 'init asset should load');

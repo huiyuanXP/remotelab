@@ -120,6 +120,7 @@ async function main() {
   const record = {
     id: trimString(args.toolId) || DEFAULT_TOOL_ID,
     name: trimString(args.toolName) || DEFAULT_TOOL_NAME,
+    visibility: 'private',
     toolProfile: 'micro-agent',
     command: trimString(args.command) || DEFAULT_COMMAND,
     runtimeFamily: 'codex-json',

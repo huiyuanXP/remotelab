@@ -104,6 +104,15 @@
   background: transparent; color: var(--text-muted); font-size: 14px;
   cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
+.input-config-row .voice-btn.is-recording {
+  border-color: var(--error);
+  color: var(--error);
+  background: var(--bg-secondary);
+}
+.input-config-row .voice-btn.is-busy {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
 .input-config-row .img-btn:active { background: var(--bg-tertiary); }
 .input-config-row .img-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .input-row {
@@ -140,6 +149,19 @@
   background: var(--accent);
   opacity: 0.8;
   flex-shrink: 0;
+}
+.voice-input-status {
+  display: none;
+  padding: 0 14px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.voice-input-status.visible {
+  display: block;
+}
+.voice-input-status.is-error {
+  color: var(--error);
 }
 .input-footer {
   display: flex;
@@ -250,6 +272,7 @@
 }
 .img-preview-item img,
 .img-preview-item video,
+.img-preview-item audio,
 .img-preview-item .attachment-file {
   width: 100%; height: 100%; object-fit: cover;
 }
@@ -263,6 +286,9 @@
   text-align: center;
   color: var(--text-secondary);
   background: var(--bg-secondary);
+}
+.img-preview-item .attachment-file.attachment-audio {
+  font-size: 9px;
 }
 .img-preview-item .remove-img {
   position: absolute; top: 2px; right: 2px; width: 16px; height: 16px;
@@ -458,4 +484,3 @@
 }
 .provider-helper-status.success { color: var(--success); }
 .provider-helper-status.error { color: var(--error); }
-

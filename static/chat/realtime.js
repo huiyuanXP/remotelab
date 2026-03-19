@@ -202,6 +202,7 @@ async function dispatchAction(msg) {
         const data = canUseMultipart
           ? await (async () => {
               const formData = new FormData();
+              const existingImages = [];
               formData.set("requestId", requestId);
               formData.set("text", msg.text || "");
               if (msg.tool) formData.set("tool", msg.tool);
@@ -209,8 +210,19 @@ async function dispatchAction(msg) {
               if (msg.effort) formData.set("effort", msg.effort);
               if (msg.thinking) formData.set("thinking", "true");
               for (const image of msg.images || []) {
-                if (!image?.file) continue;
-                formData.append("images", image.file, image.originalName || image.file.name || "attachment");
+                if (image?.file) {
+                  formData.append("images", image.file, image.originalName || image.file.name || "attachment");
+                  continue;
+                }
+                if (!image?.filename) continue;
+                existingImages.push({
+                  filename: image.filename,
+                  originalName: image.originalName || "",
+                  mimeType: image.mimeType || "",
+                });
+              }
+              if (existingImages.length > 0) {
+                formData.set("existingImages", JSON.stringify(existingImages));
               }
               return fetchJsonOrRedirect(requestUrl, {
                 method: "POST",

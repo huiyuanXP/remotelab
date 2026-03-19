@@ -18,6 +18,7 @@ const filesToParse = [
   join(repoRoot, 'static', 'chat', 'settings-ui.js'),
   join(repoRoot, 'static', 'chat', 'sidebar-ui.js'),
   join(repoRoot, 'static', 'chat', 'compose.js'),
+  join(repoRoot, 'static', 'chat', 'voice-input.js'),
 ];
 
 for (const filePath of filesToParse) {
@@ -252,6 +253,8 @@ const context = {
     removeEventListener() {},
     setTimeout,
     clearTimeout,
+    setInterval() { return 0; },
+    clearInterval() {},
     requestAnimationFrame(callback) {
       return setTimeout(() => callback(0), 0);
     },
@@ -326,6 +329,7 @@ const orderedFiles = [
   'settings-ui.js',
   'sidebar-ui.js',
   'compose.js',
+  'voice-input.js',
 ];
 
 for (const fileName of orderedFiles) {
@@ -342,3 +346,4 @@ assert.equal(typeof context.createNewAppShortcut, 'function');
 assert.equal(typeof context.switchTab, 'function');
 
 console.log('test-chat-split-frontend-smoke: ok');
+process.exit(0);

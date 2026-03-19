@@ -203,20 +203,13 @@ function buildReplyPrompt(item) {
   const body = rawDerivedBody || decodedStoredBody;
 
   return [
-    'An approved inbound email needs a reply.',
-    'Write the exact plain-text email body to send back to the sender.',
-    'Take the time needed to fully answer everything the sender is asking.',
-    'Prefer completeness, careful troubleshooting, and explicit resolution over speed or brevity.',
-    'Keep the tone natural, calm, and helpful.',
-    'Do not include email headers, markdown fences, or internal process notes.',
-    '',
-    'Inbound email metadata:',
+    'Inbound email.',
     `- From: ${sender || '(unknown sender)'}`,
     `- Subject: ${subject || '(no subject)'}`,
     `- Date: ${date || '(no date)'}`,
     `- Message-ID: ${messageId || '(no message id)'}`,
     '',
-    'Original email:',
+    'User message:',
     body || '(empty body)',
   ].join('\n');
 }
@@ -307,6 +300,8 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     name: buildSessionName(item),
     appId: 'email',
     appName: 'Email',
+    sourceId: 'email',
+    sourceName: 'Email',
     group: automation.session.group,
     description: buildSessionDescription(item, automation.session.description),
     systemPrompt: automation.session.systemPrompt,

@@ -43,6 +43,9 @@ function extractFunctionSource(source, functionName) {
   throw new Error(`Unable to extract ${functionName}`);
 }
 
+const normalizeToolIdSource = extractFunctionSource(layoutToolingSource, 'normalizeToolId');
+const normalizeToolVisibilitySource = extractFunctionSource(layoutToolingSource, 'normalizeToolVisibility');
+const filterPrimaryToolOptionsSource = extractFunctionSource(layoutToolingSource, 'filterPrimaryToolOptions');
 const prioritizeToolOptionsSource = extractFunctionSource(layoutToolingSource, 'prioritizeToolOptions');
 const resolvePreferredToolIdSource = extractFunctionSource(layoutToolingSource, 'resolvePreferredToolId');
 const normalizeStoredToolIdSource = extractFunctionSource(bootstrapSource, 'normalizeStoredToolId');
@@ -50,16 +53,21 @@ const derivePreferredToolIdSource = extractFunctionSource(bootstrapSource, 'deri
 
 const context = {
   console,
-  DEFAULT_TOOL_ID: 'micro-agent',
+  DEFAULT_TOOL_ID: 'codex',
+  LEGACY_AUTO_PREFERRED_TOOL_IDS: new Set(['codex', 'micro-agent']),
 };
 context.globalThis = context;
 
 vm.runInNewContext(
   [
+    normalizeToolIdSource,
+    normalizeToolVisibilitySource,
+    filterPrimaryToolOptionsSource,
     prioritizeToolOptionsSource,
     resolvePreferredToolIdSource,
     normalizeStoredToolIdSource,
     derivePreferredToolIdSource,
+    'globalThis.filterPrimaryToolOptions = filterPrimaryToolOptions;',
     'globalThis.prioritizeToolOptions = prioritizeToolOptions;',
     'globalThis.resolvePreferredToolId = resolvePreferredToolId;',
     'globalThis.derivePreferredToolId = derivePreferredToolId;',
@@ -69,20 +77,20 @@ vm.runInNewContext(
 );
 
 const ordered = context.prioritizeToolOptions([
-  { id: 'codex', name: 'CodeX' },
   { id: 'claude', name: 'Claude Code' },
   { id: 'micro-agent', name: 'Micro Agent' },
+  { id: 'codex', name: 'CodeX' },
 ]);
 assert.deepEqual(
   Array.from(ordered, (tool) => tool.id),
-  ['micro-agent', 'codex', 'claude'],
-  'micro-agent should be promoted to the front of the picker when available',
+  ['codex', 'claude', 'micro-agent'],
+  'codex should be promoted to the front of the picker when available',
 );
 
 assert.equal(
   context.resolvePreferredToolId(ordered, []),
-  'micro-agent',
-  'new picker defaults should fall back to micro-agent when no explicit choice exists',
+  'codex',
+  'new picker defaults should fall back to codex when no explicit choice exists',
 );
 
 assert.equal(
@@ -94,7 +102,7 @@ assert.equal(
 assert.equal(
   context.derivePreferredToolId('codex', ''),
   null,
-  'legacy auto-saved codex default should yield to the new micro-agent default',
+  'auto-saved codex default should yield to the current product default',
 );
 
 assert.equal(
@@ -104,9 +112,43 @@ assert.equal(
 );
 
 assert.equal(
+  context.derivePreferredToolId('micro-agent', ''),
+  null,
+  'legacy auto-saved micro-agent default should no longer pin new sessions',
+);
+
+assert.equal(
+  context.derivePreferredToolId('micro-agent', 'micro-agent'),
+  'micro-agent',
+  'explicit micro-agent selections should still be preserved',
+);
+
+assert.equal(
   context.derivePreferredToolId('', 'claude'),
   'claude',
   'legacy non-default selections should still survive the migration',
+);
+
+const publicOnly = context.filterPrimaryToolOptions([
+  { id: 'codex', name: 'CodeX' },
+  { id: 'micro-agent', name: 'Micro Agent', visibility: 'private' },
+  { id: 'doubao-fast', name: 'Doubao Fast Agent', visibility: 'private' },
+  { id: 'claude', name: 'Claude Code' },
+]);
+assert.deepEqual(
+  Array.from(publicOnly, (tool) => tool.id),
+  ['codex', 'claude'],
+  'private experimental agents should stay out of the primary picker by default',
+);
+
+const keptPrivate = context.filterPrimaryToolOptions([
+  { id: 'codex', name: 'CodeX' },
+  { id: 'micro-agent', name: 'Micro Agent', visibility: 'private' },
+], { keepIds: ['micro-agent'] });
+assert.deepEqual(
+  Array.from(keptPrivate, (tool) => tool.id),
+  ['codex', 'micro-agent'],
+  'the current private tool should remain visible when an existing session already uses it',
 );
 
 console.log('test-chat-tool-default-preference: ok');

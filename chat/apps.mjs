@@ -39,7 +39,7 @@ export const DEFAULT_APP_ID = 'chat';
 export const EMAIL_APP_ID = 'email';
 export const BASIC_CHAT_APP_ID = 'app_basic_chat';
 export const CREATE_APP_APP_ID = 'app_create_app';
-export const DEFAULT_APP_TOOL = 'micro-agent';
+export const DEFAULT_APP_TOOL = 'codex';
 export const BUILTIN_APPS = Object.freeze([
   Object.freeze({
     id: DEFAULT_APP_ID,

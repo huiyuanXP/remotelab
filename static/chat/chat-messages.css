@@ -107,9 +107,17 @@
 .msg-images { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .msg-images img,
 .msg-images video,
+.msg-images audio,
 .msg-images .attachment-link {
   max-width: 200px; max-height: 150px; border-radius: 8px; cursor: pointer;
   object-fit: cover;
+}
+.msg-images audio {
+  max-height: none;
+  min-width: 220px;
+  background: var(--bg-secondary);
+  padding: 4px;
+  cursor: default;
 }
 .msg-images .attachment-link {
   display: inline-flex;
@@ -398,4 +406,3 @@
 .change-type.add { background: var(--success-bg); color: var(--success); }
 .change-type.edit, .change-type.update { background: var(--bg-tertiary); color: var(--text-secondary); }
 .change-type.delete { background: var(--error-bg); color: var(--error); }
-

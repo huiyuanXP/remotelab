@@ -83,6 +83,7 @@
             <div class="settings-app-empty">Loading apps…</div>
           </div>
         </div>
+        <div class="settings-section" id="voiceSettingsMount"></div>
       </div>
       <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}">Build {{BUILD_LABEL}}</div>
       <button class="new-session-btn secondary" id="newAppBtn">+ New App</button>
@@ -118,6 +119,7 @@
             <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
             <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
             <button class="img-btn" id="imgBtn" disabled title="Attach media" aria-label="Attach media" data-icon="attach">&#128247;</button>
+            <button class="img-btn voice-btn" id="voiceInputBtn" disabled title="Voice input" aria-label="Voice input" data-icon="mic"></button>
           </div>
           <div class="input-config-group right">
             <span id="contextTokens" style="display:none"></span>
@@ -127,11 +129,13 @@
         </div>
         <div class="input-row">
           <input type="file" id="imgFileInput" accept="image/*,video/*" multiple hidden>
+          <input type="file" id="voiceFileInput" accept="audio/*,video/*" capture hidden>
           <textarea id="msgInput" placeholder="Message..." disabled></textarea>
           <button class="send-btn" id="sendBtn" disabled title="Send" aria-label="Send" data-icon="send">&#9654;</button>
           <button class="cancel-btn" id="cancelBtn" title="Stop" aria-label="Stop" data-icon="debug-stop" style="display:none">&#9632;</button>
         </div>
         <div class="composer-pending-state" id="composerPendingState" aria-live="polite"></div>
+        <div class="voice-input-status" id="voiceInputStatus" aria-live="polite"></div>
       </div>
       <div class="input-footer">
         <a href="https://github.com/Ninglo/remotelab" target="_blank" rel="noreferrer noopener">Open source on GitHub ↗</a>
@@ -248,6 +252,7 @@
 <script src="/chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="/chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/init.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 </body>

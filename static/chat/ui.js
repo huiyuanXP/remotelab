@@ -50,6 +50,7 @@ function getAttachmentKind(attachment) {
     : "";
   if (mimeType.startsWith("video/")) return "video";
   if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("audio/")) return "audio";
   return "file";
 }
 
@@ -87,6 +88,14 @@ function createMessageAttachmentNode(attachment) {
     return videoEl;
   }
 
+  if (kind === "audio") {
+    const audioEl = document.createElement("audio");
+    audioEl.src = source;
+    audioEl.controls = true;
+    audioEl.preload = "metadata";
+    return audioEl;
+  }
+
   const link = document.createElement("a");
   link.href = source;
   link.target = "_blank";
@@ -113,6 +122,13 @@ function createComposerAttachmentPreviewNode(attachment) {
     videoEl.preload = "metadata";
     videoEl.playsInline = true;
     return videoEl;
+  }
+
+  if (kind === "audio") {
+    const fileEl = document.createElement("div");
+    fileEl.className = "attachment-file attachment-audio";
+    fileEl.textContent = getAttachmentDisplayName(attachment);
+    return fileEl;
   }
 
   const fileEl = document.createElement("div");

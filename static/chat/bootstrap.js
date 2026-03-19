@@ -406,7 +406,8 @@ function withVisitorModeUrl(url) {
 
 let currentTokens = 0;
 
-const DEFAULT_TOOL_ID = "micro-agent";
+const DEFAULT_TOOL_ID = "codex";
+const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 
 function normalizeStoredToolId(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -415,10 +416,10 @@ function normalizeStoredToolId(value) {
 function derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool) {
   const preferred = normalizeStoredToolId(storedPreferredTool);
   const legacySelected = normalizeStoredToolId(storedLegacySelectedTool);
-  if (preferred && !(preferred === "codex" && !legacySelected)) {
+  if (preferred && !(LEGACY_AUTO_PREFERRED_TOOL_IDS.has(preferred) && !legacySelected)) {
     return preferred;
   }
-  if (legacySelected && legacySelected !== "codex") {
+  if (legacySelected) {
     return legacySelected;
   }
   return null;
@@ -439,6 +440,7 @@ let currentToolEffortLevels = null; // null = binary toggle, string[] = effort d
 let currentToolReasoningKind = "toggle";
 let currentToolReasoningLabel = "Thinking";
 let currentToolReasoningDefault = null;
+let allToolsList = [];
 let toolsList = [];
 let isDesktop = window.matchMedia("(min-width: 768px)").matches;
 const ADD_MORE_TOOL_VALUE = "__add_more__";

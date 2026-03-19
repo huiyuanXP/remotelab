@@ -72,6 +72,24 @@ assert.match(resumedPrompt, /Current user message:/);
 assert.doesNotMatch(resumedPrompt, /Memory System — Pointer-First Activation/);
 assert.match(resumedPrompt, /Agent 更像执行器，Manager 负责统一任务语义和边界/);
 
+const feishuSourcePrompt = await buildPrompt(
+  'session-test-3',
+  {
+    ...baseSession,
+    sourceId: 'feishu',
+    sourceName: 'Feishu',
+  },
+  '帮我看一下这个仓库的问题。',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned for this session source\):/);
+assert.match(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI/);
+assert.match(feishuSourcePrompt, /Do not collapse action requests into a one-line acknowledgement/);
+
 const microAgentPrompt = await buildPrompt(
   'session-test-2',
   baseSession,

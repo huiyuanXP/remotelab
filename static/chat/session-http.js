@@ -468,8 +468,14 @@ function applyAttachedSessionState(id, session) {
   }
 
   if (session?.tool) {
-    const toolAvailable = toolsList.some((tool) => tool.id === session.tool);
-    if (toolAvailable || toolsList.length === 0) {
+    const availableTools = typeof allToolsList !== "undefined" && Array.isArray(allToolsList)
+      ? allToolsList
+      : (Array.isArray(toolsList) ? toolsList : []);
+    const toolAvailable = availableTools.some((tool) => tool.id === session.tool);
+    if (toolAvailable || availableTools.length === 0) {
+      if (toolAvailable && typeof refreshPrimaryToolPicker === "function") {
+        refreshPrimaryToolPicker({ keepToolIds: [session.tool], selectedValue: session.tool });
+      }
       inlineToolSelect.value = session.tool;
       selectedTool = session.tool;
     }

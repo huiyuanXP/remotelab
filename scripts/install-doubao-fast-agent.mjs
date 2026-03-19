@@ -196,6 +196,7 @@ async function main() {
   const record = {
     id: trimString(args.toolId) || DEFAULT_TOOL_ID,
     name: trimString(args.toolName) || DEFAULT_TOOL_NAME,
+    visibility: 'private',
     command: COMMAND_PATH,
     runtimeFamily: 'claude-stream-json',
     promptMode: 'bare-user',

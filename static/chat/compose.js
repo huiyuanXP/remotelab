@@ -188,10 +188,11 @@ function sendMessage(existingRequestId) {
   }
   if (queuedImages.length > 0) {
     msg.images = queuedImages.map((img) => ({
-      file: img.file,
-      originalName: img.originalName,
-      mimeType: img.mimeType,
-      objectUrl: img.objectUrl,
+      ...(img.file ? { file: img.file } : {}),
+      ...(img.filename ? { filename: img.filename } : {}),
+      ...(img.originalName ? { originalName: img.originalName } : {}),
+      ...(img.mimeType ? { mimeType: img.mimeType } : {}),
+      ...(img.objectUrl ? { objectUrl: img.objectUrl } : {}),
     }));
   }
   void dispatchAction(msg).then((ok) => {

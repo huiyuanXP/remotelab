@@ -453,6 +453,32 @@ function renderInlineToolOptions(selectedValue, emptyMessage = "No agents found"
   }
 }
 
+function getVisiblePrimaryToolOptions(keepToolIds = []) {
+  const allKeepIds = [
+    ...(Array.isArray(keepToolIds) ? keepToolIds : [keepToolIds]),
+    selectedTool,
+    preferredTool,
+  ];
+  return prioritizeToolOptions(
+    filterPrimaryToolOptions(
+      (Array.isArray(allToolsList) ? allToolsList : []).filter((tool) => tool?.available),
+      { keepIds: allKeepIds },
+    ),
+  );
+}
+
+function refreshPrimaryToolPicker({ keepToolIds = [], selectedValue = "" } = {}) {
+  toolsList = getVisiblePrimaryToolOptions(keepToolIds);
+  const resolvedTool = resolvePreferredToolId(toolsList, [
+    selectedValue,
+    ...(Array.isArray(keepToolIds) ? keepToolIds : [keepToolIds]),
+    selectedTool,
+    preferredTool,
+  ]);
+  renderInlineToolOptions(resolvedTool);
+  return resolvedTool;
+}
+
 const modelResponseCache = new Map();
 const pendingModelResponseRequests = new Map();
 
@@ -491,6 +517,7 @@ async function fetchModelResponse(toolId, { refresh = false } = {}) {
 
 async function loadInlineTools({ skipModelLoad = false } = {}) {
   if (visitorMode) {
+    allToolsList = [];
     toolsList = [];
     selectedTool = null;
     selectedModel = null;
@@ -499,9 +526,8 @@ async function loadInlineTools({ skipModelLoad = false } = {}) {
   }
   try {
     const data = await fetchJsonOrRedirect("/api/tools");
-    toolsList = prioritizeToolOptions((data.tools || []).filter((t) => t.available));
-    const initialTool = resolvePreferredToolId(toolsList, [selectedTool, preferredTool]);
-    renderInlineToolOptions(initialTool);
+    allToolsList = Array.isArray(data.tools) ? data.tools : [];
+    const initialTool = refreshPrimaryToolPicker();
     if (initialTool) {
       selectedTool = initialTool;
       if (!preferredTool) {
@@ -519,6 +545,7 @@ async function loadInlineTools({ skipModelLoad = false } = {}) {
       renderSettingsAppsPanel();
     }
   } catch (err) {
+    allToolsList = [];
     toolsList = [];
     console.warn("[tools] Failed to load tools:", err.message);
     renderInlineToolOptions("", "Failed to load agents");

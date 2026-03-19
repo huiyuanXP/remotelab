@@ -52,7 +52,7 @@ Every integration should reduce its own model to this mapping:
 | upstream thread / issue / email chain / DM | session | usually one RemoteLab session per external thread |
 | one upstream inbound update | message submission | one `requestId` per update |
 | upstream thread key | `externalTriggerId` | stable session dedupe key |
-| upstream actor metadata | message preface inside `text` | keep source-specific structure outside RemoteLab |
+| upstream actor metadata | optional light context inside `text` | keep source-specific structure outside RemoteLab and avoid turning each message into a connector-specific prompt |
 | local agent reply | assistant events in session history | connector decides how to render or deliver them |
 | source-side follow-up | another message submission | same session, new `requestId` |
 
@@ -60,7 +60,7 @@ This is the main simplification:
 
 > Even something non-chat-like, such as a GitHub issue comment, is still just a user message.
 
-The connector can add a short preface such as actor, source, URL, or thread title, then pass the normalized text to RemoteLab.
+The connector can add a short preface such as actor, source, URL, or thread title when that context is genuinely needed, then pass the normalized text to RemoteLab. Prefer the thinnest possible wrapper around the real user message.
 
 ---
 
@@ -124,10 +124,18 @@ Useful optional fields for connectors:
 - `name` — optional seed title; omit it unless you already have concrete thread/task context
 - `appId` — stable app/category id for owner-side session filtering; defaults to `chat`
 - `appName` — human-facing label for that `appId`, such as `GitHub` or `Email`
+- `sourceId` — stable connector/runtime source id such as `feishu`, `email`, or `voice`
+- `sourceName` — human-facing connector/runtime source name such as `Feishu`, `Email`, or `Voice`
 - `group` — top-level grouping such as `Mail`, `GitHub`, `Bots`
 - `description` — short human-facing description
-- `systemPrompt` — source-specific guidance for this session
+- `systemPrompt` — optional connector-specific override; keep it minimal and use it only for constraints not already handled by backend-owned source logic
 - `externalTriggerId` — stable dedupe key for the upstream thread
+
+Backend-owned source/runtime policy:
+
+- prefer setting `sourceId` / `sourceName` so RemoteLab can apply one shared backend prompt policy for that connector type
+- do not treat per-connector `systemPrompt` as the primary place for core business logic
+- keep connector overrides narrowly about runtime constraints or local quirks, not the main product semantics
 
 Naming policy for connector-created sessions:
 
@@ -336,12 +344,13 @@ This part is the real protocol discipline.
 - Use one stable `externalTriggerId` per upstream thread.
 - Use one unique `requestId` per inbound upstream update.
 - Treat every inbound upstream update as a **user message**.
-- Put upstream metadata into the message body, not into RemoteLab-specific source branches.
+- Put only the upstream metadata that materially helps disambiguate the user message into the message body.
+- Do not restate connector-side reply-formatting rules on every message; keep turn semantics as backend-owned as possible.
 - Keep source-specific rendering, approval rules, and publishing logic outside RemoteLab.
 
 ### Good message preface shape
 
-This is a good generic template:
+This is a good generic template when extra context is actually needed:
 
 ```text
 Source: GitHub
@@ -366,7 +375,7 @@ User message:
 Can you confirm whether the fix should also cover Linux?
 ```
 
-This keeps the core protocol uniform while still preserving upstream context.
+This keeps the core protocol uniform while still preserving upstream context. If the raw user message is already clear on its own, prefer sending just the message instead of padding it with repeated connector metadata.
 
 ---
 

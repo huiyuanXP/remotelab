@@ -15,7 +15,7 @@ const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_ACCESS_STATE_FILENAME = 'access-state.json';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
 const DEFAULT_SESSION_TOOL = 'codex';
-const DEFAULT_SESSION_SYSTEM_PROMPT = [
+const LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT = [
   'You are replying as a Feishu bot powered by RemoteLab on the user\'s own machine.',
   'For each assistant turn, output exactly the plain-text message to send back to Feishu.',
   'Keep replies concise, helpful, and natural.',
@@ -25,6 +25,10 @@ const DEFAULT_SESSION_SYSTEM_PROMPT = [
   'If the chat asks you to speak less or not reply to every message, treat that as an active local rule until someone clearly changes it.',
   'If you are unsure whether to reply, choose silence and output an empty string. An empty string means no Feishu message should be sent.',
   'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',
+].join('\n');
+const DEFAULT_SESSION_SYSTEM_PROMPT = [
+  'You are interacting through a Feishu or Lark bot on the user\'s own machine.',
+  'Keep connector-specific overrides minimal and only describe constraints not already owned by RemoteLab backend prompt logic.',
 ].join('\n');
 const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -322,7 +326,10 @@ function normalizeBoolean(value, fallback = false) {
 
 function normalizeSystemPrompt(value) {
   const normalized = trimString(value);
-  return normalized || DEFAULT_SESSION_SYSTEM_PROMPT;
+  if (!normalized || normalized === DEFAULT_SESSION_SYSTEM_PROMPT || normalized === LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT) {
+    return '';
+  }
+  return normalized;
 }
 
 async function loadConfig(pathname) {
@@ -939,9 +946,6 @@ function buildMentionPrompt(summary, rawMessage) {
   if (!mentions.length) return [];
   return [
     '',
-    'Original mention-token message:',
-    rawMessage || '[non-text or empty message]',
-    '',
     'Mention map:',
     ...mentions.map((mention) => {
       const details = [
@@ -953,7 +957,8 @@ function buildMentionPrompt(summary, rawMessage) {
       return `- ${details.join(' | ')}`;
     }),
     '',
-    'If you want to mention someone in your reply, include their exact mention token (for example @_user_1). The connector will convert it into a real Feishu @ mention.',
+    `Original message tokens: ${rawMessage || '[non-text or empty message]'}`,
+    'If you mention someone in your reply, use their exact mention token (for example @_user_1).',
   ];
 }
 
@@ -962,23 +967,19 @@ function buildRemoteLabMessage(summary) {
   const renderedMessage = renderMentionPreview(rawMessage, summary.mentions);
   const hasMentions = Array.isArray(summary?.mentions) && summary.mentions.length > 0;
   const displayMessage = (hasMentions ? renderedMessage : rawMessage) || trimString(summary.contentSummary);
+  const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
+  const senderId = trimString(summary?.sender?.openId || summary?.sender?.userId || summary?.sender?.unionId);
+  const senderLabel = senderName && senderId && senderName !== senderId
+    ? `${senderName} (${senderId})`
+    : (senderName || senderId);
   return [
-    'Inbound Feishu message.',
     `Chat type: ${summary.chatType || 'unknown'}`,
-    summary.messageType ? `Message type: ${summary.messageType}` : '',
-    summary.chatId ? `Chat ID: ${summary.chatId}` : '',
-    summary.messageId ? `Message ID: ${summary.messageId}` : '',
+    summary.chatName ? `Chat: ${summary.chatName}` : '',
     summary.threadId ? `Thread ID: ${summary.threadId}` : '',
-    summary.sender?.openId ? `Sender open_id: ${summary.sender.openId}` : '',
-    summary.sender?.userId ? `Sender user_id: ${summary.sender.userId}` : '',
-    summary.sender?.unionId ? `Sender union_id: ${summary.sender.unionId}` : '',
-    summary.tenantKey ? `Tenant key: ${summary.tenantKey}` : '',
+    senderLabel ? `Sender: ${senderLabel}` : '',
     '',
-    hasMentions ? 'User message (rendered mentions):' : 'User message:',
     displayMessage || '[non-text or empty message]',
     ...buildMentionPrompt(summary, rawMessage),
-    '',
-    'Write the exact plain-text Feishu reply to send back. If you should stay silent, output an empty string.',
   ].filter(Boolean).join('\n');
 }
 
@@ -1181,12 +1182,15 @@ async function requestRemoteLab(runtime, path, options = {}) {
 }
 
 async function createOrReuseSession(runtime, summary) {
+  const sourceName = runtime.config.region === 'lark-global' ? 'Lark' : 'Feishu';
   const payload = {
     folder: runtime.config.sessionFolder,
     tool: runtime.config.sessionTool,
     name: buildSessionName(summary),
     appId: REMOTELAB_SESSION_APP_ID,
-    appName: runtime.config.region === 'lark-global' ? 'Lark' : 'Feishu',
+    appName: sourceName,
+    sourceId: 'feishu',
+    sourceName,
     group: 'Feishu',
     description: buildSessionDescription(summary),
     systemPrompt: runtime.config.systemPrompt,

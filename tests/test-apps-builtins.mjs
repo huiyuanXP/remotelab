@@ -68,7 +68,7 @@ try {
   assert.equal(createAppStarter?.id, CREATE_APP_APP_ID);
   assert.equal(createAppStarter?.builtin, true);
   assert.equal(createAppStarter?.templateSelectable, true);
-  assert.equal(createAppStarter?.tool, 'micro-agent');
+  assert.equal(createAppStarter?.tool, 'codex');
   assert.equal(createAppStarter?.shareEnabled, false);
   assert.equal(createAppStarter?.shareToken, undefined);
   assert.match(createAppStarter?.systemPrompt || '', /POST \/api\/apps|PATCH \/api\/apps/i);
@@ -95,7 +95,7 @@ try {
     welcomeMessage: '',
     skills: [],
   });
-  assert.equal(defaultToolApp.tool, 'micro-agent', 'new apps should default to Micro Agent');
+  assert.equal(defaultToolApp.tool, 'codex', 'new apps should default to CodeX');
 
   const afterCreate = await listApps();
   assert.equal(afterCreate.some((app) => app.id === custom.id), true);

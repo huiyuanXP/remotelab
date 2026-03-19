@@ -90,6 +90,30 @@ function requestLayoutPass(reason = "layout") {
   return layoutPassHandle;
 }
 
+function normalizeToolId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeToolVisibility(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return normalized === "private" ? "private" : "public";
+}
+
+function filterPrimaryToolOptions(toolOptions = [], { keepIds = [] } = {}) {
+  const explicitIds = new Set(
+    (Array.isArray(keepIds) ? keepIds : [keepIds])
+      .map((toolId) => normalizeToolId(toolId))
+      .filter(Boolean),
+  );
+  return (Array.isArray(toolOptions) ? toolOptions : []).filter((tool) => {
+    const toolId = normalizeToolId(tool?.id);
+    if (toolId && explicitIds.has(toolId)) {
+      return true;
+    }
+    return normalizeToolVisibility(tool?.visibility) !== "private";
+  });
+}
+
 function prioritizeToolOptions(toolOptions = []) {
   const tools = Array.isArray(toolOptions) ? [...toolOptions] : [];
   const defaultIndex = tools.findIndex((tool) => tool?.id === DEFAULT_TOOL_ID);
@@ -175,4 +199,3 @@ function initResponsiveLayout() {
   mq.addEventListener("change", onBreakpointChange);
   onBreakpointChange(mq);
 }
-

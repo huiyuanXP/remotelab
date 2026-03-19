@@ -204,7 +204,7 @@ try {
     assert.equal(applied.status, 200, 'apply-template route should update the target session');
     assert.equal(applied.json.session?.appId, saved.json.app.id, 'applied session should inherit the template app scope');
 
-    const events = await request(port, 'GET', `/api/sessions/${target.id}/events`);
+    const events = await request(port, 'GET', `/api/sessions/${target.id}/events?filter=all`);
     const templateEvent = (events.json.events || []).find((event) => event.type === 'template_context');
     assert.ok(templateEvent, 'applying a template should append a hidden template event');
     assert.equal(templateEvent.templateFreshness, 'current', 'fresh template application should expose freshness metadata');
@@ -226,7 +226,7 @@ try {
     });
     assert.equal(staleApplied.status, 200, 'stale template should still apply');
 
-    const staleEvents = await request(port, 'GET', `/api/sessions/${staleTarget.id}/events`);
+    const staleEvents = await request(port, 'GET', `/api/sessions/${staleTarget.id}/events?filter=all`);
     const staleTemplateEvent = (staleEvents.json.events || []).find((event) => event.type === 'template_context');
     assert.ok(staleTemplateEvent, 'stale template apply should append a template event');
     assert.equal(staleTemplateEvent.templateFreshness, 'stale', 'stale template application should surface freshness drift');

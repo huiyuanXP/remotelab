@@ -139,8 +139,8 @@ function createSessionForApp(app, { closeSidebar = true, principal = getAdminSes
   if (!app?.id) return false;
   if (closeSidebar && !isDesktop) closeSidebarFn();
   const tool =
-    (typeof app?.tool === "string" && app.tool.trim())
-    || preferredTool
+    preferredTool
+    || (typeof app?.tool === "string" && app.tool.trim())
     || selectedTool
     || toolsList[0]?.id;
   if (!tool) return false;
@@ -160,7 +160,13 @@ function createSessionForApp(app, { closeSidebar = true, principal = getAdminSes
 
 function renderAppToolSelectOptions(selectEl, selectedValue = "") {
   if (!selectEl) return;
-  const toolOptions = Array.isArray(toolsList) ? toolsList : [];
+  const baseToolOptions = Array.isArray(allToolsList) && allToolsList.length > 0
+    ? allToolsList
+    : toolsList;
+  const toolOptions = prioritizeToolOptions(
+    filterPrimaryToolOptions(baseToolOptions, { keepIds: [selectedValue] })
+      .filter((tool) => tool?.available),
+  );
   const preferredValue = selectedValue || preferredTool || selectedTool || toolOptions[0]?.id || "";
   selectEl.innerHTML = "";
   if (toolOptions.length === 0) {

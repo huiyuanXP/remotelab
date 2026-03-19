@@ -26,6 +26,7 @@ import {
   triggerSessionLabelSuggestion,
   triggerSessionWorkflowStateSuggestion,
 } from './summarizer.mjs';
+import { buildSourceRuntimePrompt } from './source-runtime-prompts.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
 import { MANAGER_TURN_POLICY_REMINDER } from './runtime-policy.mjs';
@@ -89,7 +90,7 @@ import {
   normalizeAppId,
   resolveEffectiveAppId,
 } from './apps.mjs';
-import { ensureDir } from './fs-utils.mjs';
+import { ensureDir, pathExists } from './fs-utils.mjs';
 
 const MIME_EXTENSIONS = {
   'application/json': '.json',
@@ -1049,7 +1050,25 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   return run;
 }
 
-async function saveAttachments(images) {
+export async function resolveSavedAttachments(images) {
+  const resolved = await Promise.all((images || []).map(async (image) => {
+    const filename = typeof image?.filename === 'string' ? image.filename.trim() : '';
+    if (!filename || !/^[a-zA-Z0-9_-]+\.[a-z0-9]+$/.test(filename)) return null;
+    const savedPath = join(CHAT_IMAGES_DIR, filename);
+    if (!await pathExists(savedPath)) return null;
+    const originalName = sanitizeOriginalAttachmentName(image?.originalName || '');
+    const mimeType = resolveAttachmentMimeType(image?.mimeType, originalName || filename);
+    return {
+      filename,
+      savedPath,
+      ...(originalName ? { originalName } : {}),
+      mimeType,
+    };
+  }));
+  return resolved.filter(Boolean);
+}
+
+export async function saveAttachments(images) {
   if (!images || images.length === 0) return [];
   await ensureDir(CHAT_IMAGES_DIR);
   return Promise.all(images.map(async (img) => {
@@ -2175,6 +2194,10 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
     if (!hasResume) {
       const systemContext = await buildSystemContext({ sessionId });
       let preamble = systemContext;
+      const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
+      if (sourceRuntimePrompt) {
+        preamble += `\n\n---\n\nSource/runtime instructions (backend-owned for this session source):\n${sourceRuntimePrompt}`;
+      }
       if (session.systemPrompt) {
         preamble += `\n\n---\n\nApp instructions (follow these for this session):\n${session.systemPrompt}`;
       }
@@ -2699,6 +2722,8 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedUserName = normalizeSessionUserName(extra.userName);
   const requestedGroup = normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
+  const hasRequestedSystemPrompt = Object.prototype.hasOwnProperty.call(extra, 'systemPrompt');
+  const requestedSystemPrompt = typeof extra.systemPrompt === 'string' ? extra.systemPrompt : '';
   const hasRequestedModel = Object.prototype.hasOwnProperty.call(extra, 'model');
   const requestedModel = typeof extra.model === 'string' ? extra.model.trim() : '';
   const hasRequestedEffort = Object.prototype.hasOwnProperty.call(extra, 'effort');
@@ -2791,9 +2816,9 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        const systemPrompt = typeof extra.systemPrompt === 'string' ? extra.systemPrompt : '';
-        if (systemPrompt && updated.systemPrompt !== systemPrompt) {
-          updated.systemPrompt = systemPrompt;
+        if (hasRequestedSystemPrompt && (updated.systemPrompt || '') !== requestedSystemPrompt) {
+          if (requestedSystemPrompt) updated.systemPrompt = requestedSystemPrompt;
+          else delete updated.systemPrompt;
           changed = true;
         }
 
@@ -2875,7 +2900,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedVisitorName) session.visitorName = requestedVisitorName;
     if (requestedUserId) session.userId = requestedUserId;
     if (requestedUserName) session.userName = requestedUserName;
-    if (extra.systemPrompt) session.systemPrompt = extra.systemPrompt;
+    if (requestedSystemPrompt) session.systemPrompt = requestedSystemPrompt;
     if (requestedModel) session.model = requestedModel;
     if (requestedEffort) session.effort = requestedEffort;
     if (requestedThinking) session.thinking = true;

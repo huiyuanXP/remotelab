@@ -27,6 +27,7 @@ export async function handleAdminRoutes({
   res,
   pathname,
   writeJsonCached,
+  createClientSessionDetail,
   normalizeSessionFolderInput,
   resolveTemplateApps,
   ensureUserSeedSession,
