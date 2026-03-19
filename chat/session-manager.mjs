@@ -133,6 +133,13 @@ const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
   'Be explicit about what is no longer in live context and what the next worker should rely on.',
 ].join('\n');
 
+const TURN_ACTIVATION_CARD = wrapPrivatePromptBlock([
+  'Turn activation — keep these priorities active for this reply:',
+  '1. If the task is clear and low-risk, keep going until you reach a meaningful completed result; do not stop early just to ask for permission to continue.',
+  '2. Only pause when there is real ambiguity, missing required user input, or a meaningfully destructive / irreversible action.',
+  '3. Default to concise result-first updates focused on outcome, risk, and decisions; avoid implementation noise unless the user asks for it.',
+].join('\n'));
+
 const DEFAULT_AUTO_COMPACT_CONTEXT_WINDOW_PERCENT = 100;
 const FOLLOW_UP_FLUSH_DELAY_MS = 1500;
 const MAX_RECENT_FOLLOW_UP_REQUEST_IDS = 100;
@@ -1872,9 +1879,11 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
 
     if (continuationContext) {
       turnSections.push(continuationContext);
+      turnSections.push(TURN_ACTIVATION_CARD);
       if (turnPrefix) turnSections.push(turnPrefix);
       turnSections.push(`Current user message:\n${text}`);
     } else {
+      turnSections.push(TURN_ACTIVATION_CARD);
       if (turnPrefix) turnSections.push(turnPrefix);
       turnSections.push(`${hasResume ? 'Current user message' : 'User message'}:\n${text}`);
     }
