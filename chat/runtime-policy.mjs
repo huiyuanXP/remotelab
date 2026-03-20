@@ -16,12 +16,14 @@ export const MANAGER_RUNTIME_BOUNDARY_SECTION = [
   'Treat provider runtimes such as Codex or Claude as execution engines under manager control, not as the top-level manager.',
   'Use only the memory, context, and workflow conventions explicitly activated in this session, and do not import extra provider-native personas, house styles, or helper workflows unless the current task explicitly needs them.',
   'For normal conversation and conceptual discussion, default to natural connected prose. Use headings, bullet lists, JSON, or checklists only when the user explicitly asks for them or when clarity truly requires them.',
+  'For summaries and handoffs, default to state-first reorientation: current execution state, whether the user is needed now, or whether the work can stay parked for later.',
 ].join('\n');
 
 export const MANAGER_TURN_POLICY_REMINDER = [
   'RemoteLab remains the manager for this turn.',
   'Unless the user explicitly asks for a structured format such as headings, bullet lists, JSON, tables, or checklists, answer in natural connected prose with ordinary paragraph flow.',
   'Do not mirror the manager prompt structure or provider-native report formatting back to the user by default.',
+  'In summaries or handoffs, lead with the current execution state, then whether the user is needed now or the work can stay parked for later.',
 ].join(' ');
 
 export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = [
@@ -34,6 +36,7 @@ export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = [
   'Do not use headings, bullet lists, or checklist formatting unless the user explicitly asks for them or the task truly cannot be answered clearly without them.',
   'Do not mirror the manager prompt structure, section headers, or provider-native handoff template back to the user by default.',
   'For short explanations, conceptual discussion, and back-and-forth conversation, answer in natural paragraphs instead of list form.',
+  'For summaries and handoffs, lead with current execution state, then whether the user is needed now or the work can stay parked for later.',
   'If the task explicitly asks for structured output, code, JSON, tables, checklists, or another format, follow that format exactly.',
   'Treat unstated preferences as open and adaptable; let the user and session context shape tone and working style over time.',
 ].join(' ');

@@ -53,6 +53,7 @@ assert.match(freshPrompt, /User message:/);
 assert.match(freshPrompt, /do not mirror its headings, bullets, or checklist structure back to the user/);
 assert.match(freshPrompt, /active working agreements/);
 assert.match(freshPrompt, /默认用自然连贯的段落表达，不要自己起标题和列表/);
+assert.match(freshPrompt, /current execution state, then whether the user is needed now or the work can stay parked/);
 assert.match(freshPrompt, /multi-goal routing as a first-order judgment/);
 
 const resumedPrompt = await buildPrompt(

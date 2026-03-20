@@ -153,7 +153,7 @@ const TURN_ACTIVATION_CARD = wrapPrivatePromptBlock([
   'Turn activation — keep these priorities active for this reply:',
   '1. If the task is clear and low-risk, keep going until you reach a meaningful completed result; do not stop early just to ask for permission to continue.',
   '2. Only pause when there is real ambiguity, missing required user input, or a meaningfully destructive / irreversible action.',
-  '3. Default to concise result-first updates focused on outcome, risk, and decisions; avoid implementation noise unless the user asks for it.',
+  '3. Default to concise, state-first updates: current execution state, then whether the user is needed now or the work can stay parked; avoid implementation noise unless the user asks for it.',
   '4. Treat multi-goal routing as a first-order judgment; split independently completable work instead of flattening it into one thread.',
 ].join('\n'));
 
