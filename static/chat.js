@@ -2440,12 +2440,6 @@
     currentSessionId = id;
     clearMessages();
     resetHeaderContext();
-    // Show Clear button immediately once a session is active
-    headerCtxClear.classList.add("visible");
-    headerCtxClear.disabled = false;
-    headerCtxClear.textContent = "Clear";
-    headerTitle.style.flex = "0 0 auto";
-    headerCtx.classList.add("visible");
     wsSend({ action: "attach", sessionId: id });
 
     const displayName =
@@ -3255,7 +3249,6 @@
     },
 
     async openDetail(id) {
-      this.currentReportId = id;
       // Mark as read
       const report = this.reports.find((r) => r.id === id);
       if (report && !report.read) {
@@ -3266,10 +3259,8 @@
         fetch(`/api/reports/${id}/read`, { method: "PATCH" }).catch(() => {});
         wsSend({ action: "mark-report-read", reportId: id });
       }
-      reportDetailTitle.textContent = report?.title || "Report";
-      reportGotoSession.style.display = report?.sessionId ? "" : "none";
-      reportIframe.src = `/api/reports/${id}/html`;
-      reportDetail.classList.remove("hidden");
+      // Open in new tab
+      window.open(`/reports/${id}`, '_blank');
     },
 
     closeDetail() {
@@ -3323,7 +3314,6 @@
         n.onclick = () => {
           window.focus();
           this.openDetail(report.id);
-          reportPanel.classList.remove("hidden");
           n.close();
         };
       }
