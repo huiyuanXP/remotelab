@@ -17,6 +17,7 @@ import { executeWorkflow, listWorkflowRuns } from './workflow-engine.mjs';
 import { reloadSchedule, updateLastRun } from './scheduler.mjs';
 import { getSidebarState } from './summarizer.mjs';
 import { listReports, getReport, getReportHtml, createReport, markAsRead, deleteReport } from './reports.mjs';
+import { initTaskManager, createTask, getTask, listTasks, updateTask, deleteTask } from './task-manager.mjs';
 import { readBody, readBodyBinary } from '../lib/utils.mjs';
 import {
   getClientIp, isRateLimited, recordFailedAttempt, clearFailedAttempts,
@@ -95,6 +96,29 @@ export function recoverReportToWatchers() {
     console.error(`[router] Failed to recover report_to watchers: ${err.message}`);
   }
 }
+
+// ---- Task Manager initialization ----
+// Auto-dispatch: when a blocked task becomes pending and has an assigned session,
+// send it a message to start execution.
+initTaskManager(async (task) => {
+  const text = [
+    `[自动派发] 任务依赖已全部完成，请开始执行。`,
+    `任务: ${task.subject}`,
+    task.description ? `描述: ${task.description}` : null,
+    `Task ID: ${task.id}`,
+    ``,
+    `⚠️ 完成后必须调用 mcp__remotelab__update_task，将 task_id="${task.id}" 的 status 设为 "completed"。这会自动触发下游依赖任务的执行。`,
+  ].filter(Boolean).join('\n');
+  try {
+    sendMessage(task.assigned_session_id, text, undefined, {});
+    if (task.report_to) {
+      registerReportTo(task.assigned_session_id, task.report_to);
+    }
+    console.log(`[TaskManager] Auto-dispatched task "${task.id}" to session ${task.assigned_session_id.slice(0, 8)}`);
+  } catch (err) {
+    console.error(`[TaskManager] Auto-dispatch failed for task "${task.id}": ${err.message}`);
+  }
+});
 
 // Paths (files are read from disk on each request for hot-reload)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1590,6 +1614,94 @@ export async function handleRequest(req, res) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message || 'Invalid request body' }));
     }
+    return;
+  }
+
+  // ---- Task API ----
+
+  // GET /api/tasks — list tasks (filter: ?status=&assigned_session_id=)
+  if (pathname === '/api/tasks' && req.method === 'GET') {
+    const filters = {};
+    if (parsedUrl.query.status) filters.status = parsedUrl.query.status;
+    if (parsedUrl.query.assigned_session_id) filters.assigned_session_id = parsedUrl.query.assigned_session_id;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ tasks: listTasks(filters) }));
+    return;
+  }
+
+  // POST /api/tasks — create task
+  if (pathname === '/api/tasks' && req.method === 'POST') {
+    let body;
+    try { body = JSON.parse(await readBody(req, 16384)); } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+    if (!body.subject) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'subject is required' }));
+      return;
+    }
+    const task = createTask({
+      subject: body.subject,
+      description: body.description,
+      assigned_session_id: body.assigned_session_id,
+      blocked_by: Array.isArray(body.blocked_by) ? body.blocked_by : [],
+      report_to: body.report_to || null,
+    });
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ task }));
+    return;
+  }
+
+  // GET /api/tasks/:id
+  const taskIdMatch = pathname.match(/^\/api\/tasks\/([^/]+)$/);
+  if (taskIdMatch && req.method === 'GET') {
+    const task = getTask(taskIdMatch[1]);
+    if (!task) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Task not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ task }));
+    return;
+  }
+
+  // PATCH /api/tasks/:id — update task
+  if (taskIdMatch && req.method === 'PATCH') {
+    let body;
+    try { body = JSON.parse(await readBody(req, 16384)); } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
+    const ALLOWED_UPDATES = ['subject', 'description', 'status', 'assigned_session_id', 'blocked_by'];
+    const updates = {};
+    for (const key of ALLOWED_UPDATES) {
+      if (body[key] !== undefined) updates[key] = body[key];
+    }
+    const task = updateTask(taskIdMatch[1], updates);
+    if (!task) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Task not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ task }));
+    return;
+  }
+
+  // DELETE /api/tasks/:id
+  if (taskIdMatch && req.method === 'DELETE') {
+    const deleted = deleteTask(taskIdMatch[1]);
+    if (!deleted) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Task not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
     return;
   }
 
