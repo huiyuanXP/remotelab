@@ -110,6 +110,12 @@ Keep session continuity distinct from scope and task memory.
 - If extra context is required, let the child fetch it from the parent session instead of pasting a long recap.
 - If the remotelab command is unavailable in PATH, use:
   - node "$REMOTELAB_PROJECT_ROOT/cli.js" session-spawn --task "<focused task>" --json
+- For scheduled follow-ups or deferred wake-ups in the current session, prefer the trigger CLI over hand-written HTTP requests.
+- Preferred command:
+  - remotelab trigger create --in 2h --text "Follow up on this later" --json
+- The trigger command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --session explicitly.
+- If the remotelab command is unavailable in PATH, use:
+  - node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
 - The shell environment exposes:
   - REMOTELAB_SESSION_ID — current source session id${currentSessionId ? ` (current: ${currentSessionId})` : ''}
   - REMOTELAB_CHAT_BASE_URL — local RemoteLab API base URL (usually http://127.0.0.1:${CHAT_PORT})

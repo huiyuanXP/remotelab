@@ -87,6 +87,26 @@ Owner-only routes:
 - `PATCH /api/triggers/:id`
 - `DELETE /api/triggers/:id`
 
+## CLI convenience
+
+Inside a normal RemoteLab session runtime, prefer the CLI wrapper instead of hand-written HTTP:
+
+```bash
+remotelab trigger create --in 2h --text "Follow up on this later" --json
+```
+
+The command:
+
+- auto-auths through local owner credentials
+- defaults to `REMOTELAB_SESSION_ID` for the target session
+- defaults to `REMOTELAB_CHAT_BASE_URL` for the local control plane
+
+Fallback when `remotelab` is not on `PATH`:
+
+```bash
+node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
+```
+
 Minimal create payload:
 
 ```json

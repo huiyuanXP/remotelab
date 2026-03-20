@@ -36,12 +36,14 @@ assert.match(context, /2\+ independently actionable goals/);
 assert.match(context, /clear no-split reason/);
 assert.match(context, /parent session may coordinate while each child session owns one goal/);
 assert.match(context, /remotelab session-spawn --task/);
+assert.match(context, /remotelab trigger create --in 2h --text/);
 assert.match(context, /--wait --json/);
 assert.match(context, /Keep spawned-session handoff minimal/);
 assert.match(context, /focused task plus the parent session id is enough/);
 assert.match(context, /Do not impose a heavy handoff template by default/);
 assert.match(context, /let the child fetch it from the parent session/);
 assert.match(context, /REMOTELAB_SESSION_ID/);
+assert.match(context, /trigger command defaults to REMOTELAB_SESSION_ID/);
 assert.match(context, /session-test-123/);
 
 console.log('test-system-prompt: ok');

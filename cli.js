@@ -34,6 +34,7 @@ Usage:
   remotelab release                  Create, gate, and activate a release snapshot
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
+  remotelab trigger                  Manage durable session triggers
   remotelab usage-summary            Summarize local Codex token usage
   remotelab session-spawn            Spawn a focused parallel session from a source session
   remotelab generate-token           Generate a new access token
@@ -84,6 +85,18 @@ switch (command) {
     const { runRemoteLabApiCommand } = await import(scriptPath('lib/remotelab-api-command.mjs'));
     try {
       process.exitCode = await runRemoteLabApiCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'trigger':
+  case 'triggers': {
+    const { runTriggerCommand } = await import(scriptPath('lib/trigger-command.mjs'));
+    try {
+      process.exitCode = await runTriggerCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
