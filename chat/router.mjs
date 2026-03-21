@@ -370,7 +370,7 @@ export async function handleRequest(req, res) {
 
     const { title, file_path: filePath, session_id: sessionId, source } = data;
     // Permission check: only whitelisted folders
-    const REPORT_WHITELIST = ['/home/nanoclaw/RLOrchestrator', '/home/nanoclaw/DailyNews'];
+    const REPORT_WHITELIST = process.env.REPORT_WHITELIST ? process.env.REPORT_WHITELIST.split(',') : [];
     if (sessionId) {
       const session = getSession(sessionId);
       if (!session) {

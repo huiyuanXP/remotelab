@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 产品定位
 
-RemoteLab 是一个让用户通过手机浏览器远程操控 macOS/Linux 上 AI 编程工具（Claude Code、Codex 等）的 Web 应用。核心场景是：用户不在电脑前，但想用手机指挥 AI 帮忙写代码、处理任务。
+huiyuanClaw 是一个让用户通过手机浏览器远程操控 macOS/Linux 上 AI 编程工具（Claude Code、Codex 等）的 Web 应用。核心场景是：用户不在电脑前，但想用手机指挥 AI 帮忙写代码、处理任务。
 
 ## 开发命令
 

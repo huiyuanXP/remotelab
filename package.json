@@ -1,18 +1,9 @@
 {
-  "name": "@trmquang93/remotelab",
+  "name": "huiyuanclaw",
   "version": "1.1.0",
   "description": "Remote browser access to any CLI dev tool (Claude, Copilot, Codex, Cline and more) via HTTPS",
   "type": "module",
   "license": "MIT",
-  "author": "trmquang93",
-  "homepage": "https://github.com/trmquang93/remotelab#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/trmquang93/remotelab.git"
-  },
-  "bugs": {
-    "url": "https://github.com/trmquang93/remotelab/issues"
-  },
   "keywords": [
     "claude",
     "claude-code",

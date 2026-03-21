@@ -1,4 +1,4 @@
-# AGENTS.md — RemoteLab
+# AGENTS.md — huiyuanClaw
 
 ## 启动协议（每次 session 开始时执行）
 
@@ -6,7 +6,7 @@
 
 | 文件 | 内容 | 必读？ |
 |------|------|--------|
-| `~/.huiyuanclaw/USER.md` | 惠远是谁、目标、协作风格 | ✅ 必读 |
+| `~/.huiyuanclaw/USER.md` | 用户身份、目标、协作风格 | ✅ 必读 |
 | `~/.huiyuanclaw/MEMORY.md` | 全局长期记忆 | 有则读 |
 | `~/.huiyuanclaw/memory/<今天>.md` | 近期全局日志 | 有则读 |
 
@@ -14,7 +14,7 @@
 
 | 文件 | 内容 |
 |------|------|
-| `SOUL.md`（本目录） | RemoteLab 的身份定位与开发原则 |
+| `SOUL.md`（本目录） | huiyuanClaw 的身份定位与开发原则 |
 
 > 公用工具库参见 `~/.huiyuanclaw/TOOLS.md`。
 
@@ -29,7 +29,7 @@
 ## 工具查找协议
 
 1. `~/.huiyuanclaw/TOOLS.md` — 公用工具库
-2. **没找到** → 告诉惠远需要什么工具，请他帮忙找或安装
+2. **没找到** → 告诉用户需要什么工具，请帮忙找或安装
 
 ---
 
@@ -41,9 +41,9 @@
 
 ---
 
-## RemoteLab 专属规则
+## huiyuanClaw 专属规则
 
-- 这是 **RemoteLab 产品 workspace**，负责 RemoteLab 平台自身的开发与维护
+- 这是 **huiyuanClaw 产品 workspace**，负责平台自身的开发与维护
 - 核心场景：手机远程操控 AI 编程工具（Claude Code、Codex 等）
 - **Red Lines:** 不外泄私人数据；`trash` > `rm`；发送到外部前先确认
 - **重启方式**：使用 `mcp__remotelab__restart_server`（`/restart` 已废弃）。重启后所有 session 自动恢复，可直接执行。
@@ -54,5 +54,5 @@
 |-----------|------|------|
 | RLOrchestrator | ~/RLOrchestrator | 主 orchestrator，编排调度 |
 | ResearchCenter | ~/ResearchCenter | 研究与知识沉淀 |
-| remotelab | ~/remotelab | RemoteLab 平台开发（本 workspace） |
+| huiyuanclaw | ~/remotelab | huiyuanClaw 平台开发（本 workspace） |
 | skiplec | ~/skiplec | SkipLec 产品开发 |

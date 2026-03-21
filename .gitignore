@@ -32,7 +32,7 @@ credentials.txt
 [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.txt
 
 # Runtime state (auto-updated by scheduler/server, not source code)
-workflows/schedules.json
+workflows/*.json
 status.json
 
 # Node

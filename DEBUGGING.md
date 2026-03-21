@@ -153,7 +153,7 @@ done
 
 # Show schedules and their next run
 node -e "
-const s = JSON.parse(require('fs').readFileSync('/home/nanoclaw/remotelab/workflows/schedules.json','utf8'));
+const s = JSON.parse(require('fs').readFileSync('workflows/schedules.json','utf8'));
 s.schedules.forEach(sc => console.log(sc.id, '| enabled:', sc.enabled, '| runAt:', sc.runAt || sc.cron || 'manual', '| runs:', sc.runCount+'/'+( sc.maxRuns ?? '∞')));
 "
 

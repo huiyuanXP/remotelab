@@ -1,6 +1,6 @@
-# RemoteLab
+# huiyuanClaw
 
-Control AI coding tools (Claude Code, Codex, Cline) from your phone mac or any other device! — no SSH, no VPN, just a browser.
+Control AI coding tools (Claude Code, Codex, Cline) from your phone or any other device — no SSH, no VPN, just a browser.
 
 ![Chat UI](docs/demo.gif)
 
@@ -10,7 +10,7 @@ Control AI coding tools (Claude Code, Codex, Cline) from your phone mac or any o
 
 ### What it does
 
-RemoteLab runs a lightweight web server on your **Mac or Linux server**. You point a Cloudflare tunnel at it, get an HTTPS URL, and from any browser (phone, tablet, whatever) you can open a chat interface that talks to Claude Code running on your machine.
+huiyuanClaw runs a lightweight web server on your **Mac or Linux server**. You point a Cloudflare tunnel at it, get an HTTPS URL, and from any browser (phone, tablet, whatever) you can open a chat interface that talks to Claude Code running on your machine.
 
 Your sessions persist across disconnects. History is kept on disk. Multiple folders, multiple sessions, running in parallel.
 
@@ -29,7 +29,7 @@ The fastest way to set this up is to paste the following prompt into Claude Code
 **Copy this prompt into Claude Code:**
 
 ```
-I want to set up RemoteLab on this Mac so I can control AI coding tools from my phone.
+I want to set up huiyuanClaw on this machine so I can control AI coding tools from my phone.
 
 My domain: [YOUR_DOMAIN]          (e.g. example.com)
 Subdomain I want to use: [SUBDOMAIN]  (e.g. chat — will create chat.example.com)
@@ -68,7 +68,7 @@ remotelab restart chat   # restart just the chat server
 
 ## Architecture
 
-Two services run on your Mac behind a Cloudflare tunnel:
+Two services run on your machine behind a Cloudflare tunnel:
 
 | Service | Port | Role |
 |---------|------|------|
@@ -114,6 +114,7 @@ remotelab --help               Show help
 | `LISTEN_PORT` | `7681` | Auth proxy port |
 | `SESSION_EXPIRY` | `86400000` | Cookie lifetime in ms (24h) |
 | `SECURE_COOKIES` | `1` | Set `0` for localhost without HTTPS |
+| `REPORT_WHITELIST` | *(empty)* | Comma-separated list of folders allowed to submit reports |
 
 ## File locations
 
@@ -129,12 +130,12 @@ remotelab --help               Show help
 
 ## Security
 
-- HTTPS via Cloudflare (TLS at edge, Mac-side is localhost HTTP)
+- HTTPS via Cloudflare (TLS at edge, local side is localhost HTTP)
 - 256-bit random access token, timing-safe comparison
 - Optional scrypt-hashed password login
 - HttpOnly + Secure + SameSite=Strict session cookies, 24h expiry
 - Per-IP rate limiting with exponential backoff on failed login
-- Mac server binds to 127.0.0.1 only — no direct external exposure
+- Server binds to 127.0.0.1 only — no direct external exposure
 - CSP headers with nonce-based script allowlist
 
 ## Troubleshooting
