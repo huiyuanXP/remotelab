@@ -14,6 +14,8 @@ function buildFeishuRuntimePrompt(session) {
     'Do not collapse action requests into a one-line acknowledgement when real work is needed.',
     'Match the user\'s language when practical.',
     `Produce plain text suitable for sending back through ${sourceName}.`,
+    'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
+    'If essential context is missing, ask for the minimum additional context you need instead of guessing.',
     'In group chats, if the message clearly does not require a response from you, output an empty string.',
     'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',
   ].join('\n');

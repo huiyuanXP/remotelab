@@ -123,7 +123,7 @@ Config shape:
     "processingReaction": {
       "enabled": false,
       "emojiType": "${DEFAULT_PROCESSING_REACTION_EMOJI_TYPE}",
-      "removeOnCompletion": true
+      "removeOnCompletion": false
     },
     "intakePolicy": {
       "mode": "allow_all",
@@ -340,27 +340,27 @@ function normalizeProcessingReactionConfig(value) {
     return {
       enabled: true,
       emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
-      removeOnCompletion: true,
+      removeOnCompletion: false,
     };
   }
   if (value === false) {
     return {
       enabled: false,
       emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
-      removeOnCompletion: true,
+      removeOnCompletion: false,
     };
   }
   if (typeof value === 'string') {
     return {
       enabled: true,
       emojiType: normalizeReactionEmojiType(value),
-      removeOnCompletion: true,
+      removeOnCompletion: false,
     };
   }
   return {
     enabled: normalizeBoolean(value?.enabled, false),
     emojiType: normalizeReactionEmojiType(value?.emojiType),
-    removeOnCompletion: normalizeBoolean(value?.removeOnCompletion, true),
+    removeOnCompletion: normalizeBoolean(value?.removeOnCompletion, false),
   };
 }
 
@@ -957,11 +957,8 @@ function buildSessionName(summary) {
 }
 
 function buildSessionDescription(summary) {
-  const parts = ['Inbound Feishu conversation'];
-  if (summary.chatType) parts.push(`type=${summary.chatType}`);
-  if (summary.chatId) parts.push(`chat=${summary.chatId}`);
-  if (summary.sender?.openId) parts.push(`sender=${summary.sender.openId}`);
-  return parts.join(' | ');
+  const chatType = trimString(summary?.chatType);
+  return chatType ? `Inbound Feishu ${chatType} chat` : 'Inbound Feishu chat';
 }
 
 function mentionDisplayName(mention) {
@@ -982,45 +979,31 @@ function renderMentionPreview(text, mentions) {
   return rendered;
 }
 
-function buildMentionPrompt(summary, rawMessage) {
+function buildMentionPrompt(summary) {
   const mentions = Array.isArray(summary?.mentions) ? summary.mentions : [];
   if (!mentions.length) return [];
   return [
     '',
-    'Mention map:',
+    'If you need to mention someone in your reply, use these exact tokens:',
     ...mentions.map((mention) => {
-      const details = [
-        `${trimString(mention?.key) || '(unknown token)'} => @${mentionDisplayName(mention)}`,
-        trimString(mention?.openId) ? `open_id=${trimString(mention.openId)}` : '',
-        trimString(mention?.userId) ? `user_id=${trimString(mention.userId)}` : '',
-        trimString(mention?.unionId) ? `union_id=${trimString(mention.unionId)}` : '',
-      ].filter(Boolean);
-      return `- ${details.join(' | ')}`;
+      const token = trimString(mention?.key);
+      if (!token) return '';
+      return `- @${mentionDisplayName(mention)} => ${token}`;
     }),
-    '',
-    `Original message tokens: ${rawMessage || '[non-text or empty message]'}`,
-    'If you mention someone in your reply, use their exact mention token (for example @_user_1).',
+    'Do not invent new mention tokens.',
   ];
 }
 
 function buildRemoteLabMessage(summary) {
   const rawMessage = trimString(summary.textPreview);
   const renderedMessage = renderMentionPreview(rawMessage, summary.mentions);
-  const hasMentions = Array.isArray(summary?.mentions) && summary.mentions.length > 0;
-  const displayMessage = (hasMentions ? renderedMessage : rawMessage) || trimString(summary.contentSummary);
+  const displayMessage = renderedMessage || rawMessage || trimString(summary.contentSummary) || '[non-text or empty message]';
   const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
-  const senderId = trimString(summary?.sender?.openId || summary?.sender?.userId || summary?.sender?.unionId);
-  const senderLabel = senderName && senderId && senderName !== senderId
-    ? `${senderName} (${senderId})`
-    : (senderName || senderId);
+  const senderPrefix = summary?.chatType === 'group' && senderName ? `${senderName}: ` : '';
   return [
-    `Chat type: ${summary.chatType || 'unknown'}`,
-    summary.chatName ? `Chat: ${summary.chatName}` : '',
-    summary.threadId ? `Thread ID: ${summary.threadId}` : '',
-    senderLabel ? `Sender: ${senderLabel}` : '',
-    '',
-    displayMessage || '[non-text or empty message]',
-    ...buildMentionPrompt(summary, rawMessage),
+    summary?.chatType === 'group' ? 'Group chat.' : '',
+    `${senderPrefix}${displayMessage}`,
+    ...buildMentionPrompt(summary),
   ].filter(Boolean).join('\n');
 }
 
@@ -1699,6 +1682,7 @@ export {
   buildApprovedChatReply,
   buildChatAccessStatusReply,
   buildRemoteLabMessage,
+  buildSessionDescription,
   compileFeishuReplyText,
   createRuntimeContext,
   ensureAuthCookie,

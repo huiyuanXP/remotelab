@@ -11,6 +11,7 @@ const { selectAssistantReplyEvent } = await import(pathToFileURL(join(repoRoot, 
 
 const {
   DEFAULT_SESSION_SYSTEM_PROMPT,
+  buildSessionDescription,
   createRuntimeContext,
   buildRemoteLabMessage,
   compileFeishuReplyText,
@@ -77,6 +78,7 @@ assert.equal(runtime.processingMessageIds.size, 0, 'message processing state sho
 let reactionCalls = [];
 sendCalls = 0;
 handled.length = 0;
+runtime.config = { processingReaction: { removeOnCompletion: false } };
 
 await handleMessage(runtime, { ...summary, messageId: 'msg_test_processing_reaction' }, 'test', {
   wasMessageHandled: async () => false,
@@ -99,10 +101,6 @@ await handleMessage(runtime, { ...summary, messageId: 'msg_test_processing_react
     sendCalls += 1;
     return { message_id: 'out_reaction_test_1' };
   },
-  removeProcessingReaction: async (_runtime, reactionSummary, reaction) => {
-    reactionCalls.push(['remove', reactionSummary.messageId, reaction.reactionId]);
-    return true;
-  },
   markMessageHandled: async (_pathname, messageId, metadata) => {
     handled.push({ messageId, metadata });
   },
@@ -112,8 +110,7 @@ assert.deepEqual(reactionCalls, [
   ['add', 'msg_test_processing_reaction'],
   ['generate'],
   ['send'],
-  ['remove', 'msg_test_processing_reaction', 'react_test_1'],
-], 'processing reactions should wrap the long-running reply path');
+], 'processing reactions should stay attached by default after the long-running reply path');
 assert.equal(sendCalls, 1, 'non-empty assistant replies should still be sent');
 assert.equal(handled.length, 1, 'reaction-backed replies should still be marked handled');
 assert.equal(handled[0].metadata.status, 'sent');
@@ -121,6 +118,7 @@ assert.equal(handled[0].metadata.status, 'sent');
 reactionCalls = [];
 sendCalls = 0;
 handled.length = 0;
+runtime.config = { processingReaction: { removeOnCompletion: true } };
 
 await handleMessage(runtime, { ...summary, messageId: 'msg_test_processing_reaction_silent' }, 'test', {
   wasMessageHandled: async () => false,
@@ -155,7 +153,7 @@ assert.deepEqual(reactionCalls, [
   ['add', 'msg_test_processing_reaction_silent'],
   ['generate'],
   ['remove', 'msg_test_processing_reaction_silent', 'react_test_2'],
-], 'processing reactions should be removed even when the assistant stays silent');
+], 'processing reactions should still be removable when explicitly configured');
 assert.equal(sendCalls, 0, 'silent assistant replies should not send Feishu messages');
 assert.equal(handled.length, 1, 'silent reaction-backed replies should still be marked handled');
 assert.equal(handled[0].metadata.status, 'silent_no_reply');
@@ -357,11 +355,23 @@ const mentionSummary = {
 };
 
 const mentionPrompt = buildRemoteLabMessage(mentionSummary);
+assert.match(mentionPrompt, /^Group chat\./);
 assert.match(mentionPrompt, /厉害不，@江虹 你发一条消息/);
-assert.match(mentionPrompt, /Mention map:\n- @_user_1 => @江虹 \| open_id=ou_mention_1 \| union_id=on_mention_1/);
-assert.match(mentionPrompt, /Original message tokens: 厉害不，@_user_1 你发一条消息/);
-assert.match(mentionPrompt, /use their exact mention token/);
+assert.match(mentionPrompt, /If you need to mention someone in your reply, use these exact tokens:/);
+assert.match(mentionPrompt, /- @江虹 => @_user_1/);
+assert.match(mentionPrompt, /Do not invent new mention tokens\./);
+assert.doesNotMatch(mentionPrompt, /open_id=|union_id=|Chat type:|Thread ID:|Sender:/);
 assert.doesNotMatch(mentionPrompt, /Write the exact plain-text Feishu reply to send back/);
+
+assert.equal(
+  buildSessionDescription({
+    chatType: 'group',
+    chatId: 'chat_group_1',
+    sender: { openId: 'ou_sender_1' },
+  }),
+  'Inbound Feishu group chat',
+  'session descriptions should stay human-readable instead of embedding transport IDs',
+);
 
 assert.match(DEFAULT_SESSION_SYSTEM_PROMPT, /Keep connector-specific overrides minimal/i);
 
@@ -379,18 +389,18 @@ assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backe
 assert.deepEqual(loadedConfig.processingReaction, {
   enabled: false,
   emojiType: 'GLANCE',
-  removeOnCompletion: true,
+  removeOnCompletion: false,
 }, 'processing reactions should default to disabled');
 
 assert.deepEqual(normalizeProcessingReactionConfig(true), {
   enabled: true,
   emojiType: 'GLANCE',
-  removeOnCompletion: true,
+  removeOnCompletion: false,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('thinking'), {
   enabled: true,
   emojiType: 'THINKING',
-  removeOnCompletion: true,
+  removeOnCompletion: false,
 });
 assert.deepEqual(normalizeProcessingReactionConfig({
   enabled: true,
