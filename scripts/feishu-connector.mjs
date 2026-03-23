@@ -34,6 +34,7 @@ const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_FEISHU_TEXT_LENGTH = 5000;
 const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
+const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'GLANCE';
 const REMOTELAB_SESSION_APP_ID = 'feishu';
 const APPROVE_CURRENT_CHAT_COMMANDS = new Set([
   '授权本群',
@@ -119,6 +120,11 @@ Config shape:
     "effort": "",
     "thinking": false,
     "systemPrompt": "${DEFAULT_SESSION_SYSTEM_PROMPT.replace(/"/g, '\\"')}",
+    "processingReaction": {
+      "enabled": false,
+      "emojiType": "${DEFAULT_PROCESSING_REACTION_EMOJI_TYPE}",
+      "removeOnCompletion": true
+    },
     "intakePolicy": {
       "mode": "allow_all",
       "accessStatePath": "~/.config/remotelab/feishu-connector/${DEFAULT_ACCESS_STATE_FILENAME}",
@@ -324,6 +330,40 @@ function normalizeBoolean(value, fallback = false) {
   return fallback;
 }
 
+function normalizeReactionEmojiType(value, fallback = DEFAULT_PROCESSING_REACTION_EMOJI_TYPE) {
+  const normalized = trimString(value).replace(/[^A-Za-z0-9_]/g, '').toUpperCase();
+  return normalized || fallback;
+}
+
+function normalizeProcessingReactionConfig(value) {
+  if (value === true) {
+    return {
+      enabled: true,
+      emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
+      removeOnCompletion: true,
+    };
+  }
+  if (value === false) {
+    return {
+      enabled: false,
+      emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
+      removeOnCompletion: true,
+    };
+  }
+  if (typeof value === 'string') {
+    return {
+      enabled: true,
+      emojiType: normalizeReactionEmojiType(value),
+      removeOnCompletion: true,
+    };
+  }
+  return {
+    enabled: normalizeBoolean(value?.enabled, false),
+    emojiType: normalizeReactionEmojiType(value?.emojiType),
+    removeOnCompletion: normalizeBoolean(value?.removeOnCompletion, true),
+  };
+}
+
 function normalizeSystemPrompt(value) {
   const normalized = trimString(value);
   if (!normalized || normalized === DEFAULT_SESSION_SYSTEM_PROMPT || normalized === LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT) {
@@ -360,6 +400,7 @@ async function loadConfig(pathname) {
     effort: trimString(parsed?.effort),
     thinking: normalizeBoolean(parsed?.thinking, false),
     systemPrompt: normalizeSystemPrompt(parsed?.systemPrompt),
+    processingReaction: normalizeProcessingReactionConfig(parsed?.processingReaction),
   };
 }
 
@@ -1295,6 +1336,59 @@ function compileFeishuReplyText(text, mentions) {
   return compiled;
 }
 
+function isProcessingReactionEnabled(runtime) {
+  return runtime?.config?.processingReaction?.enabled === true;
+}
+
+async function addProcessingReaction(runtime, summary) {
+  if (!isProcessingReactionEnabled(runtime)) {
+    return null;
+  }
+  const messageId = trimString(summary?.messageId);
+  if (!messageId) {
+    return null;
+  }
+  const emojiType = normalizeReactionEmojiType(runtime?.config?.processingReaction?.emojiType);
+  const response = await runtime.appClient.im.v1.messageReaction.create({
+    path: {
+      message_id: messageId,
+    },
+    data: {
+      reaction_type: {
+        emoji_type: emojiType,
+      },
+    },
+  });
+  if ((response.code !== undefined && response.code !== 0) || !response.data?.reaction_id) {
+    throw new Error(response.msg || 'Failed to add Feishu processing reaction');
+  }
+  return {
+    reactionId: response.data.reaction_id,
+    emojiType: response.data?.reaction_type?.emoji_type || emojiType,
+  };
+}
+
+async function removeProcessingReaction(runtime, summary, reaction) {
+  if (runtime?.config?.processingReaction?.removeOnCompletion === false) {
+    return false;
+  }
+  const messageId = trimString(summary?.messageId);
+  const reactionId = trimString(reaction?.reactionId);
+  if (!messageId || !reactionId) {
+    return false;
+  }
+  const response = await runtime.appClient.im.v1.messageReaction.delete({
+    path: {
+      message_id: messageId,
+      reaction_id: reactionId,
+    },
+  });
+  if (response.code !== undefined && response.code !== 0) {
+    throw new Error(response.msg || 'Failed to remove Feishu processing reaction');
+  }
+  return true;
+}
+
 async function sendFeishuText(runtime, summary, text) {
   const response = await runtime.appClient.im.v1.message.create({
     params: {
@@ -1490,6 +1584,8 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   const markHandled = helpers.markMessageHandled || markMessageHandled;
   const generateReply = helpers.generateRemoteLabReply || generateRemoteLabReply;
   const sendText = helpers.sendFeishuText || sendFeishuText;
+  const addReaction = helpers.addProcessingReaction || addProcessingReaction;
+  const removeReaction = helpers.removeProcessingReaction || removeProcessingReaction;
 
   if (!isProcessableMessage(summary)) {
     return;
@@ -1502,6 +1598,7 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   }
 
   runtime.processingMessageIds.add(summary.messageId);
+  let processingReaction = null;
   try {
     const messageType = trimString(summary.messageType).toLowerCase();
     if (messageType && messageType !== 'text') {
@@ -1532,6 +1629,12 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
         });
         return;
       }
+    }
+
+    try {
+      processingReaction = await addReaction(runtime, summary);
+    } catch (reactionError) {
+      console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${reactionError?.message || reactionError}`);
     }
 
     const generated = await generateReply(runtime, summary);
@@ -1580,6 +1683,13 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       console.error(`[feishu-connector] fallback send failed for ${summary.messageId}:`, sendError?.stack || sendError);
     }
   } finally {
+    if (processingReaction) {
+      try {
+        await removeReaction(runtime, summary, processingReaction);
+      } catch (reactionError) {
+        console.warn(`[feishu-connector] failed to remove processing reaction for ${summary.messageId}: ${reactionError?.message || reactionError}`);
+      }
+    }
     runtime.processingMessageIds.delete(summary.messageId);
   }
 }
@@ -1594,6 +1704,7 @@ export {
   ensureAuthCookie,
   ensureAllowedSendersFile,
   extractLocalCommand,
+  addProcessingReaction,
   generateRemoteLabReply,
   grantSenderAccess,
   handleChatMemberUserAdded,
@@ -1602,8 +1713,10 @@ export {
   loadPersistedAccessState,
   loadConfig,
   normalizeAllowedSenders,
+  normalizeProcessingReactionConfig,
   normalizeReplyText,
   queueAccessStateFlush,
+  removeProcessingReaction,
   snapshotAccessState,
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,

@@ -24,6 +24,7 @@ const {
   loadConfig,
   loadPersistedAccessState,
   normalizeReplyText,
+  normalizeProcessingReactionConfig,
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
@@ -72,6 +73,92 @@ assert.equal(handled[0].metadata.status, 'silent_no_reply');
 assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
 assert.equal(handled[0].metadata.sessionId, 'session_test_1');
 assert.equal(runtime.processingMessageIds.size, 0, 'message processing state should always be cleaned up');
+
+let reactionCalls = [];
+sendCalls = 0;
+handled.length = 0;
+
+await handleMessage(runtime, { ...summary, messageId: 'msg_test_processing_reaction' }, 'test', {
+  wasMessageHandled: async () => false,
+  addProcessingReaction: async (_runtime, reactionSummary) => {
+    reactionCalls.push(['add', reactionSummary.messageId]);
+    return { reactionId: 'react_test_1', emojiType: 'GLANCE' };
+  },
+  generateRemoteLabReply: async () => {
+    reactionCalls.push(['generate']);
+    return {
+      sessionId: 'session_reaction_test_1',
+      runId: 'run_reaction_test_1',
+      requestId: 'request_reaction_test_1',
+      duplicate: false,
+      replyText: 'Reaction-backed reply.',
+    };
+  },
+  sendFeishuText: async () => {
+    reactionCalls.push(['send']);
+    sendCalls += 1;
+    return { message_id: 'out_reaction_test_1' };
+  },
+  removeProcessingReaction: async (_runtime, reactionSummary, reaction) => {
+    reactionCalls.push(['remove', reactionSummary.messageId, reaction.reactionId]);
+    return true;
+  },
+  markMessageHandled: async (_pathname, messageId, metadata) => {
+    handled.push({ messageId, metadata });
+  },
+});
+
+assert.deepEqual(reactionCalls, [
+  ['add', 'msg_test_processing_reaction'],
+  ['generate'],
+  ['send'],
+  ['remove', 'msg_test_processing_reaction', 'react_test_1'],
+], 'processing reactions should wrap the long-running reply path');
+assert.equal(sendCalls, 1, 'non-empty assistant replies should still be sent');
+assert.equal(handled.length, 1, 'reaction-backed replies should still be marked handled');
+assert.equal(handled[0].metadata.status, 'sent');
+
+reactionCalls = [];
+sendCalls = 0;
+handled.length = 0;
+
+await handleMessage(runtime, { ...summary, messageId: 'msg_test_processing_reaction_silent' }, 'test', {
+  wasMessageHandled: async () => false,
+  addProcessingReaction: async (_runtime, reactionSummary) => {
+    reactionCalls.push(['add', reactionSummary.messageId]);
+    return { reactionId: 'react_test_2', emojiType: 'GLANCE' };
+  },
+  generateRemoteLabReply: async () => {
+    reactionCalls.push(['generate']);
+    return {
+      sessionId: 'session_reaction_test_2',
+      runId: 'run_reaction_test_2',
+      requestId: 'request_reaction_test_2',
+      duplicate: false,
+      replyText: '',
+    };
+  },
+  sendFeishuText: async () => {
+    sendCalls += 1;
+    return { message_id: 'out_reaction_test_2' };
+  },
+  removeProcessingReaction: async (_runtime, reactionSummary, reaction) => {
+    reactionCalls.push(['remove', reactionSummary.messageId, reaction.reactionId]);
+    return true;
+  },
+  markMessageHandled: async (_pathname, messageId, metadata) => {
+    handled.push({ messageId, metadata });
+  },
+});
+
+assert.deepEqual(reactionCalls, [
+  ['add', 'msg_test_processing_reaction_silent'],
+  ['generate'],
+  ['remove', 'msg_test_processing_reaction_silent', 'react_test_2'],
+], 'processing reactions should be removed even when the assistant stays silent');
+assert.equal(sendCalls, 0, 'silent assistant replies should not send Feishu messages');
+assert.equal(handled.length, 1, 'silent reaction-backed replies should still be marked handled');
+assert.equal(handled[0].metadata.status, 'silent_no_reply');
 
 const imageSummary = summarizeEvent({
   event_id: 'evt_image_1',
@@ -289,6 +376,31 @@ await writeFile(tempConfigPath, `${JSON.stringify({
 
 const loadedConfig = await loadConfig(tempConfigPath);
 assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backend-owned source prompt logic');
+assert.deepEqual(loadedConfig.processingReaction, {
+  enabled: false,
+  emojiType: 'GLANCE',
+  removeOnCompletion: true,
+}, 'processing reactions should default to disabled');
+
+assert.deepEqual(normalizeProcessingReactionConfig(true), {
+  enabled: true,
+  emojiType: 'GLANCE',
+  removeOnCompletion: true,
+});
+assert.deepEqual(normalizeProcessingReactionConfig('thinking'), {
+  enabled: true,
+  emojiType: 'THINKING',
+  removeOnCompletion: true,
+});
+assert.deepEqual(normalizeProcessingReactionConfig({
+  enabled: true,
+  emojiType: 'smart',
+  removeOnCompletion: false,
+}), {
+  enabled: true,
+  emojiType: 'SMART',
+  removeOnCompletion: false,
+});
 
 assert.equal(
   compileFeishuReplyText('@_user_1 这是一条消息。', mentionSummary.mentions),
@@ -553,6 +665,7 @@ try {
 }
 
 console.log('ok - empty assistant replies stay silent');
+console.log('ok - processing reactions bracket delayed Feishu replies');
 console.log('ok - non-text Feishu payloads are summarized and ignored silently');
 console.log('ok - mention tokens are rendered inbound and compiled outbound');
 console.log('ok - whitelist file reloads without restart');

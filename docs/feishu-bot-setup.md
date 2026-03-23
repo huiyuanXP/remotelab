@@ -76,6 +76,7 @@ Prefer one Feishu-console visit that covers app creation, permissions, event sub
 - Start with same-tenant private chat; do not start with cross-tenant distribution.
 - If the console warns `No connection detected`, let the AI bring the connector online first, then return and save persistent connection mode again.
 - If outbound later fails with Feishu error `99991672`, enable the exact IM send permission named in the error message.
+- If you want the bot to add a quick “I’m looking” reaction before the real reply lands, also enable `发送、删除消息表情回复 (im:message.reactions:write_only)`.
 
 ## AI execution contract
 
@@ -114,6 +115,11 @@ Notes:
   "loggerLevel": "info",
   "chatBaseUrl": "http://127.0.0.1:7690",
   "sessionTool": "codex",
+  "processingReaction": {
+    "enabled": true,
+    "emojiType": "GLANCE",
+    "removeOnCompletion": true
+  },
   "intakePolicy": {
     "mode": "allow_all"
   }
@@ -125,6 +131,8 @@ Notes:
 - use `feishu-cn` for `open.feishu.cn`
 - use `lark-global` for `open.larksuite.com`
 - omit `sessionFolder` to use the operator's home directory by default
+- `processingReaction` lets the bot add a temporary reaction on the user's message while RemoteLab is still generating the real reply
+- `emojiType` must be one of Feishu's reaction emoji types such as `GLANCE`, `THINKING`, or `SMILE`
 - `allow_all` is the simplest V0 mode; move to `whitelist` after the first validation if needed
 
 ## Success state
