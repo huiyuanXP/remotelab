@@ -117,7 +117,7 @@ Notes:
   "sessionTool": "codex",
   "processingReaction": {
     "enabled": true,
-    "emojiType": "THINKING",
+    "emojiType": "SMILE",
     "removeOnCompletion": false
   },
   "intakePolicy": {
@@ -131,7 +131,7 @@ Notes:
 - use `feishu-cn` for `open.feishu.cn`
 - use `lark-global` for `open.larksuite.com`
 - omit `sessionFolder` to use the operator's home directory by default
-- `processingReaction` lets the bot add a quick reaction on the user's message before the real reply lands; by default it uses `THINKING` and stays attached after the reply as a lightweight ack marker
+- `processingReaction` lets the bot add a quick reaction on the user's message before the real reply lands; by default it uses `SMILE` and stays attached after the reply as a lightweight ack marker
 - `emojiType` must be one of Feishu's reaction emoji types such as `GLANCE`, `THINKING`, or `SMILE`
 - set `removeOnCompletion` to `true` only if you want the reaction to be temporary
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
