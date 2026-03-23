@@ -60,6 +60,21 @@ For focused delegation there is still a higher-level shortcut:
 remotelab session-spawn --task "<focused task>" --wait
 ```
 
+For recursive self-use where the parent agent wants a compressed result without adding a visible handoff note to the current session, use the same primitive with a tighter output contract:
+
+```bash
+remotelab session-spawn --task "<focused task>" --tool micro-agent --internal --final-only
+```
+
+That keeps the architecture flat:
+
+- no separate `scout` product primitive
+- same delegation API underneath
+- hidden child session for bounded exploration
+- parent process receives only the child agent's final reply on stdout
+
+`--final-only` is just sugar for `--wait --output-mode final-only`.
+
 ## Install
 
 ```bash
@@ -89,6 +104,7 @@ But in practice it is close to the lightweight mode we want because:
 - it can answer directly without tool use when the task is simple
 - it can still use shell when the task genuinely needs it
 - it can call `remotelab api` or `remotelab session-spawn` explicitly instead of relying on hidden product-specific control messages
+- it can recursively call `remotelab session-spawn --internal --final-only` when it wants a fresh bounded worker that returns only a compressed final result
 - the user no longer has to hand-write auth / cookies / HTTP boilerplate
 
 ## Validation ideas

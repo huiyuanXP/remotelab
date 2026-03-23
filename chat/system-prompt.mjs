@@ -126,6 +126,10 @@ Keep session continuity distinct from scope and task memory.
   - remotelab session-spawn --task "<focused task>" --json
 - Waited subagent variant:
   - remotelab session-spawn --task "<focused task>" --wait --json
+- Hidden waited subagent variant for noisy exploration / context compression:
+  - remotelab session-spawn --task "<focused task>" --wait --internal --output-mode final-only --json
+- The hidden final-only variant suppresses the visible parent handoff note and returns only the child session's final reply to stdout.
+- Prefer the hidden final-only variant when repo-wide search, multi-hop investigation, or other exploratory work would otherwise flood the current session with noisy intermediate output.
 - Keep spawned-session handoff minimal. Usually the focused task plus the parent session id is enough.
 - Do not impose a heavy handoff template by default; let the child decide what to inspect or how to proceed.
 - If extra context is required, let the child fetch it from the parent session instead of pasting a long recap.

@@ -852,6 +852,47 @@ async function phase14SessionSpawnCli() {
   }
 }
 
+async function phase14bSessionSpawnCliInternalFinalOnly() {
+  const { home } = setupTempHome();
+  const port = randomPort();
+  const server = await startServer({ home, port, delayMs: 1200 });
+  try {
+    const session = await createSession(port, {
+      name: 'CLI internal parent',
+      group: 'Tests',
+      description: 'Hidden final-only child contract',
+    });
+
+    const cli = await runNodeCli(
+      ['cli.js', 'session-spawn', '--task', 'Return a focused child-session result.', '--internal', '--final-only', '--json'],
+      {
+        HOME: home,
+        REMOTELAB_SESSION_ID: session.id,
+        REMOTELAB_CHAT_BASE_URL: `http://127.0.0.1:${port}`,
+      },
+    );
+    assert.equal(cli.code, 0, `internal final-only session-spawn CLI should exit cleanly: ${cli.stderr}`);
+    const payload = JSON.parse(cli.stdout);
+    assert.deepEqual(payload, {
+      state: 'completed',
+      reply: 'finished from fake codex',
+    }, 'internal final-only CLI should return only the terminal child reply payload');
+
+    const parentEvents = await getEvents(port, session.id);
+    const delegateNotice = parentEvents.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.messageKind === 'session_delegate_notice');
+    assert.equal(delegateNotice, undefined, 'internal final-only helper should not append a visible handoff note to the source session');
+
+    const listed = await request(port, 'GET', '/api/sessions');
+    assert.equal(listed.status, 200, 'session listing should still succeed');
+    assert.deepEqual((listed.json.sessions || []).map((entry) => entry.id), [session.id], 'hidden child session should stay out of the visible session list');
+
+    console.log('phase14b-session-spawn-cli-internal-final-only: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 async function phase15NoDuplicateDuringReadHammer() {
   const { home } = setupTempHome();
   const port = randomPort();
@@ -990,6 +1031,7 @@ const phases = {
   phase12: phase12QueuedMessageRouteContract,
   phase13: phase13DelegateSession,
   phase14: phase14SessionSpawnCli,
+  phase14b: phase14bSessionSpawnCliInternalFinalOnly,
   phase15: phase15NoDuplicateDuringReadHammer,
   phase16: phase16StaleMissingRunnerReconciliation,
 };

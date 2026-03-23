@@ -129,6 +129,7 @@ const VISITOR_TURN_GUARDRAIL = [
 ].join('\n');
 
 const INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR = 'context_compactor';
+const INTERNAL_SESSION_ROLE_AGENT_DELEGATE = 'agent_delegate';
 const AUTO_COMPACT_MARKER_TEXT = 'Older messages above this marker are no longer in the model\'s live context. They remain visible in the transcript, but only the compressed handoff and newer messages below are loaded for continued work.';
 const REPLY_SELF_REPAIR_INTERNAL_OPERATION = 'reply_self_repair';
 const REPLY_SELF_CHECK_REVIEWING_STATUS = 'Assistant self-check: reviewing the latest reply for early stop…';
@@ -4110,19 +4111,24 @@ export async function delegateSession(sessionId, payload = {}) {
   }
 
   const requestedName = typeof payload?.name === 'string' ? payload.name.trim() : '';
+  const requestedTool = typeof payload?.tool === 'string' ? payload.tool.trim() : '';
+  const runInternally = payload?.internal === true;
+  const nextTool = requestedTool || source.tool;
+  const inheritRuntimePreferences = !requestedTool || requestedTool === source.tool;
 
-  const child = await createSession(source.folder, source.tool, requestedName || buildDelegatedSessionName(source, task), {
+  const child = await createSession(source.folder, nextTool, requestedName || buildDelegatedSessionName(source, task), {
     appId: source.appId || '',
     appName: source.appName || '',
     sourceId: source.sourceId || '',
     sourceName: source.sourceName || '',
     systemPrompt: source.systemPrompt || '',
     activeAgreements: source.activeAgreements || [],
-    model: source.model || '',
-    effort: source.effort || '',
-    thinking: source.thinking === true,
+    model: inheritRuntimePreferences ? source.model || '' : '',
+    effort: inheritRuntimePreferences ? source.effort || '' : '',
+    thinking: inheritRuntimePreferences && source.thinking === true,
     userId: source.userId || '',
     userName: source.userName || '',
+    ...(runInternally ? { internalRole: INTERNAL_SESSION_ROLE_AGENT_DELEGATE } : {}),
   });
   if (!child) return null;
 
@@ -4132,15 +4138,18 @@ export async function delegateSession(sessionId, payload = {}) {
   });
   const outcome = await submitHttpMessage(child.id, handoffText, [], {
     requestId: createInternalRequestId('delegate'),
-    model: source.model || undefined,
-    effort: source.effort || undefined,
-    thinking: source.thinking === true,
+    tool: requestedTool || undefined,
+    model: inheritRuntimePreferences ? source.model || undefined : undefined,
+    effort: inheritRuntimePreferences ? source.effort || undefined : undefined,
+    thinking: inheritRuntimePreferences && source.thinking === true,
   });
 
-  await appendEvent(source.id, messageEvent('assistant', buildDelegationNoticeMessage(task, child), undefined, {
-    messageKind: 'session_delegate_notice',
-  }));
-  broadcastSessionInvalidation(source.id);
+  if (!runInternally) {
+    await appendEvent(source.id, messageEvent('assistant', buildDelegationNoticeMessage(task, child), undefined, {
+      messageKind: 'session_delegate_notice',
+    }));
+    broadcastSessionInvalidation(source.id);
+  }
 
   return {
     session: outcome.session || await getSession(child.id) || child,

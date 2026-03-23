@@ -1910,11 +1910,21 @@ export async function handleRequest(req, res) {
         writeJson(res, 400, { error: 'task is required' });
         return;
       }
+      if (Object.prototype.hasOwnProperty.call(payload, 'tool') && payload.tool !== null && typeof payload.tool !== 'string') {
+        writeJson(res, 400, { error: 'tool must be a string when provided' });
+        return;
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'internal') && typeof payload.internal !== 'boolean') {
+        writeJson(res, 400, { error: 'internal must be a boolean when provided' });
+        return;
+      }
 
       try {
         const outcome = await delegateSession(sessionId, {
           task,
           name: typeof payload?.name === 'string' ? payload.name.trim() : '',
+          tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
+          internal: payload?.internal === true,
         });
         if (!outcome?.session) {
           writeJson(res, 409, { error: 'Unable to delegate session' });
