@@ -113,6 +113,7 @@ const feishuSourcePrompt = await buildPrompt(
 assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned for this session source\):/);
 assert.match(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI/);
 assert.match(feishuSourcePrompt, /Do not collapse action requests into a one-line acknowledgement/);
+assert.match(feishuSourcePrompt, /Do not include emoji characters, emoticons, or sticker aliases/);
 assert.match(feishuSourcePrompt, /source-context/);
 assert.match(feishuSourcePrompt, /This session maps to a group chat/);
 

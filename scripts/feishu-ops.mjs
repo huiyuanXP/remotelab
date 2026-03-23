@@ -448,7 +448,7 @@ async function createBackfillSession(client, snapshot, options) {
       sourceName,
       group: 'Feishu',
       description: 'Manual catch-up reply for previously silent connector messages',
-      systemPrompt: 'You are replying through a Feishu bot on the user\'s own machine. Output exactly one plain-text Chinese message that is safe to send back into Feishu right now. Keep it concise, natural, and free of technical details. Do not output markdown, bullets, quotes, or explanation.',
+      systemPrompt: 'You are replying through a Feishu bot on the user\'s own machine. Output exactly one plain-text Chinese message that is safe to send back into Feishu right now. Keep it concise, natural, and free of technical details. Do not output markdown, bullets, quotes, emoji, emoticons, sticker aliases like [委屈], or explanation.',
     },
   });
   if (!result.response.ok || !result.json?.session?.id) {

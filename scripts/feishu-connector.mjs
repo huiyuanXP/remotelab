@@ -43,6 +43,8 @@ const MAX_FEISHU_TEXT_LENGTH = 5000;
 const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
 const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
 const CONNECTOR_PID_FILENAME = 'connector.pid';
+const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;
+const UNICODE_EMOJI_PATTERN = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?)*)/gu;
 const REMOTELAB_SESSION_APP_ID = 'feishu';
 const APPROVE_CURRENT_CHAT_COMMANDS = new Set([
   '授权本群',
@@ -1178,10 +1180,24 @@ async function loadAssistantReply(requester, sessionId, runId, requestId) {
 }
 
 function normalizeReplyText(text) {
-  const normalized = stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n')).trim();
+  const normalized = stripOutboundEmojiArtifacts(stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n'))).trim();
   if (!normalized) return '';
   if (normalized.length <= MAX_FEISHU_TEXT_LENGTH) return normalized;
   return `${normalized.slice(0, MAX_FEISHU_TEXT_LENGTH - 16).trimEnd()}\n\n[truncated]`;
+}
+
+function stripOutboundEmojiArtifacts(text) {
+  return String(text || '')
+    .replace(UNICODE_EMOJI_PATTERN, ' ')
+    .replace(FEISHU_EMOJI_ALIAS_PATTERN, ' ')
+    .replace(/[\u200D\uFE0E\uFE0F]/g, '')
+    .replace(/\s+([,.;:!?，。！？；：、])/g, '$1')
+    .replace(/([([{（【])\s+/g, '$1')
+    .replace(/\s+([)\]}）】])/g, '$1')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 function isMainModule() {

@@ -105,13 +105,44 @@ await handleMessage(runtime, { ...summary, messageId: 'msg_test_confirmation_1' 
   },
 });
 
-assert.equal(sendCalls, 1, 'empty assistant replies should send the configured confirmation text');
-assert.deepEqual(confirmationTexts, ['[委屈]']);
+assert.equal(sendCalls, 0, 'emoji-only confirmation text should be stripped before sending');
+assert.deepEqual(confirmationTexts, []);
 assert.equal(handled.length, 1, 'confirmation sends should still be marked handled');
 assert.equal(handled[0].messageId, 'msg_test_confirmation_1');
+assert.equal(handled[0].metadata.status, 'silent_no_reply');
+assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
+assert.equal(handled[0].metadata.responseMessageId, undefined);
+
+runtime.config = { silentConfirmationText: '已收到。' };
+sendCalls = 0;
+handled.length = 0;
+
+await handleMessage(runtime, { ...summary, messageId: 'msg_test_confirmation_plain_1' }, 'test', {
+  wasMessageHandled: async () => false,
+  generateRemoteLabReply: async () => ({
+    sessionId: 'session_confirmation_plain_test_1',
+    runId: 'run_confirmation_plain_test_1',
+    requestId: 'request_confirmation_plain_test_1',
+    duplicate: false,
+    replyText: '',
+  }),
+  sendFeishuText: async (_runtime, _summary, text) => {
+    sendCalls += 1;
+    confirmationTexts.push(text);
+    return { message_id: 'out_confirmation_plain_test_1' };
+  },
+  markMessageHandled: async (_pathname, messageId, metadata) => {
+    handled.push({ messageId, metadata });
+  },
+});
+
+assert.equal(sendCalls, 1, 'plain-text confirmations should still be sent');
+assert.equal(confirmationTexts.at(-1), '已收到。');
+assert.equal(handled.length, 1, 'plain-text confirmation sends should still be marked handled');
+assert.equal(handled[0].messageId, 'msg_test_confirmation_plain_1');
 assert.equal(handled[0].metadata.status, 'confirmation_sent');
 assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
-assert.equal(handled[0].metadata.responseMessageId, 'out_confirmation_test_1');
+assert.equal(handled[0].metadata.responseMessageId, 'out_confirmation_plain_test_1');
 
 const connectorLockDir = join(tempHome, 'connector-lock');
 const claimedLock = await claimConnectorPidLock(connectorLockDir, 54321);
@@ -351,6 +382,8 @@ assert.equal(authRefreshRuntime.authCookie, 'session_token=fresh-token');
 assert.equal(normalizeReplyText('  \n\n  '), '');
 assert.equal(normalizeReplyText('  hello\r\n'), 'hello');
 assert.equal(normalizeReplyText(' <private>internal only</private> '), '');
+assert.equal(normalizeReplyText('  😺 hello [委屈]\r\n'), 'hello');
+assert.equal(normalizeReplyText('好的😺，我来处理。'), '好的，我来处理。');
 
 sendCalls = 0;
 handled.length = 0;
@@ -521,6 +554,11 @@ assert.equal(
   compileFeishuReplyText('@江虹 这是一条消息。', mentionSummary.mentions),
   '<at user_id="ou_mention_1">江虹</at> 这是一条消息。',
   'natural @displayName mentions should also compile into Feishu mention tags',
+);
+assert.equal(
+  compileFeishuReplyText('😺 @_user_1 [委屈] 这是一条消息。', mentionSummary.mentions),
+  '<at user_id="ou_mention_1">江虹</at> 这是一条消息。',
+  'outbound emoji and sticker aliases should be stripped before mention compilation',
 );
 
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-whitelist-'));

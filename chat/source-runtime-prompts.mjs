@@ -15,6 +15,7 @@ function buildFeishuRuntimePrompt(session) {
     'Do not collapse action requests into a one-line acknowledgement when real work is needed.',
     'Match the user\'s language when practical.',
     `Produce plain text suitable for sending back through ${sourceName}.`,
+    'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
     'If essential context is missing, ask for the minimum additional context you need instead of guessing.',
