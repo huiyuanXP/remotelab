@@ -1777,9 +1777,7 @@ export async function handleRequest(req, res) {
         let rewriteApplied = false;
         if (payload.rewriteWithContext && transcript) {
           try {
-            const rewritten = await rewriteVoiceTranscriptForSession(sessionId, transcript, {
-              language: 'zh-CN',
-            });
+            const rewritten = await rewriteVoiceTranscriptForSession(sessionId, transcript);
             if (typeof rewritten?.transcript === 'string' && rewritten.transcript.trim()) {
               rewriteApplied = rewritten.changed === true;
               transcript = rewritten.transcript.trim();

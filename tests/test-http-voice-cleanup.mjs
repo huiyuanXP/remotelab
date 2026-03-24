@@ -98,11 +98,19 @@ function setupTempHome() {
     join(localBin, 'fake-codex'),
     `#!/usr/bin/env node
 const prompt = process.argv.slice(2).join(' ');
+const prefersEnglishTechnicalTerms = prompt.includes('Prefer English technical/product terms, repo names, commands, paths, and identifiers when the project context strongly supports them');
+const collapsesConflictingTerms = prompt.includes('two conflicting terms for what is probably one concept');
+const allowsFluencySmoothing = prompt.includes('Allow light fluency smoothing');
+const hasMixedLanguageHint = prompt.includes("Match the speaker's natural language mix");
 let transcript = 'voice received';
 if (prompt.includes('Raw ASR transcript:') && prompt.includes('请先把轻云版那个通道再发一次') && prompt.includes('内部发布通道名字')) {
   transcript = '请先把青云版那个通道再发一次';
 } else if (prompt.includes('Raw ASR transcript:') && prompt.includes('请帮我把那个服务重起一下')) {
   transcript = '请帮我把 RemoteLab 服务重启一下';
+} else if (prompt.includes('Raw ASR transcript:') && prompt.includes('把那个润木啦 assistant cake 再激进一点') && prompt.includes('assistant check')) {
+  transcript = prefersEnglishTechnicalTerms && collapsesConflictingTerms && allowsFluencySmoothing && hasMixedLanguageHint
+    ? '把那个 RemoteLab assistant check 再激进一点'
+    : '把那个润木啦 assistant cake 再激进一点';
 }
 setTimeout(() => {
   console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-voice-cleanup-test' }));
@@ -231,6 +239,23 @@ try {
   assert.equal(contextRewriteRes.json.transcript, '请先把青云版那个通道再发一次');
   assert.equal(contextRewriteRes.json.rawTranscript, '请先把轻云版那个通道再发一次');
   assert.equal(contextRewriteRes.json.rewriteApplied, true, 'session-context transcript cleanup should use recent discussion when stable memory is not enough');
+
+  const mixedLanguageSession = await createSession(chatPort, 'RemoteLab mixed-language cleanup session');
+  const mixedSeedRes = await request(chatPort, 'POST', `/api/sessions/${mixedLanguageSession.id}/messages`, {
+    text: '这轮要改的是 RemoteLab 的 assistant check，目标是让它更激进一点。',
+  });
+  assert.ok(mixedSeedRes.status === 202 || mixedSeedRes.status === 200, 'mixed-language context seed message should be accepted');
+  assert.ok(mixedSeedRes.json?.run?.id, 'mixed-language context seed should create a run');
+  await waitForRunTerminal(chatPort, mixedSeedRes.json.run.id);
+
+  const mixedRewriteRes = await request(chatPort, 'POST', `/api/sessions/${mixedLanguageSession.id}/voice-transcriptions`, {
+    providedTranscript: '把那个润木啦 assistant cake 再激进一点',
+    rewriteWithContext: true,
+  });
+  assert.equal(mixedRewriteRes.status, 200, 'mixed-language transcript cleanup should succeed');
+  assert.equal(mixedRewriteRes.json.transcript, '把那个 RemoteLab assistant check 再激进一点');
+  assert.equal(mixedRewriteRes.json.rawTranscript, '把那个润木啦 assistant cake 再激进一点');
+  assert.equal(mixedRewriteRes.json.rewriteApplied, true, 'mixed-language transcript cleanup should infer technical terms from project and session context');
 
   const rewrittenSendRes = await request(chatPort, 'POST', `/api/sessions/${contextualSession.id}/messages`, {
     requestId: 'req-context-rewrite',

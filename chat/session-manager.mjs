@@ -147,10 +147,12 @@ const VOICE_TRANSCRIPT_REWRITE_RECENT_HISTORY_WINDOW = 24;
 const VOICE_TRANSCRIPT_REWRITE_RECENT_MESSAGE_LIMIT = 8;
 const VOICE_TRANSCRIPT_REWRITE_SESSION_SUMMARY_MAX_CHARS = 1600;
 const VOICE_TRANSCRIPT_REWRITE_RECENT_DISCUSSION_MAX_CHARS = 2400;
+const DEFAULT_VOICE_TRANSCRIPT_REWRITE_LANGUAGE_HINT = 'Match the speaker\'s natural language mix. Chinese messages may naturally include English technical/product terms, repository names, commands, file paths, and identifiers when the surrounding context supports them.';
 const VOICE_TRANSCRIPT_REWRITE_DEVELOPER_INSTRUCTIONS = [
   'You are a hidden transcript cleanup worker inside RemoteLab.',
   'Do not use tools, do not ask follow-up questions, and do not mention internal process.',
-  'Only fix likely transcription mistakes; never answer the user or continue the conversation.',
+  'Fix likely transcription mistakes, likely English technical-term substitutions, and light fluency issues, but never answer the user or continue the conversation.',
+  'When project or session context strongly supports the intended term, normalize to that term instead of preserving an obviously wrong ASR variant.',
   'Return only the final cleaned transcript text.',
 ].join(' ');
 
@@ -2086,19 +2088,23 @@ async function loadVoiceTranscriptRewriteSessionContext(sessionId, sessionMeta =
 }
 
 function buildVoiceTranscriptRewritePrompt(sessionMeta, transcript, memoryContext, sessionContext, options = {}) {
+  const languageHint = normalizeVoiceTranscriptRewriteText(options.language) || DEFAULT_VOICE_TRANSCRIPT_REWRITE_LANGUAGE_HINT;
   return [
     'You are cleaning up automatic speech recognition text for a RemoteLab chat composer.',
     'Rewrite the raw transcript into the message the speaker most likely intended.',
     'Use stable collaboration memory plus the current session summary and recent discussion to disambiguate names, terms, references, and obvious ASR mistakes.',
     'Prefer the current session context when it clearly resolves a reference.',
-    'Only correct likely transcription errors and minimal punctuation needed for readability.',
+    'Prefer English technical/product terms, repo names, commands, paths, and identifiers when the project context strongly supports them, even if the raw transcript rendered them phonetically or as odd Chinese words.',
+    'If the transcript contains suspicious out-of-domain words, duplicated near-synonyms, or two conflicting terms for what is probably one concept, treat that as a likely ASR error and resolve it to the single most plausible intended term from context.',
+    'Preserve exact casing, spelling, and formatting for supported technical names when you can infer them confidently from context.',
+    'Allow light fluency smoothing: merge broken fragments, remove accidental repetitions, fix punctuation, and make the sentence sound natural without changing meaning.',
     'Keep the same meaning, tone, and request.',
     'Do not answer the request, summarize the conversation, or add any new facts, steps, or conclusions that are not already supported by the raw transcript or the context provided here.',
     'If something is uncertain, stay close to the raw transcript instead of guessing.',
     'Keep the result concise and chat-ready.',
     'Return only the final cleaned transcript.',
     '',
-    options.language ? `Language hint: ${options.language}` : '',
+    languageHint ? `Language hint: ${languageHint}` : '',
     sessionMeta?.appName ? `Session app: ${sessionMeta.appName}` : '',
     sessionMeta?.sourceName ? `Session source: ${sessionMeta.sourceName}` : '',
     sessionMeta?.folder ? `Working folder: ${sessionMeta.folder}` : '',
@@ -2185,6 +2191,8 @@ function buildReplySelfCheckPrompt({ userMessage, assistantTurnText }) {
     'Accept only when the reply already reaches a meaningful stopping point for this turn or it clearly states the exact blocker that truly requires the user.',
     'Real blockers are explicit user-side dependencies such as missing required input, genuine ambiguity that prevents safe progress, missing access / credentials / files, or destructive / irreversible actions that need confirmation.',
     'Do not treat optional clarification, extra polish, or the assistant\'s own caution as blockers.',
+    'A reply that ends with an open offer or permission request such as "if you want I can...", "I can do that next", or "let me know and I\'ll continue" is never a meaningful stopping point by itself and must be marked "continue" unless the same reply clearly states a real blocker.',
+    'If the only remaining work is something the assistant could already do with the current context, you must choose "continue".',
     'Strong continue signals include: promising to do the next step later, asking permission to continue without a real blocker, offering to continue if the user wants, summarizing a plan while leaving the requested action undone, or stopping after analysis when execution was still possible.',
     'Do not require extra artifacts the user did not ask for. Conceptual discussion can already be complete when the user asked only for discussion.',
     'Return exactly one <hide> JSON object with keys "action", "reason", and "continuationPrompt".',
@@ -2206,13 +2214,13 @@ function parseReplySelfCheckDecision(content) {
   const hidden = extractTaggedBlock(content, 'hide');
   const parsed = parseJsonObjectText(hidden || content);
   const rawAction = String(parsed?.action || '').trim().toLowerCase();
-  const action = ['continue', 'revise', 'repair', 'retry'].includes(rawAction)
-    ? 'continue'
-    : 'accept';
+  const action = rawAction === 'accept'
+    ? 'accept'
+    : 'continue';
   return {
     action,
     reason: summarizeReplySelfCheckReason(parsed?.reason || ''),
-    continuationPrompt: String(parsed?.continuationPrompt || '').trim(),
+    continuationPrompt: action === 'continue' ? String(parsed?.continuationPrompt || '').trim() : '',
   };
 }
 
@@ -2225,6 +2233,7 @@ function buildReplySelfRepairPrompt({ userMessage, assistantTurnText, reviewDeci
     'Add only the missing completion now.',
     'Default to taking the obvious next step with the information already available.',
     'Prefer doing the work over describing what you would do.',
+    'Replace any prior open offer or permission request with the actual next action or result now.',
     'Do not ask for permission to continue.',
     'Do not mention the hidden self-check or internal review process.',
     'Do not end with another open offer such as "if you want I can continue" or "I can do that next".',

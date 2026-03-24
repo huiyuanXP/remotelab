@@ -24,9 +24,15 @@ const isRepairPrompt = prompt.includes('You are continuing the same user-facing 
 const prefersContinuationWithoutExplicitBlocker = prompt.includes('no explicit user-side blocker');
 const flagsAnalysisWithoutExecution = prompt.includes('stopping after analysis when execution was still possible');
 const prefersDoingWork = prompt.includes('Prefer doing the work over describing what you would do.');
+const hasOpenOfferHardRule = prompt.includes('A reply that ends with an open offer or permission request');
+const replacesOpenOfferWithResult = prompt.includes('Replace any prior open offer or permission request with the actual next action or result now.');
 
 let threadId = 'main-thread';
 let items = [{ type: 'agent_message', text: '我已经分析了机制问题。下一条我可以直接给你那份极短执行守则。' }];
+
+if (prompt.includes('开放式邀约场景')) {
+  items = [{ type: 'agent_message', text: '我已经整理好了，如果你愿意我现在就把最终结论直接发出来。' }];
+}
 
 if (isWorkflowPrompt) {
   threadId = 'workflow-thread';
@@ -38,6 +44,7 @@ if (isWorkflowPrompt) {
   threadId = 'review-thread';
   const isChecklistScenario = prompt.includes('todo checklist');
   const isExplicitBlockerScenario = prompt.includes('危险删除场景');
+  const isOpenOfferScenario = prompt.includes('如果你愿意我现在就把最终结论直接发出来');
   const hasVisibleAnswer = prompt.includes('真正有效答复：把缺的结论直接补齐。');
   const hasDisplayedChecklist = prompt.includes('[ ] todo checklist');
   items = [{
@@ -58,6 +65,16 @@ if (isWorkflowPrompt) {
         reason: '这是明确依赖用户确认的破坏性动作。',
         continuationPrompt: '',
       }
+      : isOpenOfferScenario
+      ? {
+        action: hasOpenOfferHardRule ? 'maybe' : 'accept',
+        reason: hasOpenOfferHardRule
+          ? '这种“如果你愿意我就继续”的结尾不算完成。'
+          : 'review prompt missed the explicit open-offer rule.',
+        continuationPrompt: hasOpenOfferHardRule
+          ? '直接把最终结论给出来，不要再征求许可。'
+          : '',
+      }
       : {
         action: prefersContinuationWithoutExplicitBlocker && flagsAnalysisWithoutExecution ? 'continue' : 'accept',
         reason: prefersContinuationWithoutExplicitBlocker && flagsAnalysisWithoutExecution
@@ -71,6 +88,7 @@ if (isWorkflowPrompt) {
 } else if (isRepairPrompt) {
   threadId = 'repair-thread';
   const isChecklistScenario = prompt.includes('todo checklist');
+  const isOpenOfferScenario = prompt.includes('如果你愿意我现在就把最终结论直接发出来');
   const hasVisibleAnswer = prompt.includes('真正有效答复：把缺的结论直接补齐。');
   const hasDisplayedChecklist = prompt.includes('[ ] todo checklist');
   items = [{
@@ -79,6 +97,10 @@ if (isWorkflowPrompt) {
       ? (hasVisibleAnswer && hasDisplayedChecklist
         ? '补上的最终结论。'
         : 'repair prompt missed part of the visible turn')
+      : isOpenOfferScenario
+      ? (replacesOpenOfferWithResult
+        ? '最终结论：默认直接做；只有在确实缺少用户输入时才停下来。'
+        : '如果你愿意我可以继续把最终结论发出来。')
       : (prefersDoingWork
         ? '极短执行守则：默认先做完再汇报；除非高风险、真歧义、缺关键信息，否则不要停；不要用“如果你愿意我下一条再做”作为结尾。'
         : '我会继续把极短执行守则补出来。'),
@@ -209,6 +231,60 @@ try {
   assert.ok(
     assistantTexts.some((text) => text.includes('极短执行守则：默认先做完再汇报')),
     'history should include the automatically continued reply',
+  );
+
+  const openOfferSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Open Offer', {
+    group: 'RemoteLab',
+    description: 'Verify self-check force-continues replies that stop at an open offer like “if you want I can…”.',
+  });
+
+  await sendMessage(openOfferSession.id, '开放式邀约场景：别停在“如果你愿意”，直接把最终结论给出来。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+
+  await waitFor(
+    async () => {
+      const openOfferHistory = await getHistory(openOfferSession.id);
+      return openOfferHistory.some((event) => event.type === 'message' && event.role === 'assistant' && (event.content || '').includes('最终结论：默认直接做'));
+    },
+    'self-check should auto-continue replies that stop at an open offer',
+  );
+
+  await waitFor(
+    async () => (await getSession(openOfferSession.id))?.activity?.run?.state === 'idle',
+    'open-offer session should become idle after the automatic follow-up reply',
+  );
+
+  const openOfferHistory = await getHistory(openOfferSession.id);
+  const openOfferStatusTexts = openOfferHistory
+    .filter((event) => event.type === 'status')
+    .map((event) => event.content || '');
+  const openOfferAssistantTexts = openOfferHistory
+    .filter((event) => event.type === 'message' && event.role === 'assistant')
+    .map((event) => event.content || '');
+
+  assert.ok(
+    openOfferStatusTexts.includes('Assistant self-check: reviewing the latest reply for early stop…'),
+    'open-offer scenario should still run the self-check reviewer',
+  );
+  assert.ok(
+    openOfferStatusTexts.some((text) => text.startsWith('Assistant self-check: continuing automatically — ')),
+    'open-offer scenario should trigger automatic continuation',
+  );
+  assert.ok(
+    openOfferAssistantTexts.some((text) => text.includes('如果你愿意我现在就把最终结论直接发出来')),
+    'history should keep the original open-offer reply',
+  );
+  assert.ok(
+    openOfferAssistantTexts.some((text) => text.includes('最终结论：默认直接做')),
+    'history should include the replacement reply with the actual result',
+  );
+  assert.equal(
+    openOfferAssistantTexts.some((text) => text.includes('如果你愿意我可以继续把最终结论发出来')),
+    false,
+    'repair continuation should replace the open offer instead of repeating it',
   );
 
   const blockerSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Explicit Blocker', {
