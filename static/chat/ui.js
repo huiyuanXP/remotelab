@@ -1,3 +1,24 @@
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
+function formatFileChangeTypeLabel(kind) {
+  switch (kind) {
+    case "add":
+      return t("ui.fileChange.add");
+    case "edit":
+      return t("ui.fileChange.edit");
+    case "update":
+      return t("ui.fileChange.update");
+    case "updated":
+      return t("ui.fileChange.updated");
+    case "delete":
+      return t("ui.fileChange.delete");
+    default:
+      return kind;
+  }
+}
+
 function renderUiIcon(name, className = "") {
   return window.RemoteLabIcons?.render(name, { className }) || "";
 }
@@ -285,7 +306,7 @@ function createToolCard(evt) {
 
   const header = document.createElement("div");
   header.className = "tool-header";
-  header.innerHTML = `<span class="tool-name">${esc(evt.toolName || "tool")}</span>
+  header.innerHTML = `<span class="tool-name">${esc(evt.toolName || t("ui.toolFallback"))}</span>
     <span class="tool-toggle">${renderUiIcon("chevron-right")}</span>`;
 
   const body = document.createElement("div");
@@ -344,9 +365,9 @@ function renderToolResultInto(container, evt) {
   const label = document.createElement("div");
   label.className = "tool-result-label";
   label.innerHTML =
-    "Result" +
+    esc(t("ui.toolResult")) +
     (evt.exitCode !== undefined
-      ? `<span class="exit-code ${evt.exitCode === 0 ? "ok" : "fail"}">${evt.exitCode === 0 ? "exit 0" : "exit " + evt.exitCode}</span>`
+      ? `<span class="exit-code ${evt.exitCode === 0 ? "ok" : "fail"}">${esc(t("ui.toolExitCode", { code: evt.exitCode }))}</span>`
       : "");
   const pre = document.createElement("pre");
   pre.className = "tool-result";
@@ -370,8 +391,9 @@ function renderFileChangeInto(container, evt) {
   const pathMarkup = filePath && isLikelyLocalEditorHref(filePath)
     ? `<a class="file-path" href="${esc(filePath)}">${esc(filePath)}</a>`
     : `<span class="file-path">${esc(filePath)}</span>`;
+  const changeLabel = formatFileChangeTypeLabel(kind);
   div.innerHTML = `${pathMarkup}
-    <span class="change-type ${kind}">${kind}</span>`;
+    <span class="change-type ${kind}">${esc(changeLabel)}</span>`;
   enhanceRenderedContentLinks(div);
   container.appendChild(div);
   return div;
@@ -408,7 +430,7 @@ function renderManagerContextInto(container, evt) {
 
   const label = document.createElement("div");
   label.className = "msg-system";
-  label.textContent = "Manager context";
+  label.textContent = t("ui.managerContext");
   wrap.appendChild(label);
 
   const body = document.createElement("div");
@@ -451,9 +473,9 @@ function collectHiddenBlockToolNames(events) {
 function buildLoadedHiddenBlockLabel(events) {
   const toolNames = collectHiddenBlockToolNames(events);
   if (toolNames.length > 0) {
-    return `Thought · used ${toolNames.join(", ")}`;
+    return t("thinking.usedTools", { tools: toolNames.join(", ") });
   }
-  return "Thought";
+  return t("thinking.done");
 }
 
 function createDeferredThinkingBlock(label, { collapsed = true } = {}) {
@@ -463,7 +485,7 @@ function createDeferredThinkingBlock(label, { collapsed = true } = {}) {
   const header = document.createElement("div");
   header.className = "thinking-header";
   header.innerHTML = `${renderUiIcon("gear", "thinking-icon")}
-    <span class="thinking-label">${esc(label || "Thinking…")}</span>
+    <span class="thinking-label">${esc(label || t("thinking.active"))}</span>
     <span class="thinking-chevron">${renderUiIcon("chevron-down")}</span>`;
 
   const body = document.createElement("div");
@@ -635,7 +657,7 @@ function getThinkingBlockLabel(evt) {
   if (typeof evt?.label === "string" && evt.label.trim()) {
     return evt.label;
   }
-  return isRunningThinkingBlockEvent(evt) ? "Thinking…" : "Thought";
+  return isRunningThinkingBlockEvent(evt) ? t("thinking.active") : t("thinking.done");
 }
 
 function findRenderedThinkingBlock(seq) {
@@ -767,7 +789,7 @@ function renderContextBarrierInto(container, evt) {
   if (!container) return null;
   const div = document.createElement("div");
   div.className = "context-barrier";
-  div.textContent = evt.content || "Older messages above this marker are no longer in live context.";
+  div.textContent = evt.content || t("context.barrier");
   container.appendChild(div);
   return div;
 }
@@ -813,11 +835,18 @@ function updateContextDisplay(contextSize, contextWindowSize) {
   if (contextSize > 0 && currentSessionId) {
     const percent = getContextPercent(contextSize, contextWindowSize);
     contextTokens.textContent = percent !== null
-      ? `${formatCompactTokens(contextSize)} live · ${formatContextPercent(percent)}`
-      : `${formatCompactTokens(contextSize)} live`;
+      ? t("context.liveShort", {
+        tokens: formatCompactTokens(contextSize),
+        percent: formatContextPercent(percent),
+      })
+      : t("context.liveOnly", { tokens: formatCompactTokens(contextSize) });
     contextTokens.title = percent !== null
-      ? `Live context: ${contextSize.toLocaleString()} / ${contextWindowSize.toLocaleString()} (${formatContextPercent(percent, { precise: true })})`
-      : `Live context: ${contextSize.toLocaleString()}`;
+      ? t("context.liveTitleWithWindow", {
+        context: contextSize.toLocaleString(),
+        window: contextWindowSize.toLocaleString(),
+        percent: formatContextPercent(percent, { precise: true }),
+      })
+      : t("context.liveTitle", { context: contextSize.toLocaleString() });
     contextTokens.style.display = "";
     compactBtn.style.display = "";
     dropToolsBtn.style.display = "";
@@ -833,16 +862,16 @@ function renderUsageInto(container, evt, { updateContext = false } = {}) {
   const output = evt.outputTokens || 0;
   const div = document.createElement("div");
   div.className = "usage-info";
-  const parts = [`${formatCompactTokens(contextSize)} live context`];
-  if (percent !== null) parts.push(`${formatContextPercent(percent, { precise: true })} window`);
-  if (output > 0) parts.push(`${formatCompactTokens(output)} out`);
+  const parts = [t("context.usage.live", { tokens: formatCompactTokens(contextSize) })];
+  if (percent !== null) parts.push(t("context.usage.window", { percent: formatContextPercent(percent, { precise: true }) }));
+  if (output > 0) parts.push(t("context.usage.output", { tokens: formatCompactTokens(output) }));
   div.textContent = parts.join(" · ");
-  const hover = [`Live context: ${contextSize.toLocaleString()}`];
-  if (contextWindowSize > 0) hover.push(`Context window: ${contextWindowSize.toLocaleString()}`);
+  const hover = [t("context.liveTitle", { context: contextSize.toLocaleString() })];
+  if (contextWindowSize > 0) hover.push(t("context.hover.window", { window: contextWindowSize.toLocaleString() }));
   if (Number.isFinite(evt?.inputTokens) && evt.inputTokens !== contextSize) {
-    hover.push(`Raw turn input: ${evt.inputTokens.toLocaleString()}`);
+    hover.push(t("context.hover.rawInput", { tokens: evt.inputTokens.toLocaleString() }));
   }
-  if (output > 0) hover.push(`Turn output: ${output.toLocaleString()}`);
+  if (output > 0) hover.push(t("context.hover.output", { tokens: output.toLocaleString() }));
   div.title = hover.join("\n");
   container.appendChild(div);
   if (updateContext) {

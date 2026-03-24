@@ -1,54 +1,55 @@
 "use strict";
 
 (function attachRemoteLabSessionStateModel(root) {
+  const t = root.remotelabT || ((key) => key);
   const workflowPrioritySpecs = {
     high: {
       key: "high",
-      label: "High",
+      label: t("workflow.priority.high"),
       rank: 3,
       className: "workflow-priority-high",
-      title: "Needs user attention soon.",
+      title: t("workflow.priority.highTitle"),
     },
     medium: {
       key: "medium",
-      label: "Medium",
+      label: t("workflow.priority.medium"),
       rank: 2,
       className: "workflow-priority-medium",
-      title: "Worth checking soon, but not urgent.",
+      title: t("workflow.priority.mediumTitle"),
     },
     low: {
       key: "low",
-      label: "Low",
+      label: t("workflow.priority.low"),
       rank: 1,
       className: "workflow-priority-low",
-      title: "Safe to leave for later.",
+      title: t("workflow.priority.lowTitle"),
     },
   };
 
   const workflowStatusSpecs = {
     waiting_user: {
       key: "waiting_user",
-      label: "waiting",
+      label: t("workflow.status.waiting"),
       className: "status-waiting-user",
       dotClass: "",
       itemClass: "",
-      title: "Waiting on user input",
+      title: t("workflow.status.waitingTitle"),
     },
     done: {
       key: "done",
-      label: "done",
+      label: t("workflow.status.done"),
       className: "status-done",
       dotClass: "",
       itemClass: "",
-      title: "Current task complete",
+      title: t("workflow.status.doneTitle"),
     },
     parked: {
       key: "parked",
-      label: "parked",
+      label: t("workflow.status.parked"),
       className: "status-parked",
       dotClass: "",
       itemClass: "",
-      title: "Parked for later",
+      title: t("workflow.status.parkedTitle"),
     },
   };
 
@@ -209,7 +210,7 @@
     }
 
     const indicators = getSessionStatusSummary(session, options).indicators;
-    return indicators[0] || createStatus("idle", "idle");
+    return indicators[0] || createStatus("idle", t("status.idle"));
   }
 
   function getSessionStatusSummary(session, { includeToolFallback = false } = {}) {
@@ -217,45 +218,48 @@
     const indicators = [];
 
     if (activity.run.state === "running") {
-      indicators.push(createStatus("running", "running", "status-running", "running"));
+      indicators.push(createStatus("running", t("status.running"), "status-running", "running"));
     }
 
     if (activity.queue.state === "queued") {
       indicators.push(createStatus(
         "queued",
-        "queued",
+        t("workflow.status.queued"),
         "status-queued",
         "queued",
         "",
         activity.queue.count > 0
-          ? `${activity.queue.count} follow-up${activity.queue.count === 1 ? "" : "s"} queued`
+          ? t("workflow.status.queuedTitle", {
+            count: activity.queue.count,
+            suffix: activity.queue.count === 1 ? "" : "s",
+          })
           : "",
       ));
     }
 
     if (activity.compact.state === "pending") {
-      indicators.push(createStatus("compacting", "compacting", "status-compacting", "compacting"));
+      indicators.push(createStatus("compacting", t("workflow.status.compacting"), "status-compacting", "compacting"));
     }
 
     if (activity.rename.state === "pending") {
-      indicators.push(createStatus("renaming", "renaming", "status-renaming", "renaming"));
+      indicators.push(createStatus("renaming", t("workflow.status.renaming"), "status-renaming", "renaming"));
     }
 
     if (activity.rename.state === "failed") {
       indicators.push(createStatus(
         "rename-failed",
-        "rename failed",
+        t("workflow.status.renameFailed"),
         "status-rename-failed",
         "rename-failed",
         "",
-        activity.rename.error || "Session rename failed",
+        activity.rename.error || t("workflow.status.renameFailedTitle"),
       ));
     }
 
     const primary = indicators[0] || (
       session?.tool && includeToolFallback
         ? createStatus("tool", session.tool)
-        : createStatus("idle", "idle")
+        : createStatus("idle", t("status.idle"))
     );
 
     return {
@@ -287,11 +291,11 @@
     if (!hasSessionUnreadUpdate(session)) return null;
     return createStatus(
       "unread",
-      "new",
+      t("workflow.status.unread"),
       "status-unread",
       "",
       "",
-      "Updated since you last reviewed this session",
+      t("workflow.status.unreadTitle"),
     );
   }
 

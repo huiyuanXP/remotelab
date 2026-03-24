@@ -4,6 +4,7 @@
   const nonce = document.currentScript?.nonce || "";
   const splitAssetPaths = [
     "/marked.min.js",
+    "/chat/i18n.js",
     "/chat/session-state-model.js",
     "/chat/icons.js",
     "/chat/bootstrap.js",

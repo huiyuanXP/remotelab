@@ -1,4 +1,7 @@
 const gesturePill = document.getElementById("gesturePill");
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
 
 const SWIPE_GESTURE_LOCK_DISTANCE_PX = 18;
 const SWIPE_GESTURE_TRIGGER_DISTANCE_PX = 64;
@@ -46,14 +49,14 @@ function getSwipeGestureAction(direction) {
   if (direction === "right") {
     return {
       pillSide: "left",
-      label: "Sessions",
+      label: t("gestures.sessions"),
       run: () => Promise.resolve(openSessionsSidebar()),
     };
   }
   if (direction === "left") {
     return {
       pillSide: "right",
-      label: "New Session",
+      label: t("gestures.newSession"),
       run: () => Promise.resolve(createNewSessionShortcut()),
     };
   }

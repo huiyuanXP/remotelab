@@ -163,12 +163,14 @@ try {
     const createVisitorResponse = await request(port, 'POST', '/api/visitors', {
       name: 'Judge iPhone',
       appId: videoCutAppId,
+      language: 'zh-CN',
     }, {
       Cookie: ownerCookie,
     });
     assert.equal(createVisitorResponse.status, 201, 'owner should be able to create a visitor preset');
     assert.match(createVisitorResponse.json?.visitor?.id || '', /^visitor_[a-f0-9]+$/);
     assert.match(createVisitorResponse.json?.visitor?.shareToken || '', /^visit_[a-f0-9]+$/);
+    assert.equal(createVisitorResponse.json?.visitor?.language, 'zh-CN');
 
     const visitorListResponse = await request(port, 'GET', '/api/visitors', null, {
       Cookie: ownerCookie,
@@ -193,6 +195,7 @@ try {
     assert.equal(visitorAuth.json?.role, 'visitor');
     assert.equal(visitorAuth.json?.appId, videoCutAppId);
     assert.equal(visitorAuth.json?.visitorId, createVisitorResponse.json.visitor.id);
+    assert.equal(visitorAuth.json?.preferredLanguage, 'zh-CN');
 
     const mixedCookie = `${ownerCookie}; ${visitorCookie}`;
     const mixedOwnerAuth = await request(port, 'GET', '/api/auth/me', null, {

@@ -1,4 +1,8 @@
 // ---- WebSocket ----
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
 function renderRealtimeIcon(name, className = "") {
   return window.RemoteLabIcons?.render(name, { className }) || "";
 }
@@ -436,13 +440,13 @@ function handleWsMessage(msg) {
 function updateStatus(connState, session = getCurrentSession()) {
   if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) {
     statusDot.className = "status-dot";
-    statusText.textContent = "read-only snapshot";
+    statusText.textContent = t("status.readOnlySnapshot");
     msgInput.disabled = true;
     msgInput.readOnly = true;
-    msgInput.placeholder = "Read-only snapshot";
+    msgInput.placeholder = t("input.placeholder.readOnlySnapshot");
     sendBtn.style.display = "";
     sendBtn.disabled = true;
-    sendBtn.title = "Read-only";
+    sendBtn.title = t("action.readOnly");
     cancelBtn.style.display = "none";
     imgBtn.disabled = true;
     inlineToolSelect.disabled = true;
@@ -462,12 +466,12 @@ function updateStatus(connState, session = getCurrentSession()) {
   const archived = session?.archived === true;
   if (connState === "disconnected") {
     statusDot.className = "status-dot";
-    statusText.textContent = "Reconnecting…";
+    statusText.textContent = t("status.reconnecting");
     msgInput.disabled = !currentSessionId || archived;
-    msgInput.placeholder = archived ? "Archived session — restore to continue" : "Message...";
+    msgInput.placeholder = archived ? t("input.placeholder.archived") : t("input.placeholder.message");
     sendBtn.style.display = "";
     sendBtn.disabled = !currentSessionId || archived;
-    sendBtn.title = "Send";
+    sendBtn.title = t("action.send");
     if (typeof syncComposerVoiceCleanupToggle === "function") {
       syncComposerVoiceCleanupToggle();
     }
@@ -481,28 +485,28 @@ function updateStatus(connState, session = getCurrentSession()) {
   const showArchivedOnly = archived && visualStatus.key === "idle";
   if (showArchivedOnly) {
     statusDot.className = "status-dot";
-    statusText.textContent = "archived";
+    statusText.textContent = t("status.archived");
   } else if (visualStatus.label) {
     statusDot.className = visualStatus.dotClass
       ? `status-dot ${visualStatus.dotClass}`
       : "status-dot";
     statusText.textContent = archived
-      ? `${visualStatus.label} · archived`
+      ? `${visualStatus.label} · ${t("status.archived")}`
       : visualStatus.label;
   } else {
     statusDot.className = "status-dot";
-    statusText.textContent = currentSessionId ? "idle" : "connected";
+    statusText.textContent = currentSessionId ? t("status.idle") : t("status.connected");
   }
   const hasSession = !!currentSessionId;
   msgInput.disabled = !hasSession || archived;
   msgInput.placeholder = archived
-    ? "Archived session — restore to continue"
+    ? t("input.placeholder.archived")
     : inputBusy
-      ? "Queue follow-up..."
-      : "Message...";
+      ? t("input.placeholder.queueFollowUp")
+      : t("input.placeholder.message");
   sendBtn.style.display = "";
   sendBtn.disabled = !hasSession || archived;
-  sendBtn.title = inputBusy ? "Queue follow-up" : "Send";
+  sendBtn.title = inputBusy ? t("action.queueFollowUp") : t("action.send");
   cancelBtn.style.display = runIsActive && hasSession ? "flex" : "none";
   imgBtn.disabled = !hasSession || archived;
   inlineToolSelect.disabled = visitorMode || archived;

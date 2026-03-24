@@ -1,0 +1,700 @@
+"use strict";
+
+(function attachRemoteLabI18n(root) {
+  const UI_LANGUAGE_STORAGE_KEY = "remotelab.uiLanguage";
+  const AUTO_UI_LANGUAGE = "auto";
+  const DEFAULT_UI_LANGUAGE = "en";
+
+  const translations = {
+    en: {
+      "app.chatTitle": "RemoteLab Chat",
+      "nav.sessions": "Sessions",
+      "nav.settings": "Settings",
+      "action.fork": "Fork",
+      "action.share": "Share",
+      "action.reloadFrontend": "Reload latest frontend",
+      "action.close": "Close",
+      "action.send": "Send",
+      "action.stop": "Stop",
+      "action.readOnly": "Read-only",
+      "action.queueFollowUp": "Queue follow-up",
+      "action.attachFiles": "Attach files",
+      "action.removeAttachment": "Remove attachment",
+      "action.compact": "Compact",
+      "action.dropTools": "Drop tools",
+      "action.save": "Save",
+      "action.copy": "Copy",
+      "action.copied": "Copied",
+      "action.copyFailed": "Copy failed",
+      "action.rename": "Rename",
+      "action.archive": "Archive",
+      "action.restore": "Restore",
+      "action.pin": "Pin",
+      "action.unpin": "Unpin",
+      "action.delete": "Delete",
+      "action.copyShareLink": "Copy Share Link",
+      "status.disconnected": "disconnected",
+      "status.reconnecting": "Reconnecting…",
+      "status.connected": "connected",
+      "status.idle": "idle",
+      "status.running": "running",
+      "status.archived": "archived",
+      "status.readOnlySnapshot": "read-only snapshot",
+      "status.frontendUpdateReady": "Frontend update available — tap to reload",
+      "status.frontendReloadLatest": "Reload latest frontend",
+      "input.placeholder.message": "Message...",
+      "input.placeholder.archived": "Archived session — restore to continue",
+      "input.placeholder.queueFollowUp": "Queue follow-up...",
+      "input.placeholder.readOnlySnapshot": "Read-only snapshot",
+      "emptyState.title": "RemoteLab Chat",
+      "emptyState.body": "Select or create a session from the sidebar, then start chatting with your AI coding tool.",
+      "footer.openSource": "Open source on GitHub ↗",
+      "footer.tagline": "Built with AI & ❤️",
+      "sidebar.buildLabel": "Build {label}",
+      "sidebar.sortList": "Sort List",
+      "sidebar.newSession": "+ New Session",
+      "sidebar.filter.origin": "Filter sessions by origin",
+      "sidebar.filter.app": "Filter sessions by app",
+      "sidebar.filter.user": "Filter sessions by user",
+      "sidebar.filter.allOrigins": "All Origins ({count})",
+      "sidebar.filter.allApps": "All Apps ({count})",
+      "sidebar.filter.allUsers": "All Users ({count})",
+      "sidebar.filter.admin": "Admin ({count})",
+      "sidebar.filter.userCount": "{name} ({count})",
+      "sidebar.filter.source.chat": "Chat UI",
+      "sidebar.filter.source.bots": "Bots",
+      "sidebar.filter.source.automation": "Automation",
+      "sidebar.pinned": "Pinned",
+      "sidebar.archive": "Archive",
+      "sidebar.loadingArchived": "Loading archived sessions…",
+      "sidebar.loadArchived": "Load archived sessions…",
+      "sidebar.noArchived": "No archived sessions",
+      "sidebar.noSessions": "No sessions yet",
+      "sidebar.noSessionsFiltered": "No sessions match the current filters",
+      "settings.language.title": "Language",
+      "settings.language.note": "Auto follows the current browser language. You can override it here for debugging, and dedicated visitor links can keep their own language preference.",
+      "settings.language.ownerAriaLabel": "Choose interface language",
+      "settings.language.optionAuto": "Auto (follow browser)",
+      "settings.language.optionZhCN": "简体中文",
+      "settings.language.optionEn": "English",
+      "settings.language.ownerStatusAuto": "Auto is active. This browser follows its current language unless a dedicated visitor link sets its own preference.",
+      "settings.language.ownerStatusOverride": "Language override saved for this browser. The interface reloads immediately after changes.",
+      "settings.users.title": "Users",
+      "settings.users.note": "Create extra identities, choose which apps they can use, pick their language, and seed a first session when they are empty.",
+      "settings.users.namePlaceholder": "User name, e.g. Video Editor",
+      "settings.users.defaultAppAriaLabel": "Choose default app for user",
+      "settings.users.languageAriaLabel": "Choose preferred language for user",
+      "settings.users.create": "Create User",
+      "settings.users.loading": "Loading users…",
+      "settings.users.defaultStatus": "Admin stays the default view. New users get a starter session automatically.",
+      "settings.users.allowedApps": "Allowed apps",
+      "settings.users.createFirstApp": "Create an app first.",
+      "settings.users.needAppBeforeCreate": "Create at least one app before adding a user.",
+      "settings.users.chooseOneApp": "Choose at least one app.",
+      "settings.users.chooseToolFirst": "Choose a tool first.",
+      "settings.users.chooseAtLeastOneApp": "Choose at least one app",
+      "settings.users.creating": "Creating user…",
+      "settings.users.created": "Created {name}. Copy a share link below when you are ready.",
+      "settings.users.createFailed": "Failed to create user.",
+      "settings.users.ownerOnly": "Users are only available to the owner.",
+      "settings.users.noneYet": "No extra users yet. Admin stays the default view.",
+      "settings.users.shareReadyNote": "Changes save immediately. Copy the share link when you are ready to send this user out.",
+      "settings.users.defaultAppUpdated": "Default app updated.",
+      "settings.users.allowedAppsUpdated": "Allowed apps updated.",
+      "settings.users.saved": "Saved.",
+      "settings.users.savedName": "Saved {name}.",
+      "settings.users.savePending": "Saving…",
+      "settings.users.saveFailed": "Failed to save user.",
+      "settings.users.sharePreparing": "Preparing share link…",
+      "settings.users.shareCopied": "Share link copied.",
+      "settings.users.shareFailed": "Failed to prepare share link.",
+      "settings.users.deleting": "Deleting…",
+      "settings.users.deleteFailed": "Failed to delete user.",
+      "settings.users.notFound": "User not found.",
+      "settings.users.chooseShareableDefaultApp": "Choose a shareable default app first.",
+      "settings.users.buildShareFailed": "Failed to build share link.",
+      "settings.users.newUserFallback": "New user",
+      "settings.users.summary.one": "{count} app · default {name}",
+      "settings.users.summary.other": "{count} apps · default {name}",
+      "settings.users.allowedAppsList": "Allowed apps: {apps}",
+      "settings.users.noAppsSelected": "No apps selected yet.",
+      "settings.users.defaultAppFallback": "Chat",
+      "settings.apps.title": "Apps",
+      "settings.apps.note": "Define the reusable app layer. Chat stays lightweight; other apps can attach a first assistant message and system prompt.",
+      "settings.apps.namePlaceholder": "App name, e.g. VideoCut",
+      "settings.apps.toolAriaLabel": "Choose tool for app",
+      "settings.apps.welcomePlaceholder": "Optional first assistant message shown when a new session starts",
+      "settings.apps.systemPromptPlaceholder": "Optional system prompt for this app",
+      "settings.apps.create": "Create App",
+      "settings.apps.loading": "Loading apps…",
+      "settings.apps.defaultStatus": "Create a reusable app here, then start sessions under it from the sidebar filter.",
+      "settings.apps.nameRequired": "Name is required.",
+      "settings.apps.creating": "Creating app…",
+      "settings.apps.created": "Created {name}.",
+      "settings.apps.createdShare": "Created {name}. Use Copy Link below to share it.",
+      "settings.apps.createFailed": "Failed to create app.",
+      "settings.apps.ownerOnly": "Apps are only available to the owner.",
+      "settings.apps.none": "No apps yet.",
+      "settings.apps.noToolsAvailable": "No tools available",
+      "settings.apps.untitled": "Untitled App",
+      "settings.apps.editableHint": "Custom apps are editable here.",
+      "settings.apps.saveFailed": "Failed to save app.",
+      "settings.apps.deleteFailed": "Failed to delete app.",
+      "settings.apps.meta.defaultTool": "Default tool · {tool}",
+      "settings.apps.toolNotSet": "not set",
+      "settings.apps.label.internalStarter": "Internal starter app. Opens owner sessions only.",
+      "settings.apps.label.shareableApp": "Shareable app.",
+      "settings.apps.label.defaultConversation": "Default normal conversation app for everyday RemoteLab sessions.",
+      "settings.apps.kind.builtin": "Built-in",
+      "settings.apps.kind.custom": "Custom",
+      "settings.apps.kind.internal": "Internal",
+      "settings.apps.kind.shareable": "Shareable",
+      "settings.apps.copyLink": "Copy Link",
+      "settings.apps.copyVisitorLink": "Copy Visitor Link",
+      "settings.apps.addTool": "Add Tool",
+      "settings.apps.addToolMore": "+ Add more…",
+      "settings.apps.delete": "Delete",
+      "modal.addAgentsTitle": "Add more agents",
+      "modal.addAgentsLead": "RemoteLab is not limited to the builtin agents. For simple tools, save a lightweight config here and the picker refreshes immediately. If you need custom parsing or runtime behavior, use the advanced path below.",
+      "modal.quickAddTitle": "Quick add",
+      "modal.saveRefresh": "Save & refresh",
+      "modal.quickAddBody": "Use this for wrappers or simple command-based agents that speak an existing runtime family and accept that family's core prompt/model/thinking flags. We save the config for you and refresh the picker without restarting the service.",
+      "modal.name": "Name",
+      "modal.command": "Command",
+      "modal.runtimeFamily": "Runtime family",
+      "modal.runtimeFamily.claude": "Claude-style stream JSON",
+      "modal.runtimeFamily.codex": "Codex JSON",
+      "modal.models": "Models",
+      "modal.modelsPlaceholder": "One model per line. Use `model-id | Label` or just `model-id`.\nExample:\ngpt-5-codex | GPT-5 Codex\ngpt-5-mini",
+      "modal.thinkingMode": "Thinking mode",
+      "modal.thinking.toggle": "Toggle",
+      "modal.thinking.levels": "Levels",
+      "modal.thinking.none": "None",
+      "modal.thinkingLevels": "Thinking levels",
+      "modal.internalIdentity": "Internal identity",
+      "modal.internalIdentityNote": "Derived automatically from the command. No separate ID field in simple mode.",
+      "modal.thinkingModeNote": "Use `none` if the tool has no model-side thinking control. For Claude-family tools, use `toggle`; for Codex-family tools, use `levels`. If the command needs different CLI flags, use the advanced path below.",
+      "modal.advancedTitle": "Advanced provider code",
+      "modal.copyBasePrompt": "Copy base prompt",
+      "modal.advancedBody": "If you need models, thinking controls, or custom runtime behavior, open a new session in the RemoteLab repo and paste this prompt.",
+      "modal.advancedBullet1": "It asks the agent to decide whether simple config is enough or whether full provider code is needed.",
+      "modal.advancedBullet2": "It points the agent at the provider architecture notes and keeps the changes minimal.",
+      "modal.close": "Close",
+      "login.tagline": "Sign in to continue",
+      "login.error": "Invalid credentials. Please try again.",
+      "login.username": "Username",
+      "login.usernamePlaceholder": "Enter username",
+      "login.password": "Password",
+      "login.passwordPlaceholder": "Enter password",
+      "login.signIn": "Sign In",
+      "login.accessToken": "Access Token",
+      "login.tokenPlaceholder": "Paste your token",
+      "login.switch.useToken": "Use access token instead",
+      "login.switch.usePassword": "Use username & password",
+      "queue.timestamp.default": "Queued",
+      "queue.timestamp.withTime": "Queued {time}",
+      "queue.single": "1 follow-up queued",
+      "queue.multiple": "{count} follow-ups queued",
+      "queue.note.afterRun": "Will send automatically after the current run",
+      "queue.note.preparing": "Preparing the next turn",
+      "queue.attachmentOnly": "(attachment)",
+      "queue.attachments": "Attachments: {names}",
+      "queue.olderHidden.one": "1 older queued follow-up hidden",
+      "queue.olderHidden.multiple": "{count} older queued follow-ups hidden",
+      "session.defaultName": "Session",
+      "session.messages": "{count} msg{suffix}",
+      "session.messagesTitle": "Messages in this session",
+      "session.scope.source": "Session source",
+      "session.scope.app": "Session app",
+      "session.scope.appLabel": "App: {name}",
+      "session.scope.owner": "Owner",
+      "session.scope.visitor": "Visitor",
+      "session.scope.visitorNamed": "Visitor: {name}",
+      "session.scope.ownerTitle": "Session owner scope",
+      "thinking.active": "Thinking…",
+      "thinking.done": "Thought",
+      "thinking.usedTools": "Thought · used {tools}",
+      "copy.code": "Copy code",
+      "ui.managerContext": "Manager context",
+      "ui.toolFallback": "tool",
+      "ui.toolResult": "Result",
+      "ui.toolExitCode": "exit {code}",
+      "ui.fileChange.add": "add",
+      "ui.fileChange.edit": "edit",
+      "ui.fileChange.update": "update",
+      "ui.fileChange.updated": "updated",
+      "ui.fileChange.delete": "delete",
+      "context.barrier": "Older messages above this marker are no longer in live context.",
+      "context.liveShort": "{tokens} live · {percent}",
+      "context.liveOnly": "{tokens} live",
+      "context.liveTitle": "Live context: {context}",
+      "context.liveTitleWithWindow": "Live context: {context} / {window} ({percent})",
+      "context.usage.live": "{tokens} live context",
+      "context.usage.window": "{percent} window",
+      "context.usage.output": "{tokens} out",
+      "context.hover.window": "Context window: {window}",
+      "context.hover.rawInput": "Raw turn input: {tokens}",
+      "context.hover.output": "Turn output: {tokens}",
+      "compose.voiceCleanup": "Voice cleanup",
+      "compose.voiceCleanup.on": "On: clean voice transcripts with the current session before sending",
+      "compose.voiceCleanup.off": "Off: send immediately without the hidden transcript cleanup step",
+      "compose.pending.cleaningWithText": "Cleaning transcript before send…",
+      "compose.pending.cleaning": "Cleaning transcript…",
+      "compose.pending.uploading": "Uploading attachment…",
+      "compose.pending.sendingAttachment": "Sending attachment…",
+      "compose.pending.sending": "Sending…",
+      "tooling.thinking": "Thinking",
+      "tooling.defaultModel": "default",
+      "gestures.sessions": "Sessions",
+      "gestures.newSession": "New Session",
+      "workflow.priority.high": "High",
+      "workflow.priority.highTitle": "Needs user attention soon.",
+      "workflow.priority.medium": "Medium",
+      "workflow.priority.mediumTitle": "Worth checking soon, but not urgent.",
+      "workflow.priority.low": "Low",
+      "workflow.priority.lowTitle": "Safe to leave for later.",
+      "workflow.status.waiting": "waiting",
+      "workflow.status.waitingTitle": "Waiting on user input",
+      "workflow.status.done": "done",
+      "workflow.status.doneTitle": "Current task complete",
+      "workflow.status.parked": "parked",
+      "workflow.status.parkedTitle": "Parked for later",
+      "workflow.status.queued": "queued",
+      "workflow.status.queuedTitle": "{count} follow-up{suffix} queued",
+      "workflow.status.compacting": "compacting",
+      "workflow.status.renaming": "renaming",
+      "workflow.status.renameFailed": "rename failed",
+      "workflow.status.renameFailedTitle": "Session rename failed",
+      "workflow.status.unread": "new",
+      "workflow.status.unreadTitle": "Updated since you last reviewed this session",
+    },
+    "zh-CN": {
+      "app.chatTitle": "RemoteLab 对话",
+      "nav.sessions": "会话",
+      "nav.settings": "设置",
+      "action.fork": "分叉",
+      "action.share": "分享",
+      "action.reloadFrontend": "刷新到最新前端",
+      "action.close": "关闭",
+      "action.send": "发送",
+      "action.stop": "停止",
+      "action.readOnly": "只读",
+      "action.queueFollowUp": "排队追问",
+      "action.attachFiles": "添加文件",
+      "action.removeAttachment": "移除附件",
+      "action.compact": "压缩上下文",
+      "action.dropTools": "移除工具结果",
+      "action.save": "保存",
+      "action.copy": "复制",
+      "action.copied": "已复制",
+      "action.copyFailed": "复制失败",
+      "action.rename": "重命名",
+      "action.archive": "归档",
+      "action.restore": "恢复",
+      "action.pin": "置顶",
+      "action.unpin": "取消置顶",
+      "action.delete": "删除",
+      "action.copyShareLink": "复制分享链接",
+      "status.disconnected": "未连接",
+      "status.reconnecting": "重连中…",
+      "status.connected": "已连接",
+      "status.idle": "空闲",
+      "status.running": "运行中",
+      "status.archived": "已归档",
+      "status.readOnlySnapshot": "只读快照",
+      "status.frontendUpdateReady": "有新前端版本，点这里刷新",
+      "status.frontendReloadLatest": "刷新到最新前端",
+      "input.placeholder.message": "输入消息...",
+      "input.placeholder.archived": "当前会话已归档，恢复后才能继续",
+      "input.placeholder.queueFollowUp": "排队一条后续消息...",
+      "input.placeholder.readOnlySnapshot": "只读快照",
+      "emptyState.title": "RemoteLab 对话",
+      "emptyState.body": "先从侧边栏选择或创建一个会话，然后开始和你的 AI 工具协作。",
+      "footer.openSource": "GitHub 开源项目 ↗",
+      "footer.tagline": "Built with AI & ❤️",
+      "sidebar.buildLabel": "构建 {label}",
+      "sidebar.sortList": "整理列表",
+      "sidebar.newSession": "+ 新建会话",
+      "sidebar.filter.origin": "按来源筛选会话",
+      "sidebar.filter.app": "按应用筛选会话",
+      "sidebar.filter.user": "按用户筛选会话",
+      "sidebar.filter.allOrigins": "全部来源 ({count})",
+      "sidebar.filter.allApps": "全部应用 ({count})",
+      "sidebar.filter.allUsers": "全部用户 ({count})",
+      "sidebar.filter.admin": "管理员 ({count})",
+      "sidebar.filter.userCount": "{name} ({count})",
+      "sidebar.filter.source.chat": "聊天界面",
+      "sidebar.filter.source.bots": "机器人",
+      "sidebar.filter.source.automation": "自动化",
+      "sidebar.pinned": "置顶",
+      "sidebar.archive": "归档",
+      "sidebar.loadingArchived": "正在加载归档会话…",
+      "sidebar.loadArchived": "加载归档会话…",
+      "sidebar.noArchived": "还没有归档会话",
+      "sidebar.noSessions": "还没有会话",
+      "sidebar.noSessionsFiltered": "当前筛选条件下没有会话",
+      "settings.language.title": "语言",
+      "settings.language.note": "默认会跟随当前浏览器语言。你也可以在这里为当前浏览器强制切换，方便调试；而专属访客链接仍可保留自己的语言偏好。",
+      "settings.language.ownerAriaLabel": "选择界面语言",
+      "settings.language.optionAuto": "自动（跟随浏览器）",
+      "settings.language.optionZhCN": "简体中文",
+      "settings.language.optionEn": "English",
+      "settings.language.ownerStatusAuto": "当前为自动模式。这个浏览器会跟随自己的语言，除非专属访客链接带有独立语言偏好。",
+      "settings.language.ownerStatusOverride": "已为当前浏览器保存语言覆盖。切换后界面会立即刷新。",
+      "settings.users.title": "用户",
+      "settings.users.note": "创建额外身份，配置他们可用的应用和界面语言，并在他们还是空白时自动种下第一个会话。",
+      "settings.users.namePlaceholder": "用户名称，例如：视频剪辑师",
+      "settings.users.defaultAppAriaLabel": "为用户选择默认应用",
+      "settings.users.languageAriaLabel": "为用户选择语言偏好",
+      "settings.users.create": "创建用户",
+      "settings.users.loading": "正在加载用户…",
+      "settings.users.defaultStatus": "管理员视角仍然是默认视图。新用户会自动获得一个起始会话。",
+      "settings.users.allowedApps": "允许使用的应用",
+      "settings.users.createFirstApp": "请先创建一个应用。",
+      "settings.users.needAppBeforeCreate": "请先至少创建一个应用，再添加用户。",
+      "settings.users.chooseOneApp": "请至少选择一个应用。",
+      "settings.users.chooseToolFirst": "请先选择一个工具。",
+      "settings.users.chooseAtLeastOneApp": "请至少选择一个应用",
+      "settings.users.creating": "正在创建用户…",
+      "settings.users.created": "已创建 {name}。准备好后可在下方复制分享链接。",
+      "settings.users.createFailed": "创建用户失败。",
+      "settings.users.ownerOnly": "只有 owner 可以管理用户。",
+      "settings.users.noneYet": "还没有额外用户，管理员仍然是默认视图。",
+      "settings.users.shareReadyNote": "修改会自动保存。准备好对外发出时，再复制分享链接即可。",
+      "settings.users.defaultAppUpdated": "默认应用已更新。",
+      "settings.users.allowedAppsUpdated": "可用应用已更新。",
+      "settings.users.saved": "已保存。",
+      "settings.users.savedName": "已保存 {name}。",
+      "settings.users.savePending": "保存中…",
+      "settings.users.saveFailed": "保存用户失败。",
+      "settings.users.sharePreparing": "正在准备分享链接…",
+      "settings.users.shareCopied": "分享链接已复制。",
+      "settings.users.shareFailed": "准备分享链接失败。",
+      "settings.users.deleting": "删除中…",
+      "settings.users.deleteFailed": "删除用户失败。",
+      "settings.users.notFound": "未找到用户。",
+      "settings.users.chooseShareableDefaultApp": "请先选择一个可分享的默认应用。",
+      "settings.users.buildShareFailed": "生成分享链接失败。",
+      "settings.users.newUserFallback": "新用户",
+      "settings.users.summary.one": "{count} 个应用 · 默认 {name}",
+      "settings.users.summary.other": "{count} 个应用 · 默认 {name}",
+      "settings.users.allowedAppsList": "允许应用：{apps}",
+      "settings.users.noAppsSelected": "还没选择任何应用。",
+      "settings.users.defaultAppFallback": "聊天",
+      "settings.apps.title": "应用",
+      "settings.apps.note": "在这里定义可复用的应用层。聊天本身保持轻量，其他应用可以附带第一条助手消息和系统提示词。",
+      "settings.apps.namePlaceholder": "应用名称，例如：VideoCut",
+      "settings.apps.toolAriaLabel": "为应用选择工具",
+      "settings.apps.welcomePlaceholder": "新会话开始时显示的可选首条助手消息",
+      "settings.apps.systemPromptPlaceholder": "这个应用的可选系统提示词",
+      "settings.apps.create": "创建应用",
+      "settings.apps.loading": "正在加载应用…",
+      "settings.apps.defaultStatus": "先在这里创建一个可复用应用，然后再通过侧边栏筛选器在该应用下启动会话。",
+      "settings.apps.nameRequired": "名称不能为空。",
+      "settings.apps.creating": "正在创建应用…",
+      "settings.apps.created": "已创建 {name}。",
+      "settings.apps.createdShare": "已创建 {name}。可用下方的复制链接对外分享。",
+      "settings.apps.createFailed": "创建应用失败。",
+      "settings.apps.ownerOnly": "只有 owner 可以管理应用。",
+      "settings.apps.none": "还没有应用。",
+      "settings.apps.noToolsAvailable": "暂无可用工具",
+      "settings.apps.untitled": "未命名应用",
+      "settings.apps.editableHint": "自定义应用可以在这里直接编辑。",
+      "settings.apps.saveFailed": "保存应用失败。",
+      "settings.apps.deleteFailed": "删除应用失败。",
+      "settings.apps.meta.defaultTool": "默认工具 · {tool}",
+      "settings.apps.toolNotSet": "未设置",
+      "settings.apps.label.internalStarter": "内部起始应用，仅打开 owner 会话。",
+      "settings.apps.label.shareableApp": "可分享应用。",
+      "settings.apps.label.defaultConversation": "默认普通对话应用，适合日常 RemoteLab 会话。",
+      "settings.apps.kind.builtin": "内置",
+      "settings.apps.kind.custom": "自定义",
+      "settings.apps.kind.internal": "内部",
+      "settings.apps.kind.shareable": "可分享",
+      "settings.apps.copyLink": "复制链接",
+      "settings.apps.copyVisitorLink": "复制访客链接",
+      "settings.apps.addTool": "添加工具",
+      "settings.apps.addToolMore": "+ 添加更多…",
+      "settings.apps.delete": "删除",
+      "modal.addAgentsTitle": "添加更多 Agent",
+      "modal.addAgentsLead": "RemoteLab 不只支持内置 agent。对于简单工具，你可以直接在这里保存轻量配置，选择器会立即刷新。如果需要自定义解析或运行时行为，再走下面的高级路径。",
+      "modal.quickAddTitle": "快速添加",
+      "modal.saveRefresh": "保存并刷新",
+      "modal.quickAddBody": "适合 wrapper 或简单命令式 agent：它们使用现有 runtime family，并接受该 family 的核心 prompt / model / thinking 参数。我们会帮你保存配置，并在不重启服务的前提下刷新选择器。",
+      "modal.name": "名称",
+      "modal.command": "命令",
+      "modal.runtimeFamily": "运行时家族",
+      "modal.runtimeFamily.claude": "Claude 风格 stream JSON",
+      "modal.runtimeFamily.codex": "Codex JSON",
+      "modal.models": "模型",
+      "modal.modelsPlaceholder": "每行一个模型。可写成 `model-id | Label`，也可只写 `model-id`。\n例如：\ngpt-5-codex | GPT-5 Codex\ngpt-5-mini",
+      "modal.thinkingMode": "思考模式",
+      "modal.thinking.toggle": "开关",
+      "modal.thinking.levels": "等级",
+      "modal.thinking.none": "无",
+      "modal.thinkingLevels": "思考等级",
+      "modal.internalIdentity": "内部标识",
+      "modal.internalIdentityNote": "会根据命令自动推导。简单模式下不需要额外填写 ID。",
+      "modal.thinkingModeNote": "如果工具没有模型侧思考控制，请用 `none`。Claude 家族通常用 `toggle`，Codex 家族通常用 `levels`。如果命令行参数有特殊需求，请走下面的高级路径。",
+      "modal.advancedTitle": "高级 provider 代码",
+      "modal.copyBasePrompt": "复制基础提示词",
+      "modal.advancedBody": "如果你需要模型、thinking 控制或自定义 runtime 行为，就在 RemoteLab 仓库里新开一个会话，把这段提示词贴进去。",
+      "modal.advancedBullet1": "它会让 agent 判断：简单配置是否足够，还是需要完整 provider 代码。",
+      "modal.advancedBullet2": "它会把 agent 指到 provider 架构说明，同时尽量保持改动最小。",
+      "modal.close": "关闭",
+      "login.tagline": "登录后继续",
+      "login.error": "凭证无效，请重试。",
+      "login.username": "用户名",
+      "login.usernamePlaceholder": "输入用户名",
+      "login.password": "密码",
+      "login.passwordPlaceholder": "输入密码",
+      "login.signIn": "登录",
+      "login.accessToken": "访问令牌",
+      "login.tokenPlaceholder": "粘贴你的令牌",
+      "login.switch.useToken": "改用访问令牌",
+      "login.switch.usePassword": "改用用户名和密码",
+      "queue.timestamp.default": "已排队",
+      "queue.timestamp.withTime": "已排队 {time}",
+      "queue.single": "已排队 1 条后续消息",
+      "queue.multiple": "已排队 {count} 条后续消息",
+      "queue.note.afterRun": "会在当前运行结束后自动发送",
+      "queue.note.preparing": "正在准备下一轮",
+      "queue.attachmentOnly": "（附件）",
+      "queue.attachments": "附件：{names}",
+      "queue.olderHidden.one": "还有 1 条更早的排队后续消息被折叠",
+      "queue.olderHidden.multiple": "还有 {count} 条更早的排队后续消息被折叠",
+      "session.defaultName": "会话",
+      "session.messages": "{count} 条消息",
+      "session.messagesTitle": "这个会话中的消息数",
+      "session.scope.source": "会话来源",
+      "session.scope.app": "会话应用",
+      "session.scope.appLabel": "应用：{name}",
+      "session.scope.owner": "Owner",
+      "session.scope.visitor": "访客",
+      "session.scope.visitorNamed": "访客：{name}",
+      "session.scope.ownerTitle": "会话归属范围",
+      "thinking.active": "思考中…",
+      "thinking.done": "思路",
+      "thinking.usedTools": "思路 · 使用了 {tools}",
+      "copy.code": "复制代码",
+      "ui.managerContext": "管理器上下文",
+      "ui.toolFallback": "工具",
+      "ui.toolResult": "结果",
+      "ui.toolExitCode": "退出 {code}",
+      "ui.fileChange.add": "新增",
+      "ui.fileChange.edit": "编辑",
+      "ui.fileChange.update": "更新",
+      "ui.fileChange.updated": "已更新",
+      "ui.fileChange.delete": "删除",
+      "context.barrier": "这条标记之前的消息，已经不在当前实时上下文里了。",
+      "context.liveShort": "{tokens} 活跃上下文 · {percent}",
+      "context.liveOnly": "{tokens} 活跃上下文",
+      "context.liveTitle": "活跃上下文：{context}",
+      "context.liveTitleWithWindow": "活跃上下文：{context} / {window}（{percent}）",
+      "context.usage.live": "{tokens} 活跃上下文",
+      "context.usage.window": "窗口 {percent}",
+      "context.usage.output": "输出 {tokens}",
+      "context.hover.window": "上下文窗口：{window}",
+      "context.hover.rawInput": "本轮原始输入：{tokens}",
+      "context.hover.output": "本轮输出：{tokens}",
+      "compose.voiceCleanup": "语音清洗",
+      "compose.voiceCleanup.on": "开启：发送前会结合当前会话对语音转写做一次隐藏清洗",
+      "compose.voiceCleanup.off": "关闭：直接发送，不做隐藏的转写清洗步骤",
+      "compose.pending.cleaningWithText": "发送前正在清洗转写…",
+      "compose.pending.cleaning": "正在清洗转写…",
+      "compose.pending.uploading": "正在上传附件…",
+      "compose.pending.sendingAttachment": "正在发送附件…",
+      "compose.pending.sending": "发送中…",
+      "tooling.thinking": "思考",
+      "tooling.defaultModel": "默认",
+      "gestures.sessions": "会话",
+      "gestures.newSession": "新会话",
+      "workflow.priority.high": "高",
+      "workflow.priority.highTitle": "需要尽快让用户关注。",
+      "workflow.priority.medium": "中",
+      "workflow.priority.mediumTitle": "值得尽快看，但不算紧急。",
+      "workflow.priority.low": "低",
+      "workflow.priority.lowTitle": "可以放心留到后面处理。",
+      "workflow.status.waiting": "等待中",
+      "workflow.status.waitingTitle": "等待用户输入",
+      "workflow.status.done": "完成",
+      "workflow.status.doneTitle": "当前任务已完成",
+      "workflow.status.parked": "搁置",
+      "workflow.status.parkedTitle": "先停放到后面处理",
+      "workflow.status.queued": "排队中",
+      "workflow.status.queuedTitle": "已排队 {count} 条后续消息",
+      "workflow.status.compacting": "压缩中",
+      "workflow.status.renaming": "重命名中",
+      "workflow.status.renameFailed": "重命名失败",
+      "workflow.status.renameFailedTitle": "会话重命名失败",
+      "workflow.status.unread": "新变化",
+      "workflow.status.unreadTitle": "自上次查看后，这个会话有更新",
+    },
+  };
+
+  function normalizeUiLanguagePreference(value, { allowAuto = true } = {}) {
+    if (typeof value !== "string") return allowAuto ? AUTO_UI_LANGUAGE : DEFAULT_UI_LANGUAGE;
+    const normalized = value.trim();
+    if (!normalized) return allowAuto ? AUTO_UI_LANGUAGE : DEFAULT_UI_LANGUAGE;
+    if (normalized === AUTO_UI_LANGUAGE) return allowAuto ? AUTO_UI_LANGUAGE : DEFAULT_UI_LANGUAGE;
+    if (/^zh(?:[-_](?:cn|hans))?$/i.test(normalized)) return "zh-CN";
+    if (/^en(?:[-_].*)?$/i.test(normalized)) return "en";
+    return allowAuto ? AUTO_UI_LANGUAGE : DEFAULT_UI_LANGUAGE;
+  }
+
+  function resolveBrowserUiLanguage() {
+    const candidates = [];
+    if (Array.isArray(root.navigator?.languages)) candidates.push(...root.navigator.languages);
+    if (typeof root.navigator?.language === "string") candidates.push(root.navigator.language);
+    for (const candidate of candidates) {
+      const normalized = normalizeUiLanguagePreference(candidate, { allowAuto: false });
+      if (normalized) return normalized;
+    }
+    return DEFAULT_UI_LANGUAGE;
+  }
+
+  function readStoredUiLanguagePreference() {
+    try {
+      return normalizeUiLanguagePreference(root.localStorage?.getItem(UI_LANGUAGE_STORAGE_KEY), { allowAuto: true });
+    } catch {
+      return AUTO_UI_LANGUAGE;
+    }
+  }
+
+  function getBootstrapPreferredLanguage() {
+    const auth = root.__REMOTELAB_BOOTSTRAP__?.auth;
+    return normalizeUiLanguagePreference(auth?.preferredLanguage, { allowAuto: true });
+  }
+
+  function resolveActiveUiLanguage(preference = readStoredUiLanguagePreference()) {
+    const normalizedPreference = normalizeUiLanguagePreference(preference, { allowAuto: true });
+    if (normalizedPreference && normalizedPreference !== AUTO_UI_LANGUAGE) {
+      return normalizeUiLanguagePreference(normalizedPreference, { allowAuto: false });
+    }
+    const bootstrapPreferredLanguage = getBootstrapPreferredLanguage();
+    if (bootstrapPreferredLanguage && bootstrapPreferredLanguage !== AUTO_UI_LANGUAGE) {
+      return normalizeUiLanguagePreference(bootstrapPreferredLanguage, { allowAuto: false });
+    }
+    return resolveBrowserUiLanguage();
+  }
+
+  function formatTemplate(template, vars = {}) {
+    return String(template || "").replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => (
+      Object.prototype.hasOwnProperty.call(vars, key)
+        ? String(vars[key] ?? "")
+        : match
+    ));
+  }
+
+  let uiLanguagePreference = readStoredUiLanguagePreference();
+  let activeUiLanguage = resolveActiveUiLanguage(uiLanguagePreference);
+
+  function t(key, vars = {}) {
+    const localeTable = translations[activeUiLanguage] || translations.en;
+    const template = localeTable[key] ?? translations.en[key];
+    if (template === undefined) return key;
+    return formatTemplate(template, vars);
+  }
+
+  function applyBuildLabelTranslations(doc = root.document) {
+    if (!doc?.querySelectorAll) return;
+    doc.querySelectorAll("[data-i18n-build-label]").forEach((node) => {
+      node.textContent = t("sidebar.buildLabel", {
+        label: node.getAttribute("data-i18n-build-label") || "",
+      });
+    });
+  }
+
+  function applyTranslations(doc = root.document) {
+    if (!doc) return;
+    if (doc.documentElement) {
+      doc.documentElement.lang = activeUiLanguage;
+    }
+    if (doc.querySelectorAll) {
+      doc.querySelectorAll("[data-i18n]").forEach((node) => {
+        node.textContent = t(node.getAttribute("data-i18n"));
+      });
+      doc.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+        node.setAttribute("placeholder", t(node.getAttribute("data-i18n-placeholder")));
+      });
+      doc.querySelectorAll("[data-i18n-title]").forEach((node) => {
+        node.setAttribute("title", t(node.getAttribute("data-i18n-title")));
+      });
+      doc.querySelectorAll("[data-i18n-aria-label]").forEach((node) => {
+        node.setAttribute("aria-label", t(node.getAttribute("data-i18n-aria-label")));
+      });
+      doc.querySelectorAll("[data-i18n-value]").forEach((node) => {
+        node.value = t(node.getAttribute("data-i18n-value"));
+      });
+      applyBuildLabelTranslations(doc);
+    }
+  }
+
+  function writeStoredUiLanguagePreference(value) {
+    try {
+      const normalized = normalizeUiLanguagePreference(value, { allowAuto: true });
+      if (normalized === AUTO_UI_LANGUAGE) {
+        root.localStorage?.removeItem(UI_LANGUAGE_STORAGE_KEY);
+      } else {
+        root.localStorage?.setItem(UI_LANGUAGE_STORAGE_KEY, normalized);
+      }
+    } catch {}
+  }
+
+  function setUiLanguagePreference(value, { reload = false } = {}) {
+    uiLanguagePreference = normalizeUiLanguagePreference(value, { allowAuto: true });
+    writeStoredUiLanguagePreference(uiLanguagePreference);
+    activeUiLanguage = resolveActiveUiLanguage(uiLanguagePreference);
+    applyTranslations(root.document);
+    try {
+      root.dispatchEvent(new CustomEvent("remotelab:localechange", {
+        detail: {
+          preference: uiLanguagePreference,
+          active: activeUiLanguage,
+        },
+      }));
+    } catch {}
+    if (reload) {
+      root.location?.reload();
+    }
+    return {
+      preference: uiLanguagePreference,
+      active: activeUiLanguage,
+    };
+  }
+
+  function getUiLanguageOptions() {
+    return [
+      { value: AUTO_UI_LANGUAGE, label: t("settings.language.optionAuto") },
+      { value: "zh-CN", label: t("settings.language.optionZhCN") },
+      { value: "en", label: t("settings.language.optionEn") },
+    ];
+  }
+
+  root.remotelabT = t;
+  root.remotelabApplyTranslations = applyTranslations;
+  root.remotelabGetUiLanguagePreference = function getUiLanguagePreference() {
+    return uiLanguagePreference;
+  };
+  root.remotelabGetActiveUiLanguage = function getActiveUiLanguage() {
+    return activeUiLanguage;
+  };
+  root.remotelabSetUiLanguagePreference = setUiLanguagePreference;
+  root.remotelabGetUiLanguageOptions = getUiLanguageOptions;
+  root.RemoteLabI18n = {
+    t,
+    applyTranslations,
+    getUiLanguagePreference: root.remotelabGetUiLanguagePreference,
+    getActiveUiLanguage: root.remotelabGetActiveUiLanguage,
+    setUiLanguagePreference,
+    getUiLanguageOptions,
+    normalizeUiLanguagePreference,
+    resolveActiveUiLanguage,
+  };
+
+  if (root.document?.readyState === "loading") {
+    root.document.addEventListener("DOMContentLoaded", () => applyTranslations(root.document), { once: true });
+  } else {
+    applyTranslations(root.document);
+  }
+})(window);

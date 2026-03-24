@@ -479,6 +479,9 @@ function buildTemplateReplacements(buildInfo) {
 function buildAuthInfo(authSession) {
   if (!authSession) return null;
   const info = { role: authSession.role === 'visitor' ? 'visitor' : 'owner' };
+  if (typeof authSession.preferredLanguage === 'string' && authSession.preferredLanguage.trim()) {
+    info.preferredLanguage = authSession.preferredLanguage.trim();
+  }
   if (info.role === 'visitor') {
     info.appId = authSession.appId;
     info.sessionId = authSession.sessionId;
@@ -595,7 +598,12 @@ async function findReusableVisitorSession(appId, visitorId) {
     || null;
 }
 
-async function bootstrapPublicVisitorSession(app, { visitorId, visitorName = '', sessionName = '' } = {}) {
+async function bootstrapPublicVisitorSession(app, {
+  visitorId,
+  visitorName = '',
+  sessionName = '',
+  preferredLanguage = '',
+} = {}) {
   const existingSession = await findReusableVisitorSession(app?.id, visitorId);
   const chatSession = await createSession(
     '~',
@@ -622,6 +630,7 @@ async function bootstrapPublicVisitorSession(app, { visitorId, visitorName = '',
     appId: app.id,
     visitorId,
     visitorName,
+    preferredLanguage,
     sessionId: chatSession.id,
   });
   await saveAuthSessionsAsync();

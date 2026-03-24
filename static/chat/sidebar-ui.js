@@ -1,4 +1,8 @@
 // ---- Sidebar ----
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
 function openSidebar() {
   sidebarOverlay.classList.add("open");
 }
@@ -96,8 +100,8 @@ function renderImagePreviews() {
     const removeBtn = document.createElement("button");
     removeBtn.className = "remove-img";
     removeBtn.type = "button";
-    removeBtn.title = "Remove attachment";
-    removeBtn.setAttribute("aria-label", "Remove attachment");
+    removeBtn.title = t("action.removeAttachment");
+    removeBtn.setAttribute("aria-label", t("action.removeAttachment"));
     removeBtn.innerHTML = renderUiIcon("close");
     removeBtn.disabled = attachmentsLocked;
     removeBtn.onclick = () => {

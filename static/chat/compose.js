@@ -1,4 +1,8 @@
 // ---- Send message ----
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
 let pendingComposerSend = null;
 const COMPOSER_VOICE_CLEANUP_PREF_KEY = "composerVoiceCleanupBeforeSend";
 const voiceCleanupToggle = document.getElementById("voiceCleanupToggle");
@@ -130,8 +134,8 @@ function syncComposerVoiceCleanupToggle() {
   voiceCleanupToggle.classList.toggle("active", enabled);
   voiceCleanupToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
   voiceCleanupToggle.title = enabled
-    ? "On: clean voice transcripts with the current session before sending"
-    : "Off: send immediately without the hidden transcript cleanup step";
+    ? t("compose.voiceCleanup.on")
+    : t("compose.voiceCleanup.off");
 }
 
 async function maybeRewriteComposerTextBeforeSend(sessionId, text) {
@@ -203,12 +207,12 @@ function syncComposerPendingUi() {
 
   const hasAttachments = Array.isArray(pendingComposerSend?.images) && pendingComposerSend.images.length > 0;
   composerPendingState.textContent = pendingComposerSend?.stage === "cleaning" && pendingComposerSend?.text
-    ? "Cleaning transcript…"
+    ? t("compose.pending.cleaningWithText")
     : pendingComposerSend?.stage === "uploading"
-      ? "Uploading attachment…"
+      ? t("compose.pending.uploading")
       : (hasAttachments && !pendingComposerSend?.text
-        ? "Sending attachment…"
-        : "Sending…");
+        ? t("compose.pending.sendingAttachment")
+        : t("compose.pending.sending"));
   composerPendingState.classList.add("visible");
   syncComposerVoiceCleanupToggle();
 }

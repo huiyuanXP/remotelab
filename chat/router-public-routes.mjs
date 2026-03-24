@@ -194,6 +194,7 @@ if (pathname.startsWith('/visitor/') && req.method === 'GET') {
     visitorId: visitor.id,
     visitorName: visitor.name || '',
     sessionName: `${visitor.name || 'Visitor'} · ${app.name || 'App'}`,
+    preferredLanguage: typeof visitor.language === 'string' ? visitor.language : '',
   });
   res.writeHead(302, {
     'Location': '/?visitor=1',

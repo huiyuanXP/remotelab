@@ -103,6 +103,7 @@ assert.deepEqual(
   fallbackContext.scriptLoads,
   [
     '/marked.min.js?v=build-123',
+    '/chat/i18n.js?v=build-123',
     '/chat/session-state-model.js?v=build-123',
     '/chat/icons.js?v=build-123',
     '/chat/bootstrap.js?v=build-123',
@@ -140,6 +141,7 @@ assert.deepEqual(
   inlineContext.scriptLoads,
   [
     '/marked.min.js?v=inline-build-456',
+    '/chat/i18n.js?v=inline-build-456',
     '/chat/session-state-model.js?v=inline-build-456',
     '/chat/icons.js?v=inline-build-456',
     '/chat/bootstrap.js?v=inline-build-456',

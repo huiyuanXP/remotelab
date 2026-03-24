@@ -91,6 +91,7 @@ function setupTempHome() {
         appId: 'shared-app',
         sessionId: 'visitor-session-id',
         visitorId: 'visitor-123',
+        preferredLanguage: 'zh-CN',
       },
     }, null, 2),
     'utf8',
@@ -211,6 +212,7 @@ async function main() {
       {
         role: 'visitor',
         appId: 'shared-app',
+        preferredLanguage: 'zh-CN',
         sessionId: 'visitor-session-id',
         visitorId: 'visitor-123',
       },

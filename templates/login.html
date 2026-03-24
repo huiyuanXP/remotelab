@@ -179,56 +179,58 @@
 <body>
   <div class="card">
     <div class="logo">RemoteLab</div>
-    <div class="tagline">Sign in to continue</div>
+    <div class="tagline" data-i18n="login.tagline">Sign in to continue</div>
 
-    <div class="error {{ERROR_CLASS}}">Invalid credentials. Please try again.</div>
+    <div class="error {{ERROR_CLASS}}" data-i18n="login.error">Invalid credentials. Please try again.</div>
 
     <!-- Password form -->
     <form id="pw-form" method="POST" action="/login">
       <input type="hidden" name="type" value="password">
-      <label for="username-input">Username</label>
+      <label for="username-input" data-i18n="login.username">Username</label>
       <input type="text" id="username-input" name="username"
-             placeholder="Enter username"
+             placeholder="Enter username" data-i18n-placeholder="login.usernamePlaceholder"
              autocomplete="username" autocorrect="off" autocapitalize="none">
-      <label for="password-input">Password</label>
+      <label for="password-input" data-i18n="login.password">Password</label>
       <input type="password" id="password-input" name="password"
-             placeholder="Enter password"
+             placeholder="Enter password" data-i18n-placeholder="login.passwordPlaceholder"
              autocomplete="current-password">
-      <button type="submit" class="btn">Sign In</button>
+      <button type="submit" class="btn" data-i18n="login.signIn">Sign In</button>
     </form>
 
     <!-- Token form -->
     <form id="token-form" class="hidden" method="POST" action="/login">
       <input type="hidden" name="type" value="token">
-      <label for="token-input">Access Token</label>
+      <label for="token-input" data-i18n="login.accessToken">Access Token</label>
       <input type="text" id="token-input" name="token" class="mono"
-             placeholder="Paste your token"
+             placeholder="Paste your token" data-i18n-placeholder="login.tokenPlaceholder"
              autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
-      <button type="submit" class="btn">Sign In</button>
+      <button type="submit" class="btn" data-i18n="login.signIn">Sign In</button>
     </form>
 
     <div class="switch">
-      <a href="#" id="toggle-link">Use access token instead</a>
+      <a href="#" id="toggle-link" data-i18n="login.switch.useToken">Use access token instead</a>
     </div>
 
     <div class="build-stamp" title="{{BUILD_TITLE}}">{{BUILD_LABEL}}</div>
   </div>
 
+  <script src="/chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
   <script nonce="{{NONCE}}">
     var tokenForm = document.getElementById('token-form');
     var pwForm = document.getElementById('pw-form');
     var toggleLink = document.getElementById('toggle-link');
     var usePw = '{{MODE}}' === 'pw';
+    var t = window.remotelabT || function(key) { return key; };
 
     function applyMode() {
       if (usePw) {
         tokenForm.classList.add('hidden');
         pwForm.classList.remove('hidden');
-        toggleLink.textContent = 'Use access token instead';
+        toggleLink.textContent = t('login.switch.useToken');
       } else {
         pwForm.classList.add('hidden');
         tokenForm.classList.remove('hidden');
-        toggleLink.textContent = 'Use username & password';
+        toggleLink.textContent = t('login.switch.usePassword');
       }
     }
 

@@ -1,4 +1,8 @@
 // ---- Message rendering ----
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
 function clearMessages({ preserveRunningBlockExpanded = false } = {}) {
   const shouldPreserveRunningBlockExpanded =
     preserveRunningBlockExpanded === true && renderedEventState.runningBlockExpanded === true;
@@ -152,7 +156,7 @@ function openThinkingBlock() {
   const header = document.createElement("div");
   header.className = "thinking-header";
   header.innerHTML = `${renderRealtimeIcon("gear", "thinking-icon")}
-    <span class="thinking-label">Thinking…</span>
+    <span class="thinking-label">${t("thinking.active")}</span>
     <span class="thinking-chevron">${renderRealtimeIcon("chevron-down")}</span>`;
 
   const body = document.createElement("div");
@@ -184,9 +188,9 @@ function finalizeThinkingBlock() {
   const { label, tools } = currentThinkingBlock;
   const toolList = [...tools];
   if (toolList.length > 0) {
-    label.textContent = `Thought · used ${toolList.join(", ")}`;
+    label.textContent = t("thinking.usedTools", { tools: toolList.join(", ") });
   } else {
-    label.textContent = "Thought";
+    label.textContent = t("thinking.done");
   }
   inThinkingBlock = false;
   currentThinkingBlock = null;
@@ -218,8 +222,8 @@ function setCopyButtonState(button, copied) {
     : `<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5" y="3" width="8" height="10" rx="1.5" ry="1.5" fill="none" stroke="currentColor" stroke-width="1.4"></rect><path d="M3 10.5V4.5C3 3.67 3.67 3 4.5 3H10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>`;
   button.innerHTML = icon;
   button.classList.toggle("copied", copied);
-  button.title = copied ? "Copied" : "Copy code";
-  button.setAttribute("aria-label", copied ? "Copied" : "Copy code");
+  button.title = copied ? t("action.copied") : t("copy.code");
+  button.setAttribute("aria-label", copied ? t("action.copied") : t("copy.code"));
 }
 
 function enhanceCodeBlocks(root) {

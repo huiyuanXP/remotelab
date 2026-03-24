@@ -182,6 +182,7 @@ if (pathname === '/api/users' && req.method === 'POST') {
       name: typeof payload.name === 'string' ? payload.name : '',
       appIds: apps.map((app) => app.id),
       defaultAppId,
+      language: typeof payload.language === 'string' ? payload.language : 'auto',
     });
     const session = payload.autoCreateSession === false
       ? null
@@ -217,6 +218,9 @@ if (pathname.startsWith('/api/users/') && req.method === 'PATCH') {
     const updates = {};
     if (typeof payload.name === 'string') {
       updates.name = payload.name;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'language')) {
+      updates.language = typeof payload.language === 'string' ? payload.language : 'auto';
     }
     if (Object.prototype.hasOwnProperty.call(payload, 'shareVisitorId')) {
       updates.shareVisitorId = typeof payload.shareVisitorId === 'string'
@@ -307,14 +311,18 @@ if (pathname === '/api/visitors' && req.method === 'POST') {
     return true;
   }
   try {
-    const { name, appId } = JSON.parse(body);
+    const { name, appId, language } = JSON.parse(body);
     const app = await getApp(appId);
     if (!app || app.shareEnabled === false) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Shareable app is required' }));
       return true;
     }
-    const visitor = await createVisitor({ name, appId: app.id });
+    const visitor = await createVisitor({
+      name,
+      appId: app.id,
+      language: typeof language === 'string' ? language : 'auto',
+    });
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ visitor }));
   } catch {

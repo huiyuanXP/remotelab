@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto';
 import { dirname } from 'path';
 import { VISITORS_FILE } from '../lib/config.mjs';
 import { createSerialTaskQueue, ensureDir, readJson, writeJsonAtomic } from './fs-utils.mjs';
+import { normalizeUiLanguagePreference } from './ui-language.mjs';
 
 const runVisitorsMutation = createSerialTaskQueue();
 
@@ -19,6 +20,28 @@ function normalizeVisitorAppId(value) {
   return value.trim();
 }
 
+function normalizeVisitorLanguage(value) {
+  return normalizeUiLanguagePreference(value, { allowAuto: true });
+}
+
+function normalizeVisitorRecord(visitor) {
+  if (!visitor || typeof visitor !== 'object') return null;
+  const id = typeof visitor.id === 'string' ? visitor.id.trim() : '';
+  const appId = normalizeVisitorAppId(visitor.appId);
+  if (!id || !appId) return null;
+  return {
+    ...visitor,
+    id,
+    name: normalizeVisitorName(visitor.name) || 'New visitor',
+    appId,
+    language: normalizeVisitorLanguage(visitor.language),
+    shareToken: typeof visitor.shareToken === 'string' ? visitor.shareToken.trim() : '',
+    createdAt: typeof visitor.createdAt === 'string' && visitor.createdAt.trim()
+      ? visitor.createdAt.trim()
+      : new Date().toISOString(),
+  };
+}
+
 function generateVisitorId() {
   return `visitor_${randomBytes(12).toString('hex')}`;
 }
@@ -29,7 +52,9 @@ function generateVisitorShareToken() {
 
 async function loadVisitors() {
   const visitors = await readJson(VISITORS_FILE, []);
-  return Array.isArray(visitors) ? visitors : [];
+  return Array.isArray(visitors)
+    ? visitors.map((visitor) => normalizeVisitorRecord(visitor)).filter(Boolean)
+    : [];
 }
 
 async function saveVisitors(list) {
@@ -69,6 +94,7 @@ export async function createVisitor(input = {}) {
       id: generateVisitorId(),
       name,
       appId,
+      language: normalizeVisitorLanguage(input.language),
       shareToken: generateVisitorShareToken(),
       createdAt: new Date().toISOString(),
     };
@@ -93,6 +119,10 @@ export async function updateVisitor(id, updates = {}) {
     if (nextAppId) {
       visitors[index].appId = nextAppId;
     }
+    if (Object.prototype.hasOwnProperty.call(updates, 'language')) {
+      visitors[index].language = normalizeVisitorLanguage(updates.language);
+    }
+    visitors[index].updatedAt = new Date().toISOString();
     await saveVisitors(visitors);
     return cloneVisitor(visitors[index]);
   });

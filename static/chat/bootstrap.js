@@ -6,6 +6,7 @@ const pageBootstrap =
     ? window.__REMOTELAB_BOOTSTRAP__
     : {};
 const buildAssetVersion = buildInfo.assetVersion || "dev";
+const bootstrapT = window.remotelabT || ((key) => key);
 
 function normalizeBootstrapText(value) {
   if (typeof value !== "string") return "";
@@ -16,8 +17,9 @@ function normalizeBootstrapText(value) {
 function normalizeBootstrapAuthInfo(raw) {
   if (!raw || typeof raw !== "object") return null;
   const role = raw.role === "visitor" ? "visitor" : "owner";
+  const preferredLanguage = normalizeBootstrapText(raw.preferredLanguage);
   if (role === "owner") {
-    return { role };
+    return preferredLanguage ? { role, preferredLanguage } : { role };
   }
 
   const sessionId = normalizeBootstrapText(raw.sessionId);
@@ -31,6 +33,7 @@ function normalizeBootstrapAuthInfo(raw) {
   const visitorId = normalizeBootstrapText(raw.visitorId);
   if (appId) info.appId = appId;
   if (visitorId) info.visitorId = visitorId;
+  if (preferredLanguage) info.preferredLanguage = preferredLanguage;
   return info;
 }
 
@@ -152,8 +155,8 @@ function updateFrontendRefreshUi() {
   refreshFrontendBtn.hidden = !hasUpdate;
   refreshFrontendBtn.classList.toggle("ready", hasUpdate);
   const updateTitle = hasUpdate
-    ? "Frontend update available — tap to reload"
-    : "Reload latest frontend";
+    ? bootstrapT("status.frontendUpdateReady")
+    : bootstrapT("status.frontendReloadLatest");
   refreshFrontendBtn.title = updateTitle;
   refreshFrontendBtn.setAttribute("aria-label", updateTitle);
   if (!hasUpdate) {
@@ -214,10 +217,13 @@ const sessionListFooter = document.getElementById("sessionListFooter");
 const newUserNameInput = document.getElementById("newUserNameInput");
 const newUserAppsPicker = document.getElementById("newUserAppsPicker");
 const newUserDefaultAppSelect = document.getElementById("newUserDefaultAppSelect");
+const newUserLanguageSelect = document.getElementById("newUserLanguageSelect");
 const createUserBtn = document.getElementById("createUserBtn");
 const userFormStatus = document.getElementById("userFormStatus");
 const settingsUsersList = document.getElementById("settingsUsersList");
 const settingsAppsList = document.getElementById("settingsAppsList");
+const uiLanguageSelect = document.getElementById("uiLanguageSelect");
+const uiLanguageStatus = document.getElementById("uiLanguageStatus");
 const newAppNameInput = document.getElementById("newAppNameInput");
 const newAppToolSelect = document.getElementById("newAppToolSelect");
 const newAppWelcomeInput = document.getElementById("newAppWelcomeInput");

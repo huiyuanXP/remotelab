@@ -1,4 +1,8 @@
 // ---- Session list ----
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
 function renderSessionList() {
   sessionList.innerHTML = "";
   const pinnedSessions = getVisiblePinnedSessions();
@@ -10,7 +14,7 @@ function renderSessionList() {
 
     const header = document.createElement("div");
     header.className = "pinned-section-header";
-    header.innerHTML = `<span class="pinned-label">Pinned</span><span class="folder-count">${pinnedSessions.length}</span>`;
+    header.innerHTML = `<span class="pinned-label">${esc(t("sidebar.pinned"))}</span><span class="folder-count">${pinnedSessions.length}</span>`;
 
     const items = document.createElement("div");
     items.className = "pinned-items";
@@ -89,7 +93,7 @@ function renderArchivedSection() {
   const isCollapsed = localStorage.getItem("archivedCollapsed") !== "false";
   if (isCollapsed) header.classList.add("collapsed");
   const archivedCount = archivedSessionsLoaded ? archivedSessions.length : archivedSessionCount;
-  header.innerHTML = `<span class="folder-chevron">${renderUiIcon("chevron-down")}</span><span class="archived-label">Archive</span><span class="folder-count">${archivedCount}</span>`;
+  header.innerHTML = `<span class="folder-chevron">${renderUiIcon("chevron-down")}</span><span class="archived-label">${esc(t("sidebar.archive"))}</span><span class="folder-count">${archivedCount}</span>`;
   header.addEventListener("click", () => {
     header.classList.toggle("collapsed");
     localStorage.setItem("archivedCollapsed", header.classList.contains("collapsed") ? "true" : "false");
@@ -112,8 +116,8 @@ function renderArchivedSection() {
     const loading = document.createElement("div");
     loading.className = "archived-empty";
     loading.textContent = archivedSessionsLoading
-      ? "Loading archived sessions…"
-      : "Load archived sessions…";
+      ? t("sidebar.loadingArchived")
+      : t("sidebar.loadArchived");
     items.appendChild(loading);
   } else if (archivedSessions.length === 0) {
     const empty = document.createElement("div");
@@ -135,7 +139,7 @@ function renderArchivedSection() {
           <div class="session-item-meta"><span title="${esc(shortFolder || groupInfo.title)}">${esc(groupInfo.label)}</span>${date ? ` · ${date}` : ""}</div>
         </div>
         <div class="session-item-actions">
-          <button class="session-action-btn restore" type="button" title="Restore" aria-label="Restore" data-id="${s.id}">${renderUiIcon("unarchive")}</button>
+          <button class="session-action-btn restore" type="button" title="${esc(t("action.restore"))}" aria-label="${esc(t("action.restore"))}" data-id="${s.id}">${renderUiIcon("unarchive")}</button>
         </div>`;
       div.addEventListener("click", (e) => {
         if (e.target.closest(".session-action-btn")) return;

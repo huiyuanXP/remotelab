@@ -1,3 +1,7 @@
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
 function esc(s) {
   const el = document.createElement("span");
   el.textContent = s;
@@ -10,18 +14,18 @@ function getShortFolder(folder) {
 
 function getFolderLabel(folder) {
   const shortFolder = getShortFolder(folder);
-  return shortFolder.split("/").pop() || shortFolder || "Session";
+  return shortFolder.split("/").pop() || shortFolder || t("session.defaultName");
 }
 
 function getSessionDisplayName(session) {
-  return session?.name || getFolderLabel(session?.folder) || "Session";
+  return session?.name || getFolderLabel(session?.folder) || t("session.defaultName");
 }
 
 function formatQueuedMessageTimestamp(stamp) {
-  if (!stamp) return "Queued";
+  if (!stamp) return t("queue.timestamp.default");
   const parsed = new Date(stamp).getTime();
-  if (!Number.isFinite(parsed)) return "Queued";
-  return `Queued ${messageTimeFormatter.format(parsed)}`;
+  if (!Number.isFinite(parsed)) return t("queue.timestamp.default");
+  return t("queue.timestamp.withTime", { time: messageTimeFormatter.format(parsed) });
 }
 
 function renderQueuedMessagePanel(session) {
@@ -41,14 +45,16 @@ function renderQueuedMessagePanel(session) {
 
   const title = document.createElement("div");
   title.className = "queued-panel-title";
-  title.textContent = items.length === 1 ? "1 follow-up queued" : `${items.length} follow-ups queued`;
+  title.textContent = items.length === 1
+    ? t("queue.single")
+    : t("queue.multiple", { count: items.length });
 
   const note = document.createElement("div");
   note.className = "queued-panel-note";
   const activity = getSessionActivity(session);
   note.textContent = activity.run.state === "running" || activity.compact.state === "pending"
-    ? "Will send automatically after the current run"
-    : "Preparing the next turn";
+    ? t("queue.note.afterRun")
+    : t("queue.note.preparing");
 
   header.appendChild(title);
   header.appendChild(note);
@@ -67,7 +73,7 @@ function renderQueuedMessagePanel(session) {
 
     const text = document.createElement("div");
     text.className = "queued-item-text";
-    text.textContent = item.text || "(attachment)";
+    text.textContent = item.text || t("queue.attachmentOnly");
 
     row.appendChild(meta);
     row.appendChild(text);
@@ -76,7 +82,7 @@ function renderQueuedMessagePanel(session) {
     if (imageNames.length > 0) {
       const imageLine = document.createElement("div");
       imageLine.className = "queued-item-images";
-      imageLine.textContent = `Attachments: ${imageNames.join(", ")}`;
+      imageLine.textContent = t("queue.attachments", { names: imageNames.join(", ") });
       row.appendChild(imageLine);
     }
 
@@ -88,7 +94,9 @@ function renderQueuedMessagePanel(session) {
   if (items.length > visibleItems.length) {
     const more = document.createElement("div");
     more.className = "queued-panel-more";
-    more.textContent = `${items.length - visibleItems.length} older queued follow-up${items.length - visibleItems.length === 1 ? "" : "s"} hidden`;
+    more.textContent = items.length - visibleItems.length === 1
+      ? t("queue.olderHidden.one")
+      : t("queue.olderHidden.multiple", { count: items.length - visibleItems.length });
     queuedPanel.appendChild(more);
   }
 }
@@ -98,8 +106,8 @@ function renderSessionMessageCount(session) {
     ? session.messageCount
     : (Number.isInteger(session?.activeMessageCount) ? session.activeMessageCount : 0);
   if (count <= 0) return "";
-  const label = `${count} msg${count === 1 ? "" : "s"}`;
-  return `<span class="session-item-count" title="Messages in this session">${label}</span>`;
+  const label = t("session.messages", { count, suffix: count === 1 ? "" : "s" });
+  return `<span class="session-item-count" title="${esc(t("session.messagesTitle"))}">${esc(label)}</span>`;
 }
 
 function getSessionMetaStatusInfo(session) {
@@ -151,7 +159,7 @@ function renderSessionScopeContext(session) {
     ? getEffectiveSessionSourceName(session)
     : "";
   if (sourceName) {
-    parts.push(`<span title="Session source">${esc(sourceName)}</span>`);
+    parts.push(`<span title="${esc(t("session.scope.source"))}">${esc(sourceName)}</span>`);
   }
 
   const templateAppId = typeof getEffectiveSessionTemplateAppId === "function"
@@ -162,29 +170,29 @@ function renderSessionScopeContext(session) {
       ? getSessionAppCatalogEntry(templateAppId)
       : null;
     const appName = appEntry?.name || session?.appName || "App";
-    parts.push(`<span title="Session app">App: ${esc(appName)}</span>`);
+    parts.push(`<span title="${esc(t("session.scope.app"))}">${esc(t("session.scope.appLabel", { name: appName }))}</span>`);
   }
 
   if (session?.visitorId) {
     const visitorLabel = typeof session?.visitorName === "string" && session.visitorName.trim()
-      ? `Visitor: ${session.visitorName.trim()}`
-      : (session?.visitorId ? "Visitor" : "Owner");
-    parts.push(`<span title="Session owner scope">${esc(visitorLabel)}</span>`);
+      ? t("session.scope.visitorNamed", { name: session.visitorName.trim() })
+      : (session?.visitorId ? t("session.scope.visitor") : t("session.scope.owner"));
+    parts.push(`<span title="${esc(t("session.scope.ownerTitle"))}">${esc(visitorLabel)}</span>`);
   }
 
   return parts;
 }
 
 function getFilteredSessionEmptyText({ archived = false } = {}) {
-  if (archived) return "No archived sessions";
+  if (archived) return t("sidebar.noArchived");
   if (
     activeSourceFilter !== FILTER_ALL_VALUE
     || activeSessionAppFilter !== FILTER_ALL_VALUE
     || activeUserFilter !== ADMIN_USER_FILTER_VALUE
   ) {
-    return "No sessions match the current filters";
+    return t("sidebar.noSessionsFiltered");
   }
-  return "No sessions yet";
+  return t("sidebar.noSessions");
 }
 
 function getSessionGroupInfo(session) {
@@ -229,17 +237,17 @@ function createActiveSessionItem(session) {
   const displayName = getSessionDisplayName(session);
   const metaParts = buildSessionMetaParts(session);
   const metaHtml = metaParts.join(" · ");
-  const pinTitle = session.pinned ? "Unpin" : "Pin";
+  const pinTitle = session.pinned ? t("action.unpin") : t("action.pin");
 
   div.innerHTML = `
     <div class="session-item-info">
-      <div class="session-item-name">${session.pinned ? `<span class="session-pin-badge" title="Pinned">${renderUiIcon("pinned")}</span>` : ""}${esc(displayName)}</div>
+      <div class="session-item-name">${session.pinned ? `<span class="session-pin-badge" title="${esc(t("sidebar.pinned"))}">${renderUiIcon("pinned")}</span>` : ""}${esc(displayName)}</div>
       ${metaHtml ? `<div class="session-item-meta">${metaHtml}</div>` : ""}
     </div>
     <div class="session-item-actions">
       <button class="session-action-btn pin${session.pinned ? " pinned" : ""}" type="button" title="${pinTitle}" aria-label="${pinTitle}" data-id="${session.id}">${renderUiIcon(session.pinned ? "pinned" : "pin")}</button>
-      <button class="session-action-btn rename" type="button" title="Rename" aria-label="Rename" data-id="${session.id}">${renderUiIcon("edit")}</button>
-      <button class="session-action-btn archive" type="button" title="Archive" aria-label="Archive" data-id="${session.id}">${renderUiIcon("archive")}</button>
+      <button class="session-action-btn rename" type="button" title="${esc(t("action.rename"))}" aria-label="${esc(t("action.rename"))}" data-id="${session.id}">${renderUiIcon("edit")}</button>
+      <button class="session-action-btn archive" type="button" title="${esc(t("action.archive"))}" aria-label="${esc(t("action.archive"))}" data-id="${session.id}">${renderUiIcon("archive")}</button>
     </div>`;
 
   div.addEventListener("click", (e) => {

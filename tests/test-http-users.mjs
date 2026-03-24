@@ -177,6 +177,7 @@ try {
       name: 'Judge iPhone',
       appIds: [videoCutAppId, 'app_basic_chat'],
       defaultAppId: videoCutAppId,
+      language: 'zh-CN',
       folder: repoRoot,
       tool: 'fake-codex',
     }, {
@@ -187,6 +188,7 @@ try {
     assert.equal(createUser.json?.user?.name, 'Judge iPhone');
     assert.deepEqual(createUser.json?.user?.appIds, [videoCutAppId, 'app_basic_chat']);
     assert.equal(createUser.json?.user?.defaultAppId, videoCutAppId);
+    assert.equal(createUser.json?.user?.language, 'zh-CN');
     assert.ok(createUser.json?.session?.id, 'creating a user should auto-seed a starter session');
     assert.equal(createUser.json?.session?.userId, createUser.json?.user?.id, 'starter session should bind to the new user');
     assert.equal(createUser.json?.session?.userName, 'Judge iPhone', 'starter session should inherit the user name');
@@ -213,6 +215,7 @@ try {
     assert.equal(listedUsers.status, 200, 'users should remain listable after creation');
     assert.equal((listedUsers.json?.users || []).length, 1, 'created user should appear in the listing');
     assert.equal(listedUsers.json?.users?.[0]?.id, createUser.json?.user?.id);
+    assert.equal(listedUsers.json?.users?.[0]?.language, 'zh-CN');
 
     const allSessions = await request(port, 'GET', '/api/sessions?includeVisitor=1', null, {
       Cookie: ownerCookie,
@@ -228,6 +231,7 @@ try {
       name: 'Judge iPhone 2',
       appIds: ['app_basic_chat'],
       defaultAppId: 'app_basic_chat',
+      language: 'en',
     }, {
       Cookie: ownerCookie,
     });
@@ -235,6 +239,7 @@ try {
     assert.equal(updatedUser.json?.user?.name, 'Judge iPhone 2');
     assert.deepEqual(updatedUser.json?.user?.appIds, ['app_basic_chat']);
     assert.equal(updatedUser.json?.user?.defaultAppId, 'app_basic_chat');
+    assert.equal(updatedUser.json?.user?.language, 'en');
 
     const visitorCreate = await request(port, 'POST', '/api/visitors', {
       name: 'Judge iPhone 2',

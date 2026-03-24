@@ -1,4 +1,8 @@
 // ---- Thinking toggle / effort select ----
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
 let runtimeSelectionSyncPromise = Promise.resolve();
 let lastSyncedRuntimeSelectionPayload = '';
 
@@ -154,7 +158,7 @@ function getAddToolDraft() {
     addToolRuntimeFamilySelect?.value || "claude-stream-json";
   const models = parseModelLines(addToolModelsInput?.value || "");
   const reasoningKind = addToolReasoningKindSelect?.value || "toggle";
-  const reasoning = { kind: reasoningKind, label: "Thinking" };
+  const reasoning = { kind: reasoningKind, label: t("tooling.thinking") };
   if (reasoningKind === "enum") {
     reasoning.levels = parseReasoningLevels(addToolReasoningLevelsInput?.value || "")
       .length > 0
@@ -254,7 +258,7 @@ function getShareSnapshotTitle(session) {
   if (name) return name;
   const tool = typeof session?.tool === "string" ? session.tool.trim() : "";
   if (tool) return tool;
-  return "RemoteLab snapshot";
+  return `RemoteLab ${t("status.readOnlySnapshot")}`;
 }
 
 function buildShareSnapshotShareText(session, shareUrl) {
@@ -291,7 +295,7 @@ async function shareCurrentSessionSnapshot() {
     if (navigator.share) {
       try {
         await navigator.share({ text: shareText });
-        updateCopyButtonLabel(shareSnapshotBtn, "Shared");
+        updateCopyButtonLabel(shareSnapshotBtn, t("action.share"));
         return;
       } catch (err) {
         if (err?.name === "AbortError") return;
@@ -300,14 +304,14 @@ async function shareCurrentSessionSnapshot() {
 
     try {
       await copyText(shareText);
-      updateCopyButtonLabel(shareSnapshotBtn, "Copied");
+      updateCopyButtonLabel(shareSnapshotBtn, t("action.copied"));
     } catch {
       window.prompt("Copy share text", shareText);
-      updateCopyButtonLabel(shareSnapshotBtn, "Ready");
+      updateCopyButtonLabel(shareSnapshotBtn, t("action.copy"));
     }
   } catch (err) {
     console.warn("[share] Failed to create snapshot:", err.message);
-    updateCopyButtonLabel(shareSnapshotBtn, "Failed");
+    updateCopyButtonLabel(shareSnapshotBtn, t("action.copyFailed"));
   } finally {
     shareSnapshotBtn.disabled = false;
     syncShareButton();
@@ -320,7 +324,7 @@ async function forkCurrentSession() {
   const original = forkSessionBtn.dataset.originalLabel || forkSessionBtn.textContent;
   forkSessionBtn.dataset.originalLabel = original;
   forkSessionBtn.disabled = true;
-  forkSessionBtn.textContent = "Forking…";
+  forkSessionBtn.textContent = `${t("action.fork")}…`;
 
   try {
     const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(currentSessionId)}/fork`, {
@@ -329,13 +333,13 @@ async function forkCurrentSession() {
     if (data.session) {
       upsertSession(data.session);
       renderSessionList();
-      updateCopyButtonLabel(forkSessionBtn, "Forked");
+      updateCopyButtonLabel(forkSessionBtn, t("action.fork"));
     } else {
-      updateCopyButtonLabel(forkSessionBtn, "Failed");
+      updateCopyButtonLabel(forkSessionBtn, t("action.copyFailed"));
     }
   } catch (err) {
     console.warn("[fork] Failed to fork session:", err.message);
-    updateCopyButtonLabel(forkSessionBtn, "Failed");
+    updateCopyButtonLabel(forkSessionBtn, t("action.copyFailed"));
   } finally {
     syncForkButton();
   }
@@ -443,7 +447,7 @@ function renderInlineToolOptions(selectedValue, emptyMessage = "No agents found"
 
   const addMoreOpt = document.createElement("option");
   addMoreOpt.value = ADD_MORE_TOOL_VALUE;
-  addMoreOpt.textContent = "+ Add more...";
+  addMoreOpt.textContent = t("settings.apps.addToolMore");
   inlineToolSelect.appendChild(addMoreOpt);
 
   if (selectedValue && toolsList.some((tool) => tool.id === selectedValue)) {
@@ -488,7 +492,7 @@ async function fetchModelResponse(toolId, { refresh = false } = {}) {
       models: [],
       effortLevels: null,
       defaultModel: null,
-      reasoning: { kind: "none", label: "Thinking" },
+      reasoning: { kind: "none", label: t("tooling.thinking") },
     };
   }
 
@@ -578,7 +582,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     currentToolModels = [];
     currentToolEffortLevels = null;
     currentToolReasoningKind = "none";
-    currentToolReasoningLabel = "Thinking";
+    currentToolReasoningLabel = t("tooling.thinking");
     currentToolReasoningDefault = null;
     selectedModel = null;
     selectedEffort = null;
@@ -593,7 +597,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     currentToolModels = [];
     currentToolEffortLevels = null;
     currentToolReasoningKind = "none";
-    currentToolReasoningLabel = "Thinking";
+    currentToolReasoningLabel = t("tooling.thinking");
     currentToolReasoningDefault = null;
     selectedModel = null;
     selectedEffort = null;
@@ -610,7 +614,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     currentToolModels = data.models || [];
     currentToolReasoningKind =
       data.reasoning?.kind || (data.effortLevels ? "enum" : "toggle");
-    currentToolReasoningLabel = data.reasoning?.label || "Thinking";
+    currentToolReasoningLabel = data.reasoning?.label || t("tooling.thinking");
     currentToolReasoningDefault = data.reasoning?.default || null;
     currentToolEffortLevels =
       currentToolReasoningKind === "enum"
@@ -622,7 +626,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     inlineModelSelect.innerHTML = "";
     const defaultOpt = document.createElement("option");
     defaultOpt.value = "";
-    defaultOpt.textContent = "default";
+    defaultOpt.textContent = t("tooling.defaultModel");
     inlineModelSelect.appendChild(defaultOpt);
     for (const m of currentToolModels) {
       const opt = document.createElement("option");
@@ -752,7 +756,7 @@ saveToolConfigBtn.addEventListener("click", saveSimpleToolConfig);
 copyProviderPromptBtn.addEventListener("click", async () => {
   try {
     await copyText(buildProviderBasePrompt());
-    updateCopyButtonLabel(copyProviderPromptBtn, "Copied");
+    updateCopyButtonLabel(copyProviderPromptBtn, t("action.copied"));
   } catch (err) {
     console.warn("[copy] Failed to copy provider prompt:", err.message);
   }

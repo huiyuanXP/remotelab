@@ -3,6 +3,7 @@ import { dirname } from 'path';
 import { USERS_FILE } from '../lib/config.mjs';
 import { BASIC_CHAT_APP_ID } from './apps.mjs';
 import { createSerialTaskQueue, ensureDir, readJson, writeJsonAtomic } from './fs-utils.mjs';
+import { normalizeUiLanguagePreference } from './ui-language.mjs';
 
 const runUsersMutation = createSerialTaskQueue();
 
@@ -30,6 +31,10 @@ function normalizeDefaultAppId(value, appIds = []) {
   return appIds[0] || BASIC_CHAT_APP_ID;
 }
 
+function normalizeUserLanguage(value) {
+  return normalizeUiLanguagePreference(value, { allowAuto: true });
+}
+
 function normalizeUserRecord(user) {
   if (!user || typeof user !== 'object') return null;
   const id = typeof user.id === 'string' ? user.id.trim() : '';
@@ -42,6 +47,7 @@ function normalizeUserRecord(user) {
     name: normalizeUserName(user.name) || 'New user',
     appIds: appIds.length > 0 ? appIds : [BASIC_CHAT_APP_ID],
     defaultAppId: normalizeDefaultAppId(user.defaultAppId, appIds.length > 0 ? appIds : [BASIC_CHAT_APP_ID]),
+    language: normalizeUserLanguage(user.language),
     shareVisitorId,
     createdAt: typeof user.createdAt === 'string' && user.createdAt.trim()
       ? user.createdAt.trim()
@@ -91,6 +97,7 @@ export async function createUser(input = {}) {
       name,
       appIds: normalizedAppIds,
       defaultAppId,
+      language: normalizeUserLanguage(input.language),
       createdAt: new Date().toISOString(),
     };
     const users = await loadUsers();
@@ -118,6 +125,9 @@ export async function updateUser(id, updates = {}) {
       updates.defaultAppId === undefined ? users[index].defaultAppId : updates.defaultAppId,
       users[index].appIds,
     );
+    if (Object.prototype.hasOwnProperty.call(updates, 'language')) {
+      users[index].language = normalizeUserLanguage(updates.language);
+    }
     if (Object.prototype.hasOwnProperty.call(updates, 'shareVisitorId')) {
       users[index].shareVisitorId = typeof updates.shareVisitorId === 'string'
         ? updates.shareVisitorId.trim()

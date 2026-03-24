@@ -1,3 +1,64 @@
+function t(key, vars) {
+  return window.remotelabT ? window.remotelabT(key, vars) : key;
+}
+
+function getManagedUserLanguage(user) {
+  if (typeof user?.language !== "string" || !user.language.trim()) return "auto";
+  return user.language.trim();
+}
+
+function renderUiLanguageOptions(selectEl, selectedValue = "auto") {
+  if (!selectEl) return;
+  const options = typeof window.remotelabGetUiLanguageOptions === "function"
+    ? window.remotelabGetUiLanguageOptions()
+    : [
+      { value: "auto", label: t("settings.language.optionAuto") },
+      { value: "zh-CN", label: t("settings.language.optionZhCN") },
+      { value: "en", label: t("settings.language.optionEn") },
+    ];
+  selectEl.innerHTML = "";
+  for (const optionData of options) {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    selectEl.appendChild(option);
+  }
+  selectEl.value = options.some((option) => option.value === selectedValue) ? selectedValue : "auto";
+}
+
+function syncUiLanguageStatus() {
+  if (!uiLanguageStatus) return;
+  const currentPreference = typeof window.remotelabGetUiLanguagePreference === "function"
+    ? window.remotelabGetUiLanguagePreference()
+    : "auto";
+  uiLanguageStatus.textContent = currentPreference === "auto"
+    ? t("settings.language.ownerStatusAuto")
+    : t("settings.language.ownerStatusOverride");
+}
+
+function initUiLanguageSettings() {
+  if (!uiLanguageSelect || uiLanguageSelect.dataset.bound === "true") {
+    syncUiLanguageStatus();
+    return;
+  }
+  renderUiLanguageOptions(
+    uiLanguageSelect,
+    typeof window.remotelabGetUiLanguagePreference === "function"
+      ? window.remotelabGetUiLanguagePreference()
+      : "auto",
+  );
+  syncUiLanguageStatus();
+  uiLanguageSelect.addEventListener("change", () => {
+    const value = uiLanguageSelect.value || "auto";
+    if (typeof window.remotelabSetUiLanguagePreference === "function") {
+      window.remotelabSetUiLanguagePreference(value, { reload: true });
+      return;
+    }
+    syncUiLanguageStatus();
+  });
+  uiLanguageSelect.dataset.bound = "true";
+}
+
 function getOrderedSettingsApps() {
   const apps = Array.isArray(availableApps)
     ? availableApps.filter((app) => isTemplateAppScopeId(app?.id))
@@ -20,7 +81,7 @@ function buildAppShareUrl(app) {
 
 function summarizeAppDescription(app) {
   if (app?.id === BASIC_CHAT_TEMPLATE_APP_ID) {
-    return "Default normal conversation app for everyday RemoteLab sessions.";
+    return t("settings.apps.label.defaultConversation");
   }
   const welcome = typeof app?.welcomeMessage === "string" ? app.welcomeMessage.trim() : "";
   if (welcome) {
@@ -31,14 +92,14 @@ function summarizeAppDescription(app) {
     return `${systemPrompt.slice(0, 120)}${systemPrompt.length > 120 ? "…" : ""}`;
   }
   return app?.shareEnabled === false
-    ? "Internal starter app. Opens owner sessions only."
-    : "Shareable app.";
+    ? t("settings.apps.label.internalStarter")
+    : t("settings.apps.label.shareableApp");
 }
 
 function getAppKindLabel(app) {
   const labels = [];
-  labels.push(app?.builtin ? "Built-in" : "Custom");
-  labels.push(app?.shareEnabled === false ? "Internal" : "Shareable");
+  labels.push(app?.builtin ? t("settings.apps.kind.builtin") : t("settings.apps.kind.custom"));
+  labels.push(app?.shareEnabled === false ? t("settings.apps.kind.internal") : t("settings.apps.kind.shareable"));
   return labels.join(" · ");
 }
 
@@ -68,7 +129,7 @@ function getAdminSessionPrincipal() {
   return {
     kind: "owner",
     id: ADMIN_USER_FILTER_VALUE,
-    name: "Admin",
+    name: t("sidebar.filter.admin", { count: 0 }).replace(/\s*\(0\)$/, ""),
     appIds: [],
     defaultAppId: BASIC_CHAT_TEMPLATE_APP_ID,
   };
@@ -85,7 +146,7 @@ function getPrincipalForUser(user) {
   return {
     kind: "user",
     id: user.id,
-    name: user.name || "User",
+    name: user.name || t("settings.users.newUserFallback"),
     appIds: Array.isArray(user.appIds) ? user.appIds.filter(Boolean) : [],
     defaultAppId: typeof user.defaultAppId === "string" ? user.defaultAppId.trim() : "",
   };
@@ -172,7 +233,7 @@ function renderAppToolSelectOptions(selectEl, selectedValue = "") {
   if (toolOptions.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "No tools available";
+    option.textContent = t("settings.apps.noToolsAvailable");
     selectEl.appendChild(option);
     selectEl.disabled = true;
     return;
@@ -203,7 +264,7 @@ function syncNewUserDefaultAppOptions(selectedAppIds = getSelectedNewUserAppIds(
   if (selectedApps.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "Choose at least one app";
+    option.textContent = t("settings.users.chooseAtLeastOneApp");
     newUserDefaultAppSelect.appendChild(option);
     newUserDefaultAppSelect.disabled = true;
     if (createUserBtn) createUserBtn.disabled = true;
@@ -229,16 +290,17 @@ function renderUserAppOptions() {
   if (!newUserAppsPicker) return;
   const apps = getOrderedSettingsApps();
   newUserAppsPicker.innerHTML = "";
+  renderUiLanguageOptions(newUserLanguageSelect, "auto");
   if (apps.length === 0) {
-    newUserAppsPicker.innerHTML = '<div class="settings-app-empty">Create an app first.</div>';
+    newUserAppsPicker.innerHTML = `<div class="settings-app-empty">${t("settings.users.createFirstApp")}</div>`;
     syncNewUserDefaultAppOptions([]);
-    setUserFormStatus("Create at least one app before adding a user.");
+    setUserFormStatus(t("settings.users.needAppBeforeCreate"));
     return;
   }
 
   const title = document.createElement("div");
   title.className = "settings-app-kind";
-  title.textContent = "Allowed apps";
+  title.textContent = t("settings.users.allowedApps");
   newUserAppsPicker.appendChild(title);
 
   const grid = document.createElement("div");
@@ -270,7 +332,7 @@ function renderUserAppOptions() {
 
   newUserAppsPicker.appendChild(grid);
   syncNewUserDefaultAppOptions(activeIds);
-  setUserFormStatus("Admin stays the default view. New users get a starter session automatically.");
+  setUserFormStatus(t("settings.users.defaultStatus"));
 }
 
 function focusNewUserComposer() {
@@ -295,23 +357,25 @@ async function handleCreateUser() {
   if (!newUserDefaultAppSelect || newUserDefaultAppSelect.disabled) return false;
   const appIds = getSelectedNewUserAppIds();
   if (appIds.length === 0) {
-    setUserFormStatus("Choose at least one app.");
+    setUserFormStatus(t("settings.users.chooseOneApp"));
     return false;
   }
   const defaultAppId = newUserDefaultAppSelect.value || appIds[0];
   const tool = preferredTool || selectedTool || toolsList[0]?.id || "";
   if (!tool) {
-    setUserFormStatus("Choose a tool first.");
+    setUserFormStatus(t("settings.users.chooseToolFirst"));
     return false;
   }
+  const language = typeof newUserLanguageSelect?.value === "string" ? newUserLanguageSelect.value : "auto";
   const name = typeof newUserNameInput?.value === "string" ? newUserNameInput.value.trim() : "";
   if (createUserBtn) createUserBtn.disabled = true;
-  setUserFormStatus("Creating user…");
+  setUserFormStatus(t("settings.users.creating"));
   try {
     const result = await createUserRecord({
-      name: name || "New user",
+      name: name || t("settings.users.newUserFallback"),
       appIds,
       defaultAppId,
+      language,
       folder: "~",
       tool,
     });
@@ -323,10 +387,10 @@ async function handleCreateUser() {
     const user = result?.user;
     refreshAppCatalog();
     renderSessionList();
-    setUserFormStatus(`Created ${user?.name || "user"}. Copy a share link below when you are ready.`);
+    setUserFormStatus(t("settings.users.created", { name: user?.name || t("settings.users.newUserFallback") }));
     return true;
   } catch (error) {
-    setUserFormStatus(error?.message || "Failed to create user.");
+    setUserFormStatus(error?.message || t("settings.users.createFailed"));
     return false;
   } finally {
     if (createUserBtn) createUserBtn.disabled = false;
@@ -343,9 +407,9 @@ function copyShareUrl(shareUrl, button) {
       } else {
         throw new Error("clipboard unavailable");
       }
-      setTemporaryButtonText(button, "Copied");
+      setTemporaryButtonText(button, t("action.copied"));
     } catch {
-      setTemporaryButtonText(button, "Copy failed");
+      setTemporaryButtonText(button, t("action.copyFailed"));
     }
   })();
 }
@@ -358,17 +422,18 @@ function buildVisitorShareUrl(visitor) {
 
 async function ensureUserShareUrl(user) {
   if (!user?.id) {
-    throw new Error("User not found.");
+    throw new Error(t("settings.users.notFound"));
   }
   const appId = user.defaultAppId || user.appIds?.[0] || "";
   const app = getAppRecordById(appId);
   if (!app || app.shareEnabled === false) {
-    throw new Error("Choose a shareable default app first.");
+    throw new Error(t("settings.users.chooseShareableDefaultApp"));
   }
 
   const visitorPayload = {
-    name: user.name || "New user",
+    name: user.name || t("settings.users.newUserFallback"),
     appId: app.id,
+    language: getManagedUserLanguage(user),
   };
   const existingVisitorId = typeof user.shareVisitorId === "string" ? user.shareVisitorId.trim() : "";
   let visitor = null;
@@ -392,15 +457,15 @@ async function ensureUserShareUrl(user) {
 
   const shareUrl = buildVisitorShareUrl(visitor);
   if (!shareUrl) {
-    throw new Error("Failed to build share link.");
+    throw new Error(t("settings.users.buildShareFailed"));
   }
   return shareUrl;
 }
 
 async function patchManagedUser(user, updates, {
   statusEl = null,
-  pendingText = "Saving…",
-  successText = "Saved.",
+  pendingText = t("settings.users.savePending"),
+  successText = t("settings.users.saved"),
   onSuccess = null,
 } = {}) {
   if (!user?.id) return null;
@@ -409,6 +474,17 @@ async function patchManagedUser(user, updates, {
   }
   try {
     const updated = await updateUserRecord(user.id, updates);
+    if (updated?.shareVisitorId) {
+      const shareAppId = updated.defaultAppId || updated.appIds?.[0] || "";
+      const shareApp = getAppRecordById(shareAppId);
+      if (shareApp?.id && shareApp.shareEnabled !== false) {
+        void updateVisitorRecord(updated.shareVisitorId, {
+          name: updated.name || t("settings.users.newUserFallback"),
+          appId: shareApp.id,
+          language: getManagedUserLanguage(updated),
+        }).catch(() => {});
+      }
+    }
     if (statusEl) {
       statusEl.textContent = successText;
     }
@@ -418,7 +494,7 @@ async function patchManagedUser(user, updates, {
     return updated;
   } catch (error) {
     if (statusEl) {
-      statusEl.textContent = error?.message || "Failed to save user.";
+      statusEl.textContent = error?.message || t("settings.users.saveFailed");
     }
     return null;
   }
@@ -428,15 +504,15 @@ async function handleCreateApp() {
   const name = typeof newAppNameInput?.value === "string" ? newAppNameInput.value.trim() : "";
   const tool = typeof newAppToolSelect?.value === "string" ? newAppToolSelect.value.trim() : "";
   if (!name) {
-    setAppFormStatus("Name is required.");
+    setAppFormStatus(t("settings.apps.nameRequired"));
     return false;
   }
   if (!tool) {
-    setAppFormStatus("Choose a tool first.");
+    setAppFormStatus(t("settings.users.chooseToolFirst"));
     return false;
   }
   if (createAppConfigBtn) createAppConfigBtn.disabled = true;
-  setAppFormStatus("Creating app…");
+  setAppFormStatus(t("settings.apps.creating"));
   try {
     const app = await createAppRecord({
       name,
@@ -452,12 +528,12 @@ async function handleCreateApp() {
     const shareUrl = buildAppShareUrl(app);
     setAppFormStatus(
       shareUrl
-        ? `Created ${app?.name || "app"}. Use Copy Link below to share it.`
-        : `Created ${app?.name || "app"}.`,
+        ? t("settings.apps.createdShare", { name: app?.name || t("settings.apps.untitled") })
+        : t("settings.apps.created", { name: app?.name || t("settings.apps.untitled") }),
     );
     return true;
   } catch (error) {
-    setAppFormStatus(error?.message || "Failed to create app.");
+    setAppFormStatus(error?.message || t("settings.apps.createFailed"));
     return false;
   } finally {
     if (createAppConfigBtn) createAppConfigBtn.disabled = false;
@@ -482,7 +558,7 @@ function focusNewAppComposer() {
 function renderSettingsAppsPanel() {
   if (!settingsAppsList) return;
   if (visitorMode) {
-    settingsAppsList.innerHTML = '<div class="settings-app-empty">Apps are only available to the owner.</div>';
+    settingsAppsList.innerHTML = `<div class="settings-app-empty">${t("settings.apps.ownerOnly")}</div>`;
     return;
   }
 
@@ -490,7 +566,7 @@ function renderSettingsAppsPanel() {
   const apps = getOrderedSettingsApps();
   settingsAppsList.innerHTML = "";
   if (apps.length === 0) {
-    settingsAppsList.innerHTML = '<div class="settings-app-empty">No apps yet.</div>';
+    settingsAppsList.innerHTML = `<div class="settings-app-empty">${t("settings.apps.none")}</div>`;
     return;
   }
 
@@ -502,7 +578,7 @@ function renderSettingsAppsPanel() {
     header.className = "settings-app-card-header";
     const name = document.createElement("div");
     name.className = "settings-app-name";
-    name.textContent = app.name || "Untitled App";
+    name.textContent = app.name || t("settings.apps.untitled");
     const kind = document.createElement("div");
     kind.className = "settings-app-kind";
     kind.textContent = getAppKindLabel(app);
@@ -517,7 +593,9 @@ function renderSettingsAppsPanel() {
 
     const meta = document.createElement("div");
     meta.className = "settings-app-meta";
-    meta.textContent = `Default tool · ${(app.tool || preferredTool || selectedTool || "not set")}`;
+    meta.textContent = t("settings.apps.meta.defaultTool", {
+      tool: app.tool || preferredTool || selectedTool || t("settings.apps.toolNotSet"),
+    });
     card.appendChild(meta);
 
     const shareUrl = buildAppShareUrl(app);
@@ -546,18 +624,18 @@ function renderSettingsAppsPanel() {
       const welcomeInput = document.createElement("textarea");
       welcomeInput.className = "settings-inline-textarea";
       welcomeInput.value = typeof app.welcomeMessage === "string" ? app.welcomeMessage : "";
-      welcomeInput.placeholder = "Optional first assistant message";
+      welcomeInput.placeholder = t("settings.apps.welcomePlaceholder");
       editor.appendChild(welcomeInput);
 
       const systemPromptInput = document.createElement("textarea");
       systemPromptInput.className = "settings-inline-textarea";
       systemPromptInput.value = typeof app.systemPrompt === "string" ? app.systemPrompt : "";
-      systemPromptInput.placeholder = "Optional system prompt";
+      systemPromptInput.placeholder = t("settings.apps.systemPromptPlaceholder");
       editor.appendChild(systemPromptInput);
 
       const inlineStatus = document.createElement("div");
       inlineStatus.className = "settings-app-empty inline-status";
-      inlineStatus.textContent = "Custom apps are editable here.";
+      inlineStatus.textContent = t("settings.apps.editableHint");
       editor.appendChild(inlineStatus);
       card.appendChild(editor);
 
@@ -567,10 +645,10 @@ function renderSettingsAppsPanel() {
       const saveBtn = document.createElement("button");
       saveBtn.type = "button";
       saveBtn.className = "settings-app-btn";
-      saveBtn.textContent = "Save";
+      saveBtn.textContent = t("action.save");
       saveBtn.addEventListener("click", async () => {
         saveBtn.disabled = true;
-        inlineStatus.textContent = "Saving…";
+        inlineStatus.textContent = t("settings.users.savePending");
         try {
           const updated = await updateAppRecord(app.id, {
             name: nameInput.value,
@@ -578,9 +656,9 @@ function renderSettingsAppsPanel() {
             welcomeMessage: welcomeInput.value,
             systemPrompt: systemPromptInput.value,
           });
-          inlineStatus.textContent = `Saved ${updated?.name || "app"}.`;
+          inlineStatus.textContent = t("settings.users.savedName", { name: updated?.name || t("settings.apps.untitled") });
         } catch (error) {
-          inlineStatus.textContent = error?.message || "Failed to save app.";
+          inlineStatus.textContent = error?.message || t("settings.apps.saveFailed");
         } finally {
           saveBtn.disabled = false;
         }
@@ -590,15 +668,15 @@ function renderSettingsAppsPanel() {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "settings-app-btn";
-      deleteBtn.textContent = "Delete";
+      deleteBtn.textContent = t("action.delete");
       deleteBtn.addEventListener("click", async () => {
         deleteBtn.disabled = true;
-        inlineStatus.textContent = "Deleting…";
+        inlineStatus.textContent = t("settings.users.deleting");
         try {
           await deleteAppRecord(app.id);
         } catch (error) {
           deleteBtn.disabled = false;
-          inlineStatus.textContent = error?.message || "Failed to delete app.";
+          inlineStatus.textContent = error?.message || t("settings.apps.deleteFailed");
         }
       });
       actions.appendChild(deleteBtn);
@@ -607,7 +685,7 @@ function renderSettingsAppsPanel() {
         const copyLinkBtn = document.createElement("button");
         copyLinkBtn.type = "button";
         copyLinkBtn.className = "settings-app-btn";
-        copyLinkBtn.textContent = "Copy Link";
+        copyLinkBtn.textContent = t("settings.apps.copyLink");
         copyLinkBtn.addEventListener("click", () => {
           void copyShareUrl(shareUrl, copyLinkBtn);
         });
@@ -626,7 +704,7 @@ function renderSettingsAppsPanel() {
       const copyLinkBtn = document.createElement("button");
       copyLinkBtn.type = "button";
       copyLinkBtn.className = "settings-app-btn";
-      copyLinkBtn.textContent = "Copy Link";
+      copyLinkBtn.textContent = t("settings.apps.copyLink");
       copyLinkBtn.addEventListener("click", () => {
         void copyShareUrl(shareUrl, copyLinkBtn);
       });
@@ -641,14 +719,14 @@ function renderSettingsAppsPanel() {
 function renderSettingsUsersPanel() {
   if (!settingsUsersList) return;
   if (visitorMode) {
-    settingsUsersList.innerHTML = '<div class="settings-app-empty">Users are only available to the owner.</div>';
+    settingsUsersList.innerHTML = `<div class="settings-app-empty">${t("settings.users.ownerOnly")}</div>`;
     return;
   }
 
   settingsUsersList.innerHTML = "";
   const users = Array.isArray(availableUsers) ? availableUsers : [];
   if (users.length === 0) {
-    settingsUsersList.innerHTML = '<div class="settings-app-empty">No extra users yet. Admin stays the default view.</div>';
+    settingsUsersList.innerHTML = `<div class="settings-app-empty">${t("settings.users.noneYet")}</div>`;
     return;
   }
 
@@ -661,12 +739,15 @@ function renderSettingsUsersPanel() {
     header.className = "settings-app-card-header";
     const name = document.createElement("div");
     name.className = "settings-app-name";
-    name.textContent = user.name || "Unnamed user";
+    name.textContent = user.name || t("settings.users.newUserFallback");
     const kind = document.createElement("div");
     kind.className = "settings-app-kind";
     const allowedApps = allApps.filter((app) => Array.isArray(user.appIds) && user.appIds.includes(app.id));
     const defaultApp = allowedApps.find((app) => app.id === user.defaultAppId) || allowedApps[0] || null;
-    kind.textContent = `${allowedApps.length} app${allowedApps.length === 1 ? "" : "s"} · default ${defaultApp?.name || "Basic Chat"}`;
+    kind.textContent = t(
+      allowedApps.length === 1 ? "settings.users.summary.one" : "settings.users.summary.other",
+      { count: allowedApps.length, name: defaultApp?.name || t("settings.users.defaultAppFallback") },
+    );
     header.appendChild(name);
     header.appendChild(kind);
     card.appendChild(header);
@@ -674,8 +755,8 @@ function renderSettingsUsersPanel() {
     const description = document.createElement("div");
     description.className = "settings-app-description";
     description.textContent = allowedApps.length > 0
-      ? `Allowed apps: ${allowedApps.map((app) => app.name || app.id).join(", ")}`
-      : "No apps selected yet.";
+      ? t("settings.users.allowedAppsList", { apps: allowedApps.map((app) => app.name || app.id).join(", ") })
+      : t("settings.users.noAppsSelected");
     card.appendChild(description);
 
     const editor = document.createElement("div");
@@ -689,7 +770,7 @@ function renderSettingsUsersPanel() {
 
     const pickerLabel = document.createElement("div");
     pickerLabel.className = "settings-app-kind";
-    pickerLabel.textContent = "Allowed apps";
+    pickerLabel.textContent = t("settings.users.allowedApps");
     editor.appendChild(pickerLabel);
 
     const chipGrid = document.createElement("div");
@@ -718,7 +799,7 @@ function renderSettingsUsersPanel() {
       if (selectedApps.length === 0) {
         const option = document.createElement("option");
         option.value = "";
-        option.textContent = "Choose at least one app";
+        option.textContent = t("settings.users.chooseAtLeastOneApp");
         defaultSelect.appendChild(option);
         defaultSelect.disabled = true;
         return;
@@ -741,9 +822,14 @@ function renderSettingsUsersPanel() {
     syncDefaultOptions();
     editor.appendChild(defaultSelect);
 
+    const languageSelect = document.createElement("select");
+    languageSelect.className = "settings-inline-select";
+    renderUiLanguageOptions(languageSelect, getManagedUserLanguage(user));
+    editor.appendChild(languageSelect);
+
     const inlineStatus = document.createElement("div");
     inlineStatus.className = "settings-app-empty inline-status";
-    inlineStatus.textContent = "Changes save immediately. Copy the share link when you are ready to send this user out.";
+    inlineStatus.textContent = t("settings.users.shareReadyNote");
     editor.appendChild(inlineStatus);
     card.appendChild(editor);
 
@@ -755,7 +841,7 @@ function renderSettingsUsersPanel() {
       }
       const updated = await patchManagedUser(user, { name: nextName }, {
         statusEl: inlineStatus,
-        successText: `Saved ${nextName}.`,
+        successText: t("settings.users.savedName", { name: nextName }),
       });
       if (updated?.name) {
         user.name = updated.name;
@@ -768,11 +854,24 @@ function renderSettingsUsersPanel() {
       if (!nextDefaultAppId || nextDefaultAppId === user.defaultAppId) return;
       const updated = await patchManagedUser(user, { defaultAppId: nextDefaultAppId }, {
         statusEl: inlineStatus,
-        successText: "Default app updated.",
+        successText: t("settings.users.defaultAppUpdated"),
       });
       if (updated?.defaultAppId) {
         user.defaultAppId = updated.defaultAppId;
         defaultSelect.value = updated.defaultAppId;
+      }
+    });
+
+    languageSelect.addEventListener("change", async () => {
+      const nextLanguage = languageSelect.value || "auto";
+      if (nextLanguage === getManagedUserLanguage(user)) return;
+      const updated = await patchManagedUser(user, { language: nextLanguage }, {
+        statusEl: inlineStatus,
+        successText: t("settings.users.saved"),
+      });
+      if (updated?.language) {
+        user.language = updated.language;
+        languageSelect.value = updated.language;
       }
     });
 
@@ -782,7 +881,7 @@ function renderSettingsUsersPanel() {
         if (appIds.length === 0) {
           checkbox.checked = true;
           syncDefaultOptions();
-          inlineStatus.textContent = "Choose at least one app.";
+          inlineStatus.textContent = t("settings.users.chooseOneApp");
           return;
         }
         syncDefaultOptions();
@@ -792,7 +891,7 @@ function renderSettingsUsersPanel() {
           defaultAppId: nextDefaultAppId,
         }, {
           statusEl: inlineStatus,
-          successText: "Allowed apps updated.",
+          successText: t("settings.users.allowedAppsUpdated"),
         });
         if (updated) {
           user.appIds = Array.isArray(updated.appIds) ? updated.appIds : appIds;
@@ -808,16 +907,16 @@ function renderSettingsUsersPanel() {
     const copyLinkBtn = document.createElement("button");
     copyLinkBtn.type = "button";
     copyLinkBtn.className = "settings-app-btn";
-    copyLinkBtn.textContent = "Copy Share Link";
+    copyLinkBtn.textContent = t("action.copyShareLink");
     copyLinkBtn.addEventListener("click", async () => {
       copyLinkBtn.disabled = true;
-      inlineStatus.textContent = "Preparing share link…";
+      inlineStatus.textContent = t("settings.users.sharePreparing");
       try {
         const shareUrl = await ensureUserShareUrl(user);
         await copyShareUrl(shareUrl, copyLinkBtn);
-        inlineStatus.textContent = "Share link copied.";
+        inlineStatus.textContent = t("settings.users.shareCopied");
       } catch (error) {
-        inlineStatus.textContent = error?.message || "Failed to prepare share link.";
+        inlineStatus.textContent = error?.message || t("settings.users.shareFailed");
       } finally {
         copyLinkBtn.disabled = false;
       }
@@ -827,10 +926,10 @@ function renderSettingsUsersPanel() {
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "settings-app-btn";
-    deleteBtn.textContent = "Delete";
+    deleteBtn.textContent = t("action.delete");
     deleteBtn.addEventListener("click", async () => {
       deleteBtn.disabled = true;
-      inlineStatus.textContent = "Deleting…";
+      inlineStatus.textContent = t("settings.users.deleting");
       try {
         await deleteUserRecord(user.id);
         if (activeUserFilter === user.id) {
@@ -841,7 +940,7 @@ function renderSettingsUsersPanel() {
         }
       } catch (error) {
         deleteBtn.disabled = false;
-        inlineStatus.textContent = error?.message || "Failed to delete user.";
+        inlineStatus.textContent = error?.message || t("settings.users.deleteFailed");
       }
     });
     actions.appendChild(deleteBtn);
@@ -850,3 +949,6 @@ function renderSettingsUsersPanel() {
     settingsUsersList.appendChild(card);
   }
 }
+
+initUiLanguageSettings();
+renderUiLanguageOptions(newUserLanguageSelect, "auto");
