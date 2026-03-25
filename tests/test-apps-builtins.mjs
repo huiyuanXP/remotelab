@@ -75,10 +75,14 @@ try {
   assert.match(welcomeApp?.systemPrompt || '', /durable knowledge|repeat themselves/i);
   assert.match(welcomeApp?.systemPrompt || '', /internal task frame|backend-owned hidden state|concrete materials/i);
   assert.match(welcomeApp?.systemPrompt || '', /execution surface|local paths|complete handoff/i);
+  assert.match(welcomeApp?.systemPrompt || '', /machine-side execution and user-visible delivery as separate steps|read, download, open, or otherwise reach the result/i);
   assert.doesNotMatch(welcomeApp?.systemPrompt || '', /task_card|hidden <private>|mode, summary, goal/i);
   assert.match(welcomeApp?.welcomeMessage || '', /我是 Rowan|聊天工具|先接手、再梳理、再推进执行/u);
+  assert.match(welcomeApp?.welcomeMessage || '', /执行工作的地方|翻文件|取结果的界面/u);
   assert.match(welcomeApp?.welcomeMessage || '', /报表\/表格整理|导出导入|文件批处理/u);
   assert.match(welcomeApp?.welcomeMessage || '', /prompt 想清楚|一次说齐|进入执行/u);
+  assert.match(welcomeApp?.welcomeMessage || '', /还不算真正完成交付|交到你手里/u);
+  assert.match(welcomeApp?.welcomeMessage || '', /下载链接|导出入口/u);
   assert.match(welcomeApp?.welcomeMessage || '', /可读\/可下载内容|某个路径里找/u);
   assert.match(welcomeApp?.welcomeMessage || '', /最关键的一两个问题|现在就把这次的事和材料发来/u);
 
@@ -100,6 +104,7 @@ try {
   assert.match(createAppStarter?.systemPrompt || '', /share link|\/app\/\{shareToken\}|other people/i);
   assert.match(createAppStarter?.systemPrompt || '', /visitors interact only through RemoteLab|local-path-based handoff/i);
   assert.match(createAppStarter?.systemPrompt || '', /chat attachments|share links|user-reachable channel/i);
+  assert.match(createAppStarter?.systemPrompt || '', /opening welcome message teach this delivery contract|machine-side completion is not the same as user delivery|download, export, or share path/i);
   assert.match(createAppStarter?.systemPrompt || '', /http:\/\/127\.0\.0\.1:7692/);
   assert.match(
     createAppStarter?.systemPrompt || '',
@@ -107,7 +112,9 @@ try {
   );
   assert.match(createAppStarter?.welcomeMessage || '', /SOP|工作流|RemoteLab App/i);
   assert.match(createAppStarter?.welcomeMessage || '', /SOP|工作流/i);
-  assert.match(createAppStarter?.welcomeMessage || '', /交付方式一起设计进去|会话里直接拿到|宿主机上找路径/u);
+  assert.match(createAppStarter?.welcomeMessage || '', /visitor 首屏欢迎|宿主机只是执行面|翻路径的地方/u);
+  assert.match(createAppStarter?.welcomeMessage || '', /不等于用户已经拿到结果/u);
+  assert.match(createAppStarter?.welcomeMessage || '', /下载链接|导出入口|明确可达/u);
   assert.match(createAppStarter?.welcomeMessage || '', /分享给别人的链接|分享方式|share/i);
 
   assert.equal(await getApp('feishu'), null);

@@ -100,6 +100,11 @@ try {
     'default Codex developer instructions should prevent local-only delivery from counting as completion',
   );
   assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /Machine-side completion alone does not mean the user already has the result|open, read, or download it from a reachable surface/,
+    'default Codex developer instructions should separate machine-side completion from user-visible delivery',
+  );
+  assert.match(
     MANAGER_RUNTIME_BOUNDARY_SECTION,
     /host machine is your private execution surface, not the default user interface/,
     'manager runtime boundary should define the host as the agent execution surface rather than the user interface',
@@ -108,6 +113,11 @@ try {
     MANAGER_RUNTIME_BOUNDARY_SECTION,
     /Do not assume remote users can browse local folders, inspect this computer, or pick up files from host-only paths/,
     'manager runtime boundary should block assumptions of direct host access for remote users',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /Machine-side completion and user-visible delivery are separate states|open, read, or download the result from a reachable surface/,
+    'manager runtime boundary should treat user delivery as distinct from machine-side completion',
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,

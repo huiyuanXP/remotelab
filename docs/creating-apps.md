@@ -14,6 +14,7 @@ When someone opens your App link:
 The visitor doesn't need to know anything about prompts, tools, or configuration. They just talk.
 
 They also do not get general access to the host machine. If an App needs to hand back files or artifacts, design the workflow so the result is delivered through chat attachments, a share link, email, or another explicit user-reachable channel instead of telling the visitor to inspect a local path on the computer.
+A good visitor welcome message should make that contract obvious up front: the host machine is only where the work runs, finishing work on the machine is not the same as the visitor receiving the result, and any deliverable should come back through a reachable download/export/share path.
 
 ## How to Create an App
 
@@ -72,7 +73,7 @@ In any regular session, you can say:
 
 ## Tips for Good Apps
 
-1. **Welcome message should be actionable** — tell the visitor exactly what to do first
+1. **Welcome message should be actionable and set the delivery contract** — tell the visitor exactly what to do first, where results will show up, and avoid implying they should inspect the host machine
 2. **System instructions should be specific** — "correct grammar gently" is better than "be helpful"
 3. **Treat saved templates as snapshots** — if you reuse a session as a template, refresh it when the underlying project context changes a lot
 4. **Test it yourself** — click the share link in a private/incognito window before sharing

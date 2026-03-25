@@ -189,6 +189,9 @@ try {
       { Cookie: ownerCookie },
     );
     assert.match(welcomeStarterContent, /我是 Rowan|报表\/表格整理|prompt 想清楚|最关键的一两个问题/u);
+    assert.match(welcomeStarterContent, /执行工作的地方|翻文件|取结果的界面/u);
+    assert.match(welcomeStarterContent, /还不算真正完成交付|交到你手里/u);
+    assert.match(welcomeStarterContent, /下载链接|导出入口/u);
 
     const createAppSession = await request(port, 'POST', '/api/sessions', {
       folder: repoRoot,
@@ -216,6 +219,9 @@ try {
       { Cookie: ownerCookie },
     );
     assert.match(welcomeContent, /SOP \/ 工作流|创建什么 App|app specification/i);
+    assert.match(welcomeContent, /visitor 首屏欢迎|宿主机只是执行面|翻路径的地方/u);
+    assert.match(welcomeContent, /不等于用户已经拿到结果/u);
+    assert.match(welcomeContent, /下载链接|导出入口|明确可达/u);
 
     const videoCutAppCreate = await request(port, 'POST', '/api/apps', {
       name: 'Video Cut Review',

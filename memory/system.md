@@ -359,6 +359,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - In RemoteLab, the agent may operate the host machine while the remote user only interacts through product surfaces such as chat, shared Apps, or other explicitly exposed UI.
 - Do not treat a local path or on-disk artifact as a completed user handoff. If the user needs the result, return it through chat-visible content, downloadable attachments, share links, email, or another reachable delivery channel.
 - Keep this boundary in both model/runtime prompts and user-facing onboarding or welcome copy; otherwise the model and the user drift into awkward "the work is done on the machine" outcomes that still feel unfinished.
+- For visitor-facing Apps, teach the delivery contract in the very first welcome copy: the host machine is only the execution surface, machine-side completion is not yet delivery, and result assets should return through a reachable download/export/share path.
 
 ### Preference Slips Should Be Framed As Execution Failures, Not Memory Loss (2026-03-08)
 - When a user flags that a standing preference was broken, verify the memory record first and explicitly tell them whether the preference is still stored.
