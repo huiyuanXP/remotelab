@@ -73,8 +73,8 @@ try {
   assert.match(welcomeApp?.systemPrompt || '', /new assistant receiving a handoff|report or spreadsheet cleanup|exports and imports/i);
   assert.match(welcomeApp?.systemPrompt || '', /project mechanics|project structure|folders, notes/i);
   assert.match(welcomeApp?.systemPrompt || '', /durable knowledge|repeat themselves/i);
-  assert.match(welcomeApp?.systemPrompt || '', /task_card|hidden <private>|mode, summary, goal/i);
-  assert.match(welcomeApp?.systemPrompt || '', /needsFromUser|rawMaterials|knownConclusions/i);
+  assert.match(welcomeApp?.systemPrompt || '', /internal task frame|backend-owned hidden state|concrete materials/i);
+  assert.doesNotMatch(welcomeApp?.systemPrompt || '', /task_card|hidden <private>|mode, summary, goal/i);
   assert.match(welcomeApp?.welcomeMessage || '', /我是 Rowan|聊天工具|先接手、再梳理、再推进执行/u);
   assert.match(welcomeApp?.welcomeMessage || '', /报表\/表格整理|导出导入|文件批处理/u);
   assert.match(welcomeApp?.welcomeMessage || '', /prompt 想清楚|一次说齐|进入执行/u);

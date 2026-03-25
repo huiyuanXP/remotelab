@@ -16,6 +16,7 @@ import {
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
+import { normalizeSessionTaskCard } from './session-task-card.mjs';
 
 function clipPromptText(value, maxChars) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -169,6 +170,12 @@ function parseJsonObject(modelText) {
   }
 }
 
+function formatTaskCardForPrompt(taskCard) {
+  const normalized = normalizeSessionTaskCard(taskCard);
+  if (!normalized) return '';
+  return JSON.stringify(normalized, null, 2);
+}
+
 export function triggerSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
   console.log(`[summarizer] triggerSessionLabelSuggestion called for session ${sessionMeta.id?.slice(0, 8)}`);
   return runSessionLabelSuggestion(sessionMeta, onRename, options).catch((err) => {
@@ -185,6 +192,17 @@ export function triggerSessionWorkflowStateSuggestion(sessionMeta, options = {})
   console.log(`[workflow-state] triggerSessionWorkflowStateSuggestion called for session ${sessionMeta.id?.slice(0, 8)}`);
   return runSessionWorkflowStateSuggestion(sessionMeta, options).catch((err) => {
     console.error(`[workflow-state] Session workflow suggestion error for ${sessionMeta.id?.slice(0, 8)}: ${err.message}`);
+    return {
+      ok: false,
+      error: err.message,
+    };
+  });
+}
+
+export function triggerSessionTaskCardSuggestion(sessionMeta, options = {}) {
+  console.log(`[task-card] triggerSessionTaskCardSuggestion called for session ${sessionMeta.id?.slice(0, 8)}`);
+  return runSessionTaskCardSuggestion(sessionMeta, options).catch((err) => {
+    console.error(`[task-card] Session task card suggestion error for ${sessionMeta.id?.slice(0, 8)}: ${err.message}`);
     return {
       ok: false,
       error: err.message,
@@ -434,5 +452,83 @@ async function runSessionWorkflowStateSuggestion(sessionMeta, _options = {}) {
     workflowState: nextWorkflowState,
     workflowPriority: nextWorkflowPriority,
     reason: typeof stateResult?.reason === 'string' ? stateResult.reason.trim() : '',
+  };
+}
+
+async function runSessionTaskCardSuggestion(sessionMeta, _options = {}) {
+  const {
+    id: sessionId,
+    folder,
+    name,
+    appName,
+    taskCard,
+  } = sessionMeta;
+
+  const lastTurnEvents = await readLastTurnEvents(sessionId, { includeBodies: true });
+  if (lastTurnEvents.length === 0) {
+    console.log(`[task-card] Skipping task card suggestion for ${sessionId.slice(0, 8)}: no history events`);
+    return {
+      ok: false,
+      skipped: 'no_history',
+    };
+  }
+
+  const turnText = formatTurnForPrompt(lastTurnEvents);
+  if (!turnText.trim()) {
+    console.log(`[task-card] Skipping task card suggestion for ${sessionId.slice(0, 8)}: empty turn text`);
+    return {
+      ok: false,
+      skipped: 'empty_turn',
+    };
+  }
+
+  const currentTaskCard = formatTaskCardForPrompt(taskCard);
+  const prompt = [
+    'You are updating backend-owned task memory for a RemoteLab session.',
+    'This task card is hidden state, not user-facing prose.',
+    'Update it after the latest turn using stable facts, not speculative filler.',
+    'Keep it concise, cumulative, and easy for the main assistant to reuse next turn.',
+    'Use "project" mode when the work is multi-step, recurring, or material-heavy; otherwise use "task".',
+    'Use rawMaterials only for concrete artifacts such as files, folders, screenshots, links, exports, recordings, or example outputs that matter for the work.',
+    'Use memory only for durable user preferences, accepted definitions, reusable context, or lasting collaboration knowledge.',
+    'Use needsFromUser only for information, files, approvals, or decisions the assistant currently needs from the user.',
+    'If something is not clearly supported, leave it empty instead of guessing.',
+    '',
+    `Session folder: ${folder}`,
+    `Current session name: ${name || '(unnamed)'}`,
+    appName ? `Current app label: ${appName}` : '',
+    currentTaskCard ? `Current task card:\n${currentTaskCard}` : 'Current task card: none',
+    '',
+    'Latest turn:',
+    turnText,
+    '',
+    'Write a JSON object with exactly these fields:',
+    '- "mode": "project" or "task".',
+    '- "summary": one short cumulative summary sentence.',
+    '- "goal": one short current goal sentence.',
+    '- "background": array of short factual context bullets.',
+    '- "rawMaterials": array of concrete material references.',
+    '- "assumptions": array of active assumptions worth carrying.',
+    '- "knownConclusions": array of established findings or decisions.',
+    '- "nextSteps": array of likely next actions already implied by the work.',
+    '- "memory": array of durable reusable user/context memory.',
+    '- "needsFromUser": array of current missing user inputs or decisions.',
+    '',
+    'Respond with ONLY valid JSON. No markdown, no explanation.',
+  ].filter((line) => line !== '').join('\n');
+
+  const modelText = await runToolJsonPrompt(sessionMeta, prompt);
+  const nextTaskCard = normalizeSessionTaskCard(parseJsonObject(modelText));
+  if (!nextTaskCard) {
+    console.error(`[task-card] Unexpected task card output for ${sessionId.slice(0, 8)}: ${modelText.slice(0, 200)}`);
+    return {
+      ok: false,
+      error: `Unexpected model output: ${modelText.slice(0, 200)}`,
+    };
+  }
+
+  return {
+    ok: true,
+    taskCard: nextTaskCard,
   };
 }

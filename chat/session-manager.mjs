@@ -25,6 +25,7 @@ import {
 import { managerContextEvent, messageEvent, statusEvent } from './normalizer.mjs';
 import {
   triggerSessionLabelSuggestion,
+  triggerSessionTaskCardSuggestion,
   triggerSessionWorkflowStateSuggestion,
 } from './summarizer.mjs';
 import { buildSourceRuntimePrompt } from './source-runtime-prompts.mjs';
@@ -1093,6 +1094,25 @@ function isTaskCardEnabledForSession(meta) {
   if (!meta || isInternalSession(meta)) return false;
   if (normalizeSessionTaskCard(meta.taskCard)) return true;
   return resolveEffectiveAppId(meta.appId) === WELCOME_APP_ID;
+}
+
+function isWelcomeOnboardingActive(meta) {
+  if (!meta || isInternalSession(meta)) return false;
+  if (resolveEffectiveAppId(meta.appId) !== WELCOME_APP_ID) return false;
+  return !(typeof meta.welcomeOnboardingRetiredAt === 'string' && meta.welcomeOnboardingRetiredAt.trim());
+}
+
+function shouldRetireWelcomeOnboarding(meta) {
+  if (!isWelcomeOnboardingActive(meta)) return false;
+  if (!normalizeSessionTaskCard(meta.taskCard)) return false;
+  return Number(meta.messageCount || 0) >= 2;
+}
+
+function shouldIncludeSessionAppInstructions(session) {
+  const systemPrompt = typeof session?.systemPrompt === 'string' ? session.systemPrompt.trim() : '';
+  if (!systemPrompt) return false;
+  if (resolveEffectiveAppId(session?.appId) !== WELCOME_APP_ID) return true;
+  return isWelcomeOnboardingActive(session);
 }
 
 function ensureLiveSession(sessionId) {
@@ -2688,6 +2708,38 @@ async function maybeApplyAssistantTaskCard(sessionId, runId, session = null) {
   return updateSessionTaskCard(sessionId, taskCard);
 }
 
+function scheduleSessionTaskCardSuggestion(session, run) {
+  if (!session?.id || !run || session.archived || isInternalSession(session)) {
+    return false;
+  }
+  if (!isTaskCardEnabledForSession(session)) {
+    return false;
+  }
+
+  const suggestionDone = triggerSessionTaskCardSuggestion({
+    id: session.id,
+    folder: session.folder,
+    name: session.name || '',
+    appName: session.appName || '',
+    taskCard: session.taskCard,
+    tool: run.tool || session.tool,
+    model: run.model || undefined,
+    effort: run.effort || undefined,
+    thinking: false,
+  });
+
+  suggestionDone.then(async (result) => {
+    if (!result?.taskCard) return;
+    const latestAssistant = await findLatestAssistantMessageForRun(session.id);
+    if (latestAssistant?.runId !== run.id) return;
+    await updateSessionTaskCard(session.id, result.taskCard);
+  }).catch((error) => {
+    console.error(`[task-card] Failed to update task card for ${session.id?.slice(0, 8)}: ${error.message}`);
+  });
+
+  return true;
+}
+
 async function findResultAssetMessageForRun(sessionId, runId) {
   const events = await loadHistory(sessionId, { includeBodies: false });
   for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -2866,7 +2918,7 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
       if (sourceRuntimePrompt) {
         preamble += `\n\n---\n\nSource/runtime instructions (backend-owned for this session source):\n${sourceRuntimePrompt}`;
       }
-      if (session.systemPrompt) {
+      if (shouldIncludeSessionAppInstructions(session)) {
         preamble += `\n\n---\n\nApp instructions (follow these for this session):\n${session.systemPrompt}`;
       }
       actualText = `${preamble}\n\n---\n\n${actualText}`;
@@ -3244,6 +3296,8 @@ async function finalizeDetachedRun(sessionId, run, manifest, normalizedEvents = 
     if (taskCardSession) {
       latestSession = taskCardSession;
       sessionChanged = true;
+    } else {
+      scheduleSessionTaskCardSuggestion(latestSession, finalizedRun);
     }
   }
 
@@ -3810,7 +3864,48 @@ async function updateSessionTaskCard(id, taskCard) {
   if (result.changed) {
     broadcastSessionInvalidation(id);
   }
-  return enrichSessionMeta(result.meta);
+  const enriched = await enrichSessionMeta(result.meta);
+  return await maybeRetireWelcomeOnboarding(id, enriched) || enriched;
+}
+
+async function maybeRetireWelcomeOnboarding(sessionId, session = null) {
+  const currentSession = session || await getSession(sessionId);
+  if (!shouldRetireWelcomeOnboarding(currentSession)) {
+    return null;
+  }
+
+  const retiredAt = nowIso();
+  const result = await mutateSessionMeta(sessionId, (draft) => {
+    if (!isWelcomeOnboardingActive(draft)) {
+      return false;
+    }
+
+    let changed = false;
+    if (draft.systemPrompt) {
+      delete draft.systemPrompt;
+      changed = true;
+    }
+    if (!draft.welcomeOnboardingRetiredAt) {
+      draft.welcomeOnboardingRetiredAt = retiredAt;
+      changed = true;
+    }
+    if (changed) {
+      draft.updatedAt = retiredAt;
+    }
+    return changed;
+  });
+  const clearedResume = await clearPersistedResumeIds(sessionId);
+
+  if (!result.meta) {
+    if (clearedResume) {
+      broadcastSessionInvalidation(sessionId);
+    }
+    return await getSession(sessionId);
+  }
+  if (result.changed || clearedResume) {
+    broadcastSessionInvalidation(sessionId);
+  }
+  return getSession(sessionId);
 }
 
 export async function updateSessionAgreements(id, patch = {}) {

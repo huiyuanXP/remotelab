@@ -148,7 +148,7 @@ export function buildTaskCardPromptBlock(taskCard) {
   if (!normalized) return '';
 
   return [
-    'Current carried task card (hidden session memory; keep this updated silently):',
+    'Current carried task card (backend-owned hidden session memory):',
     `Execution mode: ${normalized.mode}`,
     normalized.summary ? `Summary: ${normalized.summary}` : '',
     normalized.goal ? `Goal: ${normalized.goal}` : '',
@@ -160,8 +160,8 @@ export function buildTaskCardPromptBlock(taskCard) {
     formatTaskCardList('Durable user memory', normalized.memory),
     formatTaskCardList('Needs from user', normalized.needsFromUser),
     normalized.mode === 'project'
-      ? 'This session is already in project mode. Own the workspace, notes, artifacts, and intermediate outputs without asking the user to organize them.'
-      : 'This session is still in lightweight task mode. Keep the summary and next step current without making the user manage project structure.',
+      ? 'This card currently treats the work as project-shaped: multi-step, recurring, or material-heavy.'
+      : 'This card currently treats the work as a lightweight task rather than a larger project.',
   ].filter(Boolean).join('\n\n');
 }
 

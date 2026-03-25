@@ -189,4 +189,37 @@ assert.match(promptWithTaskCard, /Execution mode: project/);
 assert.match(promptWithTaskCard, /sales\.xlsx/);
 assert.match(promptWithTaskCard, /Durable user memory/);
 
+const welcomePrompt = await buildPrompt(
+  'session-test-8',
+  {
+    ...baseSession,
+    appId: 'app_welcome',
+    systemPrompt: 'WELCOME SYSTEM PROMPT',
+  },
+  '先帮我接住这个需求。',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(welcomePrompt, /WELCOME SYSTEM PROMPT/);
+
+const retiredWelcomePrompt = await buildPrompt(
+  'session-test-9',
+  {
+    ...baseSession,
+    appId: 'app_welcome',
+    systemPrompt: 'WELCOME SYSTEM PROMPT',
+    welcomeOnboardingRetiredAt: '2025-01-01T00:00:00.000Z',
+  },
+  '继续执行。',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.doesNotMatch(retiredWelcomePrompt, /WELCOME SYSTEM PROMPT/);
+
 console.log('test-session-manager-build-prompt: ok');
