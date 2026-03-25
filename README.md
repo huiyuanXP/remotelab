@@ -76,6 +76,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - a power-user cockpit whose main value is opening as many concurrent sessions as possible
 - a prompt playground that assumes the user already knows how to specify the work perfectly
 - a generic multi-user chat SaaS
+- a product that assumes remote users can browse the host machine or fetch results from local paths
 - a closed all-in-one executor stack trying to out-execute `codex` or `claude`
 
 ### Two core product layers
@@ -105,6 +106,7 @@ The architectural assumptions behind that model:
 RemoteLab is opinionated in a few ways:
 
 - **Clarify the problem before executing.** RemoteLab should not assume the user already thinks like an AI product manager; the AI needs to carry part of the problem-framing and solution-design work.
+- **Deliver through reachable surfaces, not host paths.** The AI may operate the machine, but the user collaborates through RemoteLab and explicitly exposed product surfaces. A result that only exists on the host is not a finished handoff.
 - **Do not rebuild the executor layer.** RemoteLab should not spend most of its energy optimizing single-task agent internals.
 - **Recover context, do not dump logs.** Durable sessions matter more than raw terminal continuity.
 - **Package workflows, do not just share prompts.** `Apps` are reusable operating shapes, not just copy-pasted text.
@@ -113,6 +115,7 @@ RemoteLab is opinionated in a few ways:
 ### What you can do
 
 - start a session from phone or desktop while the agent works on your real machine
+- download returned files directly from chat when a workflow publishes result assets
 - keep durable history even if the browser disconnects
 - recover long-running work after control-plane restarts
 - let the agent auto-title and auto-group sessions in the sidebar

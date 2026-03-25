@@ -355,6 +355,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Keep the fully annotated raw transcript as the safety net; let the kept-content draft optimize for readability and flow judgment.
 - When a long-running transformation needs user approval first, surface the review draft inline in chat as well as on disk; file-only handoff creates slow feedback loops, especially for remote/mobile users.
 
+### Host-Machine Results Need User-Reachable Delivery (2026-03-25)
+- In RemoteLab, the agent may operate the host machine while the remote user only interacts through product surfaces such as chat, shared Apps, or other explicitly exposed UI.
+- Do not treat a local path or on-disk artifact as a completed user handoff. If the user needs the result, return it through chat-visible content, downloadable attachments, share links, email, or another reachable delivery channel.
+- Keep this boundary in both model/runtime prompts and user-facing onboarding or welcome copy; otherwise the model and the user drift into awkward "the work is done on the machine" outcomes that still feel unfinished.
+
 ### Preference Slips Should Be Framed As Execution Failures, Not Memory Loss (2026-03-08)
 - When a user flags that a standing preference was broken, verify the memory record first and explicitly tell them whether the preference is still stored.
 - If the preference is present, describe the issue as a failure to follow stored instructions, apologize clearly, and restate the standing default so trust is repaired with evidence instead of vague reassurance.

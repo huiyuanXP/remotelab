@@ -13,6 +13,8 @@ When someone opens your App link:
 
 The visitor doesn't need to know anything about prompts, tools, or configuration. They just talk.
 
+They also do not get general access to the host machine. If an App needs to hand back files or artifacts, design the workflow so the result is delivered through chat attachments, a share link, email, or another explicit user-reachable channel instead of telling the visitor to inspect a local path on the computer.
+
 ## How to Create an App
 
 RemoteLab now ships three built-in App starting points out of the box:
@@ -75,6 +77,7 @@ In any regular session, you can say:
 3. **Treat saved templates as snapshots** — if you reuse a session as a template, refresh it when the underlying project context changes a lot
 4. **Test it yourself** — click the share link in a private/incognito window before sharing
 5. **Keep it focused** — one App = one workflow. Don't try to make a Swiss army knife
+6. **Design the handoff path up front** — if the App produces files, reports, or exports, make sure the user can receive them through the product surface instead of being told to hunt through the host machine
 
 ## Technical Details (for developers)
 
