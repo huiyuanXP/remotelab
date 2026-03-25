@@ -271,6 +271,8 @@ remotelab --help               显示帮助
 
 如果你想在同一台机器上快速开一套可分享的隔离环境，可以用 `remotelab guest-instance create <name>`。它会为这个访客实例单独准备 `REMOTELAB_INSTANCE_ROOT`、独立的 launchd 服务，以及可选的 Cloudflare 子域名，同时不混入 owner 主实例的 chat history 和 memory。如果 agent mailbox 已初始化，`create` 和 `show` 还会直接打印这个实例对应的默认收件地址，比如 `rowan+trial4@example.com` 或 `trial4@example.com`；具体格式取决于 mailbox identity 的 `instanceAddressMode`。
 
+如果机器上还留着早期那种按实例复制出来的 runtime（例如 `remotelab-trial-runtime`），可以运行 `remotelab guest-instance converge <name>` 或 `remotelab guest-instance converge --all`。它会保持原来的端口、域名、登录信息、config 和 memory 目录不变，只把 launch agent 的代码入口切回当前的 `~/code/remotelab`，这样以后代码更新就能统一落到所有实例上，而不用改用户手里的链接。
+
 如果你希望每个 guest instance 都有一个对外可用的收件地址，优先做法应该是把 Cloudflare Email Routing 配成 catch-all -> Email Worker，而不是给每个实例单独建邮箱账号。`node scripts/agent-mail-cloudflare-routing.mjs status` 会打印期望的路由形态，`probe --address <email>` 可以直接验证像 `trial6@example.com` 这样的地址当前在 SMTP 层是否会被接受。
 
 ## 配置项

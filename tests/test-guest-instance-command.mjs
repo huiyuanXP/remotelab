@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
+import { spawnSync } from 'child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
 import {
   buildGuestMailboxAddress,
@@ -15,6 +20,9 @@ import {
   selectPrimaryHostnameForPort,
   upsertCloudflaredIngress,
 } from '../lib/guest-instance.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = dirname(__dirname);
 
 const baseConfig = `tunnel: claude-code-remote
 credentials-file: /Users/example/.cloudflared/example-tunnel.json
@@ -118,5 +126,55 @@ const formatted = formatGuestInstance({
   localReachable: true,
 });
 assert.match(formatted, /mailbox: rowan\+trial16@jiujianian\.dev/);
+
+const sandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-'));
+try {
+  const launchAgentsDir = join(sandboxHome, 'Library', 'LaunchAgents');
+  const logDir = join(sandboxHome, 'Library', 'Logs');
+  const cloudflaredDir = join(sandboxHome, '.cloudflared');
+  const instanceRoot = join(sandboxHome, '.remotelab', 'instances', 'trial');
+  mkdirSync(launchAgentsDir, { recursive: true });
+  mkdirSync(logDir, { recursive: true });
+  mkdirSync(cloudflaredDir, { recursive: true });
+  mkdirSync(instanceRoot, { recursive: true });
+
+  writeFileSync(join(cloudflaredDir, 'config.yml'), `tunnel: test-tunnel\n\ningress:\n  - hostname: trial.example.com\n    service: http://127.0.0.1:7696\n  - service: http_status:404\n`);
+
+  writeFileSync(join(launchAgentsDir, 'com.chatserver.trial.plist'), buildLaunchAgentPlist({
+    label: 'com.chatserver.trial',
+    nodePath: '/usr/local/bin/node',
+    chatServerPath: '/Users/example/code/remotelab-trial-runtime/chat-server.mjs',
+    workingDirectory: '/Users/example/code/remotelab-trial-runtime',
+    standardOutPath: join(logDir, 'chat-server-trial.log'),
+    standardErrorPath: join(logDir, 'chat-server-trial.error.log'),
+    environmentVariables: {
+      CHAT_PORT: '7696',
+      HOME: sandboxHome,
+      REMOTELAB_INSTANCE_ROOT: instanceRoot,
+      SECURE_COOKIES: '1',
+    },
+  }));
+
+  const convergeResult = spawnSync('node', ['cli.js', 'guest-instance', 'converge', 'trial', '--dry-run', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: sandboxHome,
+    },
+  });
+  assert.equal(convergeResult.status, 0, convergeResult.stderr || convergeResult.stdout);
+  const convergeOutput = JSON.parse(convergeResult.stdout);
+  assert.equal(convergeOutput.length, 1);
+  assert.equal(convergeOutput[0].name, 'trial');
+  assert.equal(convergeOutput[0].changed, true);
+  assert.equal(convergeOutput[0].dryRun, true);
+  assert.equal(convergeOutput[0].previousChatServerPath, '/Users/example/code/remotelab-trial-runtime/chat-server.mjs');
+  assert.equal(convergeOutput[0].publicBaseUrl, 'https://trial.example.com');
+  assert.match(convergeOutput[0].nextChatServerPath, /\/code\/remotelab\/chat-server\.mjs$/);
+  assert.equal(convergeOutput[0].nextWorkingDirectory, repoRoot);
+} finally {
+  rmSync(sandboxHome, { recursive: true, force: true });
+}
 
 console.log('test-guest-instance-command: ok');
