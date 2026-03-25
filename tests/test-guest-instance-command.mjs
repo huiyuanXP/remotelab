@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 import { spawnSync } from 'child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -25,6 +25,15 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
+const ownerFileAssetEnvironment = {
+  REMOTELAB_ASSET_STORAGE_PROVIDER: 'tos',
+  REMOTELAB_ASSET_STORAGE_BASE_URL: 'https://assets.example.com',
+  REMOTELAB_ASSET_STORAGE_REGION: 'cn-beijing',
+  REMOTELAB_ASSET_STORAGE_ACCESS_KEY_ID: 'example-access-key',
+  REMOTELAB_ASSET_STORAGE_SECRET_ACCESS_KEY: 'example-secret-key',
+  REMOTELAB_ASSET_STORAGE_KEY_PREFIX: 'session-assets',
+  REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED: '0',
+};
 
 const baseConfig = `tunnel: claude-code-remote
 credentials-file: /Users/example/.cloudflared/example-tunnel.json
@@ -266,6 +275,21 @@ try {
   mkdirSync(cloudflaredDir, { recursive: true });
   mkdirSync(instanceRoot, { recursive: true });
 
+  writeFileSync(join(launchAgentsDir, 'com.chatserver.claude.plist'), buildLaunchAgentPlist({
+    label: 'com.chatserver.claude',
+    nodePath: '/usr/local/bin/node',
+    chatServerPath: '/Users/example/code/remotelab/chat-server.mjs',
+    workingDirectory: '/Users/example/code/remotelab',
+    standardOutPath: join(logDir, 'chat-server-owner.log'),
+    standardErrorPath: join(logDir, 'chat-server-owner.error.log'),
+    environmentVariables: {
+      CHAT_PORT: '7690',
+      HOME: sandboxHome,
+      ...ownerFileAssetEnvironment,
+      SECURE_COOKIES: '1',
+    },
+  }));
+
   writeFileSync(join(cloudflaredDir, 'config.yml'), `tunnel: test-tunnel\n\ningress:\n  - hostname: trial.example.com\n    service: http://127.0.0.1:7696\n  - service: http_status:404\n`);
 
   writeFileSync(join(launchAgentsDir, 'com.chatserver.trial.plist'), buildLaunchAgentPlist({
@@ -290,6 +314,7 @@ try {
     env: {
       ...process.env,
       HOME: sandboxHome,
+      ...ownerFileAssetEnvironment,
     },
   });
   assert.equal(convergeResult.status, 0, convergeResult.stderr || convergeResult.stdout);
@@ -303,8 +328,74 @@ try {
   assert.equal(convergeOutput[0].nextChatServerPath, join(repoRoot, 'chat-server.mjs'));
   assert.equal(convergeOutput[0].nextWorkingDirectory, repoRoot);
   assert.equal(convergeOutput[0].drift.hasLegacyReleaseFlags, true);
+  assert.equal(convergeOutput[0].drift.fileAssetEnvironmentChanged, true);
 } finally {
   rmSync(sandboxHome, { recursive: true, force: true });
+}
+
+const syncSandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-sync-'));
+try {
+  const launchAgentsDir = join(syncSandboxHome, 'Library', 'LaunchAgents');
+  const logDir = join(syncSandboxHome, 'Library', 'Logs');
+  const instanceRoot = join(syncSandboxHome, '.remotelab', 'instances', 'trial');
+  mkdirSync(launchAgentsDir, { recursive: true });
+  mkdirSync(logDir, { recursive: true });
+  mkdirSync(instanceRoot, { recursive: true });
+
+  writeFileSync(join(launchAgentsDir, 'com.chatserver.claude.plist'), buildLaunchAgentPlist({
+    label: 'com.chatserver.claude',
+    nodePath: '/usr/local/bin/node',
+    chatServerPath: '/Users/example/code/remotelab/chat-server.mjs',
+    workingDirectory: '/Users/example/code/remotelab',
+    standardOutPath: join(logDir, 'chat-server-owner.log'),
+    standardErrorPath: join(logDir, 'chat-server-owner.error.log'),
+    environmentVariables: {
+      CHAT_PORT: '7690',
+      HOME: syncSandboxHome,
+      ...ownerFileAssetEnvironment,
+      SECURE_COOKIES: '1',
+    },
+  }));
+
+  const guestPlistPath = join(launchAgentsDir, 'com.chatserver.trial.plist');
+  writeFileSync(guestPlistPath, buildLaunchAgentPlist({
+    label: 'com.chatserver.trial',
+    nodePath: '/usr/local/bin/node',
+    chatServerPath: '/Users/example/code/remotelab-legacy/chat-server.mjs',
+    workingDirectory: '/Users/example/code/remotelab-legacy',
+    standardOutPath: join(logDir, 'chat-server-trial.log'),
+    standardErrorPath: join(logDir, 'chat-server-trial.error.log'),
+    environmentVariables: {
+      CHAT_PORT: '7696',
+      HOME: syncSandboxHome,
+      REMOTELAB_INSTANCE_ROOT: instanceRoot,
+      SECURE_COOKIES: '1',
+    },
+  }));
+
+  const convergeResult = spawnSync('node', ['cli.js', 'guest-instance', 'converge', 'trial', '--no-restart', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: syncSandboxHome,
+      ...ownerFileAssetEnvironment,
+    },
+  });
+  assert.equal(convergeResult.status, 0, convergeResult.stderr || convergeResult.stdout);
+  const convergeOutput = JSON.parse(convergeResult.stdout);
+  assert.equal(convergeOutput.length, 1);
+  assert.equal(convergeOutput[0].name, 'trial');
+  assert.equal(convergeOutput[0].changed, true);
+  assert.equal(convergeOutput[0].restarted, false);
+
+  const rewrittenGuestPlist = readFileSync(guestPlistPath, 'utf8');
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_PROVIDER<\/key><string>tos<\/string>/);
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
+  assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_ENABLE_ACTIVE_RELEASE<\/key>/);
+} finally {
+  rmSync(syncSandboxHome, { recursive: true, force: true });
 }
 
 console.log('test-guest-instance-command: ok');
