@@ -158,6 +158,38 @@ try {
   const port = randomPort();
   const server = await startServer({ home, port });
   try {
+    const welcomeSession = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'fake-codex',
+      appId: 'app_welcome',
+      sourceId: 'chat',
+      sourceName: 'Chat',
+    }, {
+      Cookie: ownerCookie,
+    });
+    assert.equal(welcomeSession.status, 201, 'owner should be able to create a session from the built-in Welcome template');
+    assert.equal(welcomeSession.json?.session?.appId, 'app_welcome');
+    assert.equal(welcomeSession.json?.session?.appName, 'Welcome');
+    assert.match(
+      welcomeSession.json?.session?.systemPrompt || '',
+      /raw materials|project mechanics|durable knowledge/i,
+      'Welcome sessions should include task-intake and memory guidance',
+    );
+
+    const welcomeEvents = await request(port, 'GET', `/api/sessions/${welcomeSession.json.session.id}/events`, null, {
+      Cookie: ownerCookie,
+    });
+    assert.equal(welcomeEvents.status, 200, 'built-in Welcome session events should load');
+    const welcomeStarterEvent = (welcomeEvents.json.events || []).find((event) => event.type === 'message' && event.role === 'assistant');
+    assert.ok(welcomeStarterEvent, 'built-in Welcome session should get a starter welcome message');
+    const welcomeStarterContent = await resolveEventContent(
+      port,
+      welcomeSession.json.session.id,
+      welcomeStarterEvent,
+      { Cookie: ownerCookie },
+    );
+    assert.match(welcomeStarterContent, /原始材料|Excel|PPT|重复操作/u);
+
     const createAppSession = await request(port, 'POST', '/api/sessions', {
       folder: repoRoot,
       tool: 'fake-codex',
@@ -221,6 +253,9 @@ try {
       Cookie: ownerCookie,
     });
     assert.equal(appsResponse.status, 200, 'owner should be able to load the apps catalog');
+    const welcomeApp = (appsResponse.json?.apps || []).find((app) => app.id === 'app_welcome');
+    assert.equal(welcomeApp?.shareEnabled, false, 'Welcome should stay internal-only');
+    assert.equal(typeof welcomeApp?.shareToken, 'undefined', 'Welcome should not expose a public share token');
     const basicChatApp = (appsResponse.json?.apps || []).find((app) => app.id === 'app_basic_chat');
     assert.equal(basicChatApp?.shareEnabled, false, 'Basic Chat should stay internal-only');
     assert.equal(typeof basicChatApp?.shareToken, 'undefined', 'Basic Chat should not expose a public share token');

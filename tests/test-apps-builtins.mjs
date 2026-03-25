@@ -18,6 +18,7 @@ const {
   CREATE_APP_APP_ID,
   DEFAULT_APP_ID,
   EMAIL_APP_ID,
+  WELCOME_APP_ID,
   createApp,
   deleteApp,
   getApp,
@@ -31,15 +32,17 @@ try {
   const initial = await listApps();
   assert.deepEqual(
     initial.map((app) => app.id),
-    ['chat', 'email', 'app_basic_chat', 'app_create_app'],
+    ['chat', 'email', 'app_welcome', 'app_basic_chat', 'app_create_app'],
     'built-in apps should include connector scopes plus shipped starter apps',
   );
   assert.equal(DEFAULT_APP_ID, 'chat');
   assert.equal(EMAIL_APP_ID, 'email');
+  assert.equal(WELCOME_APP_ID, 'app_welcome');
   assert.equal(BASIC_CHAT_APP_ID, 'app_basic_chat');
   assert.equal(CREATE_APP_APP_ID, 'app_create_app');
   assert.equal(isBuiltinAppId('Chat'), true);
   assert.equal(isBuiltinAppId('Email'), true);
+  assert.equal(isBuiltinAppId('app_welcome'), true);
   assert.equal(isBuiltinAppId('app_basic_chat'), true);
   assert.equal(isBuiltinAppId('app_create_app'), true);
   assert.equal(isBuiltinAppId('app_video_cut'), false);
@@ -58,6 +61,17 @@ try {
   assert.equal(emailApp?.builtin, true);
   assert.equal(emailApp?.templateSelectable, false);
   assert.equal(emailApp?.showInSidebarWhenEmpty, false);
+
+  const welcomeApp = await getApp(WELCOME_APP_ID);
+  assert.equal(welcomeApp?.id, WELCOME_APP_ID);
+  assert.equal(welcomeApp?.builtin, true);
+  assert.equal(welcomeApp?.templateSelectable, true);
+  assert.equal(welcomeApp?.shareEnabled, false);
+  assert.equal(welcomeApp?.shareToken, undefined);
+  assert.match(welcomeApp?.systemPrompt || '', /raw materials|files, screenshots|PowerPoints/i);
+  assert.match(welcomeApp?.systemPrompt || '', /project mechanics|project structure|folders, notes/i);
+  assert.match(welcomeApp?.systemPrompt || '', /durable knowledge|repeat themselves/i);
+  assert.match(welcomeApp?.welcomeMessage || '', /原始材料|Excel|PPT|项目方式/u);
 
   const basicChatApp = await getApp(BASIC_CHAT_APP_ID);
   assert.equal(basicChatApp?.id, BASIC_CHAT_APP_ID);

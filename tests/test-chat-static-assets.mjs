@@ -321,6 +321,7 @@ async function main() {
     assert.equal(apps.status, 200, 'owner apps endpoint should be available');
     assert.match(apps.text, /"id":"chat"/);
     assert.match(apps.text, /"id":"email"/);
+    assert.match(apps.text, /"id":"app_welcome"/);
     assert.match(apps.text, /"id":"app_basic_chat"/);
     assert.match(apps.text, /"id":"app_create_app"/);
     assert.doesNotMatch(apps.text, /"id":"app_video_cut"/);

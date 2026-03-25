@@ -65,9 +65,10 @@ function getOrderedSettingsApps() {
     : [];
   return apps.sort((a, b) => {
     const rank = (app) => {
-      if (app?.id === BASIC_CHAT_TEMPLATE_APP_ID) return 0;
-      if (app?.id === CREATE_APP_TEMPLATE_APP_ID) return 1;
-      return 2;
+      if (app?.id === WELCOME_TEMPLATE_APP_ID) return 0;
+      if (app?.id === BASIC_CHAT_TEMPLATE_APP_ID) return 1;
+      if (app?.id === CREATE_APP_TEMPLATE_APP_ID) return 2;
+      return 3;
     };
     return rank(a) - rank(b) || String(a?.name || "").localeCompare(String(b?.name || ""), undefined, { sensitivity: "base" });
   });
@@ -281,6 +282,7 @@ function syncNewUserDefaultAppOptions(selectedAppIds = getSelectedNewUserAppIds(
   newUserDefaultAppSelect.disabled = false;
   if (createUserBtn) createUserBtn.disabled = false;
   const preferredApp = selectedApps.find((app) => app.id === currentValue)
+    || selectedApps.find((app) => app.id === WELCOME_TEMPLATE_APP_ID)
     || selectedApps.find((app) => app.id === BASIC_CHAT_TEMPLATE_APP_ID)
     || selectedApps[0];
   newUserDefaultAppSelect.value = preferredApp?.id || "";
@@ -308,7 +310,7 @@ function renderUserAppOptions() {
   const selectedIds = getSelectedNewUserAppIds();
   const activeIds = selectedIds.length > 0
     ? selectedIds
-    : [BASIC_CHAT_TEMPLATE_APP_ID];
+    : [WELCOME_TEMPLATE_APP_ID];
 
   for (const app of apps) {
     const chip = document.createElement("label");
