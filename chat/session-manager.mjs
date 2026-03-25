@@ -1,14 +1,11 @@
-import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
-import { readFile, writeFile } from 'fs/promises';
+import { writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'path';
-import { createInterface } from 'readline';
-import { CHAT_IMAGES_DIR, MEMORY_DIR } from '../lib/config.mjs';
+import { CHAT_IMAGES_DIR } from '../lib/config.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
-import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
-import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
+import { createToolInvocation } from './process-runner.mjs';
 import {
   appendEvent,
   appendEvents,
@@ -41,7 +38,6 @@ import {
   buildSessionContinuationContextFromBody,
   prepareSessionContinuationBody,
 } from './session-continuation.mjs';
-import { buildSessionDisplayEvents } from './session-display-events.mjs';
 import { buildTurnRoutingHint } from './session-routing.mjs';
 import { broadcastOwners, getClientsMatching } from './ws-clients.mjs';
 import {
@@ -108,6 +104,20 @@ import {
   normalizeSessionTaskCard,
   parseTaskCardFromAssistantContent,
 } from './session-task-card.mjs';
+import {
+  buildDelegationHandoff,
+  clipCompactionSection,
+} from './session-context-compaction.mjs';
+import { runDetachedAssistantPrompt } from './session-detached-assistant.mjs';
+import {
+  buildReplySelfCheckPrompt,
+  buildReplySelfRepairPrompt,
+  loadReplySelfCheckTurnContext,
+  parseReplySelfCheckDecision,
+  summarizeReplySelfCheckReason,
+} from './session-reply-self-check.mjs';
+import { extractTaggedBlock } from './session-text-parsing.mjs';
+import { rewriteVoiceTranscriptForSessionWithContext } from './session-voice-transcript-rewrite.mjs';
 
 const MIME_EXTENSIONS = {
   'application/json': '.json',
@@ -151,20 +161,6 @@ const REPLY_SELF_REPAIR_INTERNAL_OPERATION = 'reply_self_repair';
 const REPLY_SELF_CHECK_REVIEWING_STATUS = 'Assistant self-check: reviewing the latest reply for early stop…';
 const REPLY_SELF_CHECK_ACCEPT_STATUS = 'Assistant self-check: kept the latest reply as-is.';
 const REPLY_SELF_CHECK_DEFAULT_REASON = 'the latest reply left avoidable unfinished work';
-const VOICE_TRANSCRIPT_REWRITE_BOOTSTRAP_FILE = join(MEMORY_DIR, 'bootstrap.md');
-const VOICE_TRANSCRIPT_REWRITE_PROJECTS_FILE = join(MEMORY_DIR, 'projects.md');
-const VOICE_TRANSCRIPT_REWRITE_RECENT_HISTORY_WINDOW = 24;
-const VOICE_TRANSCRIPT_REWRITE_RECENT_MESSAGE_LIMIT = 8;
-const VOICE_TRANSCRIPT_REWRITE_SESSION_SUMMARY_MAX_CHARS = 1600;
-const VOICE_TRANSCRIPT_REWRITE_RECENT_DISCUSSION_MAX_CHARS = 2400;
-const DEFAULT_VOICE_TRANSCRIPT_REWRITE_LANGUAGE_HINT = 'Match the speaker\'s natural language mix. Chinese messages may naturally include English technical/product terms, repository names, commands, file paths, and identifiers when the surrounding context supports them.';
-const VOICE_TRANSCRIPT_REWRITE_DEVELOPER_INSTRUCTIONS = [
-  'You are a hidden transcript cleanup worker inside RemoteLab.',
-  'Do not use tools, do not ask follow-up questions, and do not mention internal process.',
-  'Fix likely transcription mistakes, likely English technical-term substitutions, and light fluency issues, but never answer the user or continue the conversation.',
-  'When project or session context strongly supports the intended term, normalize to that term instead of preserving an obviously wrong ASR variant.',
-  'Return only the final cleaned transcript text.',
-].join(' ');
 
 const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
   'You are RemoteLab\'s hidden context compactor for a user-facing session.',
@@ -1906,50 +1902,6 @@ async function getOrPrepareForkContext(sessionId, snapshot, contextHead) {
   return null;
 }
 
-function clipCompactionSection(value, maxChars = 12000) {
-  const text = typeof value === 'string' ? value.trim() : '';
-  if (!text || text.length <= maxChars) return text;
-  const headChars = Math.max(1, Math.floor(maxChars * 0.6));
-  const tailChars = Math.max(1, maxChars - headChars);
-  return `${text.slice(0, headChars).trimEnd()}\n[... truncated by RemoteLab ...]\n${text.slice(-tailChars).trimStart()}`;
-}
-
-function buildDelegationHandoff({
-  source,
-  task,
-}) {
-  const normalizedTask = clipCompactionSection(task, 4000);
-  const sourceId = typeof source?.id === 'string' ? source.id.trim() : '';
-  const lines = [normalizedTask || '(no delegated task provided)'];
-  if (sourceId) {
-    lines.push('', `Parent session id: ${sourceId}`);
-  }
-  return lines.join('\n');
-}
-
-function extractTaggedBlock(content, tagName) {
-  const text = typeof content === 'string' ? content : '';
-  if (!text || !tagName) return '';
-  const match = text.match(new RegExp(`<${tagName}>([\\s\\S]*?)<\/${tagName}>`, 'i'));
-  return (match ? match[1] : '').trim();
-}
-
-function parseJsonObjectText(modelText) {
-  const text = typeof modelText === 'string' ? modelText.trim() : '';
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-  }
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return null;
-  try {
-    return JSON.parse(jsonMatch[0]);
-  } catch {
-    return null;
-  }
-}
-
 function normalizeReplySelfCheckSetting(value) {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return 'all';
@@ -1979,409 +1931,13 @@ async function shouldRunReplySelfCheck(session, run, manifest) {
   return enabledTools.has(toolDefinition.id || '') || enabledTools.has(toolDefinition.toolProfile || '');
 }
 
-function normalizeReplySelfCheckText(value) {
-  return String(value ?? '').replace(/\r\n/g, '\n').trim();
-}
-
-function clipReplySelfCheckText(value, maxChars = 5000) {
-  const text = normalizeReplySelfCheckText(value);
-  if (!text) return '';
-  if (text.length <= maxChars) return text;
-  const headChars = Math.max(1, Math.floor(maxChars * 0.6));
-  const tailChars = Math.max(1, maxChars - headChars);
-  return `${text.slice(0, headChars).trimEnd()}\n[... truncated by RemoteLab ...]\n${text.slice(-tailChars).trimStart()}`;
-}
-
-function formatReplySelfCheckDisplayEvent(event) {
-  if (!event || typeof event !== 'object') return '';
-  if (event.type === 'message' && event.role === 'assistant') {
-    return normalizeReplySelfCheckText(event.content || '');
-  }
-  if (event.type === 'attachment_delivery') {
-    const attachments = Array.isArray(event.attachments) ? event.attachments : [];
-    const names = attachments
-      .map((attachment) => typeof attachment?.originalName === 'string' ? attachment.originalName.trim() : '')
-      .filter(Boolean);
-    if (names.length > 0) {
-      return `[Displayed attachment delivery: ${names.join(', ')}]`;
-    }
-    return '[Displayed attachment delivery]';
-  }
-  if (event.type === 'thinking_block') {
-    const label = normalizeReplySelfCheckText(event.label || 'Thought');
-    return label ? `[Displayed thought block: ${label}]` : '[Displayed thought block]';
-  }
-  if (event.type === 'status') {
-    const content = normalizeReplySelfCheckText(event.content || '');
-    return content ? `[Displayed status: ${content}]` : '';
-  }
-  return '';
-}
-
-function buildReplySelfCheckDisplayedAssistantTurn(history = []) {
-  const displayEvents = buildSessionDisplayEvents(history, { sessionRunning: false });
-  const parts = [];
-  for (const event of displayEvents) {
-    if (event?.type === 'message' && event.role === 'user') continue;
-    const text = formatReplySelfCheckDisplayEvent(event);
-    if (text) {
-      parts.push(text);
-    }
-  }
-  return parts.join('\n\n').trim();
-}
-
-async function loadReplySelfCheckTurnContext(sessionId, runId) {
-  const history = await loadHistory(sessionId, { includeBodies: true });
-  const runHistory = [];
-  let userMessage = null;
-  let latestAssistantMessage = null;
-
-  for (const event of history) {
-    if (runId && event?.runId !== runId) continue;
-    runHistory.push(event);
-    if (event?.type === 'message' && event.role === 'user') {
-      userMessage = event;
-      continue;
-    }
-    if (event?.type === 'message' && event.role === 'assistant') {
-      latestAssistantMessage = event;
-    }
-  }
-
-  const turnHistory = Number.isInteger(userMessage?.seq)
-    ? runHistory.filter((event) => !Number.isInteger(event?.seq) || event.seq >= userMessage.seq)
-    : runHistory;
-  const assistantTurnText = buildReplySelfCheckDisplayedAssistantTurn(turnHistory)
-    || normalizeReplySelfCheckText(latestAssistantMessage?.content || '');
-
-  return {
-    userMessage,
-    assistantTurnText,
-  };
-}
-
-function summarizeReplySelfCheckReason(value, fallback = REPLY_SELF_CHECK_DEFAULT_REASON) {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return fallback;
-  if (text.length <= 160) return text;
-  return `${text.slice(0, 157).trimEnd()}…`;
-}
-
-async function runDetachedAssistantPrompt(sessionMeta, prompt, options = {}) {
-  const {
-    folder,
-    tool,
-    model,
-    effort,
-    thinking,
-  } = sessionMeta;
-
-  if (!tool) {
-    throw new Error('Detached assistant prompt requires an explicit tool');
-  }
-
-  const invocation = await createToolInvocation(tool, prompt, {
-    dangerouslySkipPermissions: true,
-    model: options.model ?? model,
-    effort: options.effort ?? effort,
-    thinking: options.thinking ?? thinking,
-    systemPrefix: Object.prototype.hasOwnProperty.call(options, 'systemPrefix')
-      ? options.systemPrefix
-      : '',
-    developerInstructions: options.developerInstructions,
-  });
-  const resolvedCmd = await resolveCommand(invocation.command);
-  const resolvedFolder = resolveCwd(folder);
-  const env = buildToolProcessEnv();
-  delete env.CLAUDECODE;
-  delete env.CLAUDE_CODE_ENTRYPOINT;
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn(resolvedCmd, invocation.args, {
-      cwd: resolvedFolder,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    proc.stdin.end();
-
-    const rl = createInterface({ input: proc.stdout });
-    const textParts = [];
-
-    rl.on('line', (line) => {
-      const events = invocation.adapter.parseLine(line);
-      for (const evt of events) {
-        if (evt.type === 'message' && evt.role === 'assistant') {
-          textParts.push(evt.content || '');
-        }
-      }
-    });
-
-    proc.on('error', reject);
-
-    proc.on('exit', (code) => {
-      const raw = textParts.join('\n').trim();
-      if (code !== 0 && !raw) {
-        reject(new Error(`${tool} exited with code ${code}`));
-        return;
-      }
-      resolve(raw);
-    });
-  });
-}
-
-function normalizeVoiceTranscriptRewriteText(value) {
-  return String(value ?? '').replace(/\r\n/g, '\n').trim();
-}
-
-function clipVoiceTranscriptRewriteText(value, maxChars = 1200) {
-  const text = normalizeVoiceTranscriptRewriteText(value);
-  if (!text) return '';
-  if (text.length <= maxChars) return text;
-  const headChars = Math.max(1, Math.floor(maxChars * 0.65));
-  const tailChars = Math.max(1, maxChars - headChars);
-  return `${text.slice(0, headChars).trimEnd()}\n[… clipped …]\n${text.slice(-tailChars).trimStart()}`;
-}
-
-function formatVoiceTranscriptRewriteImages(images = []) {
-  return formatAttachmentContextLine(images);
-}
-
-function formatVoiceTranscriptRewriteDiscussionEvent(event) {
-  if (!(event && event.type === 'message')) return '';
-  const label = event.role === 'assistant' ? 'Assistant' : 'User';
-  const parts = [];
-  const content = clipVoiceTranscriptRewriteText(event.content, 700);
-  const imageLine = formatVoiceTranscriptRewriteImages(getMessageAttachments(event));
-  if (content) parts.push(content);
-  if (imageLine) parts.push(imageLine);
-  if (parts.length === 0) return '';
-  return `[${label}]\n${parts.join('\n')}`;
-}
-
-async function loadVoiceTranscriptRewriteMemoryContext() {
-  const entries = [
-    { label: 'Collaboration bootstrap', path: VOICE_TRANSCRIPT_REWRITE_BOOTSTRAP_FILE, maxChars: 2600 },
-    { label: 'Project pointers', path: VOICE_TRANSCRIPT_REWRITE_PROJECTS_FILE, maxChars: 2200 },
-  ];
-  const parts = [];
-
-  for (const entry of entries) {
-    try {
-      const text = clipVoiceTranscriptRewriteText(await readFile(entry.path, 'utf8'), entry.maxChars);
-      if (text) {
-        parts.push(`${entry.label}:\n${text}`);
-      }
-    } catch {}
-  }
-
-  return parts.join('\n\n');
-}
-
-async function loadVoiceTranscriptRewriteSessionContext(sessionId, sessionMeta = null) {
-  const latestSeq = Number.isInteger(sessionMeta?.latestSeq) ? sessionMeta.latestSeq : 0;
-  const fromSeq = latestSeq > 0
-    ? Math.max(1, latestSeq - VOICE_TRANSCRIPT_REWRITE_RECENT_HISTORY_WINDOW + 1)
-    : 1;
-  const [contextHead, recentEvents] = await Promise.all([
-    getContextHead(sessionId).catch(() => null),
-    loadHistory(sessionId, {
-      fromSeq,
-      includeBodies: true,
-    }).catch(() => []),
-  ]);
-
-  const parts = [];
-  const summary = clipVoiceTranscriptRewriteText(
-    typeof contextHead?.summary === 'string' ? contextHead.summary : '',
-    VOICE_TRANSCRIPT_REWRITE_SESSION_SUMMARY_MAX_CHARS,
-  );
-  if (summary) {
-    parts.push(`Current session summary:\n${summary}`);
-  }
-
-  const recentDiscussion = recentEvents
-    .filter((event) => event?.type === 'message' && (event.role === 'user' || event.role === 'assistant'))
-    .slice(-VOICE_TRANSCRIPT_REWRITE_RECENT_MESSAGE_LIMIT)
-    .map(formatVoiceTranscriptRewriteDiscussionEvent)
-    .filter(Boolean)
-    .join('\n\n');
-  if (recentDiscussion) {
-    parts.push(`Recent discussion:\n${clipVoiceTranscriptRewriteText(recentDiscussion, VOICE_TRANSCRIPT_REWRITE_RECENT_DISCUSSION_MAX_CHARS)}`);
-  }
-
-  return parts.join('\n\n');
-}
-
-function buildVoiceTranscriptRewritePrompt(sessionMeta, transcript, memoryContext, sessionContext, options = {}) {
-  const languageHint = normalizeVoiceTranscriptRewriteText(options.language) || DEFAULT_VOICE_TRANSCRIPT_REWRITE_LANGUAGE_HINT;
-  return [
-    'You are cleaning up automatic speech recognition text for a RemoteLab chat composer.',
-    'Rewrite the raw transcript into the message the speaker most likely intended.',
-    'Use stable collaboration memory plus the current session summary and recent discussion to disambiguate names, terms, references, and obvious ASR mistakes.',
-    'Prefer the current session context when it clearly resolves a reference.',
-    'Prefer English technical/product terms, repo names, commands, paths, and identifiers when the project context strongly supports them, even if the raw transcript rendered them phonetically or as odd Chinese words.',
-    'If the transcript contains suspicious out-of-domain words, duplicated near-synonyms, or two conflicting terms for what is probably one concept, treat that as a likely ASR error and resolve it to the single most plausible intended term from context.',
-    'Preserve exact casing, spelling, and formatting for supported technical names when you can infer them confidently from context.',
-    'Allow light fluency smoothing: merge broken fragments, remove accidental repetitions, fix punctuation, and make the sentence sound natural without changing meaning.',
-    'Keep the same meaning, tone, and request.',
-    'Do not answer the request, summarize the conversation, or add any new facts, steps, or conclusions that are not already supported by the raw transcript or the context provided here.',
-    'If something is uncertain, stay close to the raw transcript instead of guessing.',
-    'Keep the result concise and chat-ready.',
-    'Return only the final cleaned transcript.',
-    '',
-    languageHint ? `Language hint: ${languageHint}` : '',
-    sessionMeta?.appName ? `Session app: ${sessionMeta.appName}` : '',
-    sessionMeta?.sourceName ? `Session source: ${sessionMeta.sourceName}` : '',
-    sessionMeta?.folder ? `Working folder: ${sessionMeta.folder}` : '',
-    memoryContext ? `Persistent collaboration memory:\n${memoryContext}` : 'Persistent collaboration memory: [none]',
-    sessionContext ? `Current session context:\n${sessionContext}` : 'Current session context: [none]',
-    '',
-    'Raw ASR transcript:',
-    transcript,
-    '',
-    'Final cleaned transcript:',
-  ].filter(Boolean).join('\n');
-}
-
-function normalizeVoiceTranscriptRewriteOutput(value) {
-  let text = normalizeVoiceTranscriptRewriteText(value);
-  if (!text) return '';
-  text = text
-    .replace(/^```[a-z0-9_-]*\n?/i, '')
-    .replace(/\n?```$/i, '')
-    .replace(/^(final rewritten transcript|rewritten transcript|transcript)\s*:\s*/i, '')
-    .trim();
-  const quotedMatch = text.match(/^["“](.*)["”]$/s);
-  if (quotedMatch?.[1]) {
-    text = quotedMatch[1].trim();
-  }
-  return text;
-}
-
 export async function rewriteVoiceTranscriptForSession(sessionId, transcript, options = {}) {
-  const rawTranscript = normalizeVoiceTranscriptRewriteText(transcript);
-  if (!rawTranscript) {
-    return {
-      transcript: '',
-      changed: false,
-      skipped: 'empty_transcript',
-    };
-  }
-
-  const sessionMeta = await findSessionMeta(sessionId);
-  if (!sessionMeta?.tool) {
-    return {
-      transcript: rawTranscript,
-      changed: false,
-      skipped: 'session_tool_unavailable',
-    };
-  }
-
-  const [memoryContext, sessionContext] = await Promise.all([
-    loadVoiceTranscriptRewriteMemoryContext(),
-    loadVoiceTranscriptRewriteSessionContext(sessionId, sessionMeta),
-  ]);
-  const rewritten = normalizeVoiceTranscriptRewriteOutput(await runDetachedAssistantPrompt({
-    ...sessionMeta,
-    effort: 'low',
-    thinking: false,
-  }, buildVoiceTranscriptRewritePrompt(sessionMeta, rawTranscript, memoryContext, sessionContext, options), {
-    developerInstructions: VOICE_TRANSCRIPT_REWRITE_DEVELOPER_INSTRUCTIONS,
-    systemPrefix: '',
-  }));
-
-  if (!rewritten) {
-    return {
-      transcript: rawTranscript,
-      changed: false,
-      skipped: 'empty_rewrite',
-    };
-  }
-
-  return {
-    transcript: rewritten,
-    changed: rewritten !== rawTranscript,
-    tool: sessionMeta.tool,
-    model: sessionMeta.model || '',
-  };
-}
-
-function buildReplySelfCheckPrompt({ userMessage, assistantTurnText }) {
-  return [
-    'You are RemoteLab\'s hidden end-of-turn completion reviewer.',
-    'Judge only whether the latest assistant reply stopped too early for the current user turn.',
-    'Unless the reply clearly completed the requested work or hit a real blocker, prefer "continue".',
-    'Judge branch-first: the question is not "should the assistant continue?" but "does a real logical fork or forced human checkpoint require the user right now?"',
-    'When uncertain between "accept" and "continue", choose "continue".',
-    'If there is no explicit user-side blocker, assume the assistant should continue with the obvious next step.',
-    'Single-track work with an obvious next step must be marked "continue" even if the reply asked for permission or framed the pause as a choice.',
-    'Accept only when the reply already reaches a meaningful stopping point for this turn or it clearly states the exact blocker that truly requires the user.',
-    'Real blockers are explicit user-side dependencies such as missing required input, genuine ambiguity that prevents safe progress, a real branch whose choice depends on user preference, missing access / credentials / files, or destructive / irreversible actions that need confirmation.',
-    'Do not treat a fabricated menu of options or a vague "pick a direction" pause as a real branch when the task still has a natural default continuation.',
-    'Do not treat optional clarification, extra polish, or the assistant\'s own caution as blockers.',
-    'A reply that ends with an open offer or permission request such as "if you want I can...", "I can do that next", or "let me know and I\'ll continue" is never a meaningful stopping point by itself and must be marked "continue" unless the same reply clearly states a real blocker.',
-    'If the only remaining work is something the assistant could already do with the current context, you must choose "continue".',
-    'Strong continue signals include: promising to do the next step later, asking permission to continue without a real blocker, offering to continue if the user wants, summarizing a plan while leaving the requested action undone, or stopping after analysis when execution was still possible.',
-    'Do not require extra artifacts the user did not ask for. Conceptual discussion can already be complete when the user asked only for discussion.',
-    'Return exactly one <hide> JSON object with keys "action", "reason", and "continuationPrompt".',
-    'Valid actions: "accept" or "continue".',
-    'If action is "accept", set continuationPrompt to an empty string.',
-    'If action is "continue", continuationPrompt must tell the next assistant how to finish the missing work immediately without asking permission and without repeating the whole previous reply.',
-    'Write reason and continuationPrompt in the user\'s language.',
-    'Do not output any text outside the <hide> block.',
-    '',
-    'Current user message:',
-    clipReplySelfCheckText(userMessage?.content || '', 3000) || '[none]',
-    '',
-    'Latest assistant turn content shown to the user:',
-    clipReplySelfCheckText(assistantTurnText || '', 5000) || '[none]',
-  ].join('\n');
-}
-
-function parseReplySelfCheckDecision(content) {
-  const hidden = extractTaggedBlock(content, 'hide');
-  const parsed = parseJsonObjectText(hidden || content);
-  const rawAction = String(parsed?.action || '').trim().toLowerCase();
-  const action = rawAction === 'accept'
-    ? 'accept'
-    : 'continue';
-  return {
-    action,
-    reason: summarizeReplySelfCheckReason(parsed?.reason || ''),
-    continuationPrompt: action === 'continue' ? String(parsed?.continuationPrompt || '').trim() : '',
-  };
-}
-
-function buildReplySelfRepairPrompt({ userMessage, assistantTurnText, reviewDecision }) {
-  const continuationPrompt = String(reviewDecision?.continuationPrompt || '').trim();
-  const reason = summarizeReplySelfCheckReason(reviewDecision?.reason || 'finish the missing work now');
-  return [
-    'You are continuing the same user-facing reply after a hidden self-check found an avoidable early stop.',
-    'The previous assistant reply is already visible to the user.',
-    'Add only the missing completion now.',
-    'Default to taking the obvious next step with the information already available.',
-    'If there is no real logical fork or forced human checkpoint, continue on the default single-track path.',
-    'Prefer doing the work over describing what you would do.',
-    'Replace any prior open offer or permission request with the actual next action or result now.',
-    'Do not turn a single-track task into a menu of options or ask the user to choose a direction when the next step is already clear.',
-    'Do not ask for permission to continue.',
-    'Do not mention the hidden self-check or internal review process.',
-    'Do not end with another open offer such as "if you want I can continue" or "I can do that next".',
-    'Only stop if a concrete user-side blocker truly prevents safe progress.',
-    'If you still truly need user input, state exactly what is missing and why it is required.',
-    '',
-    'Original user message:',
-    clipReplySelfCheckText(userMessage?.content || '', 3000) || '[none]',
-    '',
-    'Previous assistant turn content already shown to the user:',
-    clipReplySelfCheckText(assistantTurnText || '', 5000) || '[none]',
-    '',
-    'Hidden reviewer guidance:',
-    continuationPrompt || `Finish the missing work now. Reviewer reason: ${reason}`,
-    '',
-    'Return only the next user-visible assistant message.',
-  ].join('\n');
+  return rewriteVoiceTranscriptForSessionWithContext(sessionId, transcript, {
+    findSessionMeta,
+    loadContextHead: getContextHead,
+    loadSessionHistory: loadHistory,
+    runAssistantPrompt: runDetachedAssistantPrompt,
+  }, options);
 }
 
 async function maybeRunReplySelfCheck(sessionId, session, run, manifest) {
@@ -2393,7 +1949,9 @@ async function maybeRunReplySelfCheck(sessionId, session, run, manifest) {
     return false;
   }
 
-  const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(sessionId, run.id);
+  const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(sessionId, run.id, {
+    loadSessionHistory: loadHistory,
+  });
   if (!assistantTurnText) {
     return false;
   }
