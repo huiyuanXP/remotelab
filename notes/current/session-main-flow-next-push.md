@@ -3,6 +3,7 @@
 Status: active execution pack as of 2026-03-18
 
 Companion note: `notes/current/capability-first-shipping-plan.md`
+Higher-level product operating note: `notes/current/product-mainline.md`
 
 Historical board-first hypothesis: `notes/archive/board-fanout-next-push.md`
 

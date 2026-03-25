@@ -5,6 +5,7 @@ _Last updated: 2026-03-25_
 > 状态：当前产品方向记录。
 > 当前 shipped 架构请看 `docs/project-architecture.md`。
 > 当前 domain/refactor 基线请看 `notes/current/core-domain-contract.md`。
+> 当前执行主线与反馈沉淀规则请看 `notes/current/product-mainline.md` 与 `notes/current/user-feedback-log.md`。
 
 > 2026-03-24 方向重置：不再把“超级个体 + 并发 session 编排”作为最核心的第一句产品叙事。并发、跨 session 上下文、workflow packaging 仍然重要，但它们现在被视为能力层；第一阶段 headline 改为“让普通人把重复数字工作交给 AI，并快速看到实际节省的时间”。
 
@@ -203,6 +204,7 @@ RemoteLab 的价值不是“聊天能跨端同步”，而是：
 - state-first、decision-first 的交互与输出
 - 手机发起 + 真机执行 + 跨端回看的顺滑闭环
 - 把已验证的 automation 沉淀为可复用 `App` / template
+- 持续通过真实用户对话、onboarding 与支持记录修正判断，并把稳定反馈沉淀成共享产品资产
 
 ---
 

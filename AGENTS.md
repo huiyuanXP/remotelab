@@ -26,6 +26,14 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 - Interaction rule: AI should act like a product manager / solution designer, helping clarify the task instead of waiting for a perfect prompt
 - Multi-session orchestration remains useful, but it is an enabling capability rather than the primary headline
 
+## Current Product Development Loop
+
+- Mainline work is continuous user discovery and feedback-driven iteration around mainstream guided automation on real machines.
+- Prefer work that helps a normal user reach one trusted automation win over work that mainly showcases orchestration sophistication.
+- Treat user feedback as a durable product asset; summarize reusable signals in repo-visible notes instead of leaving them only in private chat or machine-local memory.
+- Keep raw identifying details out of shared notes; record sanitized product evidence and promote stable conclusions into canonical docs.
+- See `notes/current/product-mainline.md` and `notes/current/user-feedback-log.md`.
+
 ## Documentation Rule
 
 For setup, deployment, integration, and feature-activation docs, use a model-first, prompt-first shape:

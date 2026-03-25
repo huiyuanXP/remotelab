@@ -15,9 +15,10 @@ Read these first when you need the current truth:
 2. `../README.md` / `../README.zh.md` — product framing, setup path, operator-facing expectations
 3. `project-architecture.md` — current shipped architecture and code map
 4. `../notes/current/core-domain-contract.md` — current domain/refactor baseline
-5. `../notes/current/product-surface-lifecycle.md` — current keep/iterate/retire rule for shipped product surfaces
-6. `setup.md` / `external-message-protocol.md` / other focused guides as needed
-7. `../notes/current/session-first-workflow-surfaces.md` — internal workflow-organization contract for session list / grouping / task-like views
+5. `../notes/current/product-mainline.md` — current product operating loop and shared feedback-recording rule
+6. `../notes/current/product-surface-lifecycle.md` — current keep/iterate/retire rule for shipped product surfaces
+7. `setup.md` / `external-message-protocol.md` / other focused guides as needed
+8. `../notes/current/session-first-workflow-surfaces.md` — internal workflow-organization contract for session list / grouping / task-like views
 
 ## Keep These In Sync
 
@@ -27,6 +28,7 @@ When the system changes, update the matching surface instead of letting discussi
 - runtime topology, persistence model, code map, or request flow changes → `project-architecture.md`
 - repo rules, self-hosting workflow, or protected surfaces change → `../AGENTS.md`
 - domain/refactor baseline changes → `../notes/current/core-domain-contract.md`
+- current product mainline or shared feedback-recording rules change → `../notes/current/product-mainline.md`
 - outdated or conflicting notes → trim them, archive them, or rewrite them to point at the canonical doc
 
 ## Model-First Docs Principle
@@ -53,6 +55,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Supporting Internal Contracts
 
+- `../notes/current/product-mainline.md` — current product operating loop and shared feedback-recording rule
 - `../notes/current/product-surface-lifecycle.md` — current rule that shipped features stay reviewable and may later be simplified or retired
 - `../notes/current/session-first-workflow-surfaces.md` — current workflow-organization rule for session list / grouping / task-like views
 
