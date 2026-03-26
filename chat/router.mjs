@@ -69,6 +69,7 @@ import {
   updateApp,
   deleteApp,
   isBuiltinAppId,
+  WELCOME_APP_ID,
 } from './apps.mjs';
 import {
   createUser,
@@ -135,9 +136,11 @@ const VISITOR_BROWSER_COOKIE_NAME = 'visitor_browser_id';
 const VISITOR_BROWSER_COOKIE_MAX_AGE_MS = 5 * 365 * 24 * 60 * 60 * 1000;
 const VISITOR_BROWSER_COOKIE_MAX_AGE_SECONDS = Math.max(1, Math.floor(VISITOR_BROWSER_COOKIE_MAX_AGE_MS / 1000));
 const VISITOR_BROWSER_COOKIE_SAME_SITE = 'Lax';
+const OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:welcome';
 let cachedPageBuildInfo = null;
 const frontendBuildWatchers = [];
 let frontendBuildInvalidationTimer = null;
+let ownerWelcomeSessionBootstrapPromise = null;
 
 async function listSessionsForClient(options = {}) {
   const sessions = await listSessions(options);
@@ -632,7 +635,15 @@ async function normalizeSessionFolderInput(folder) {
   return trimmed.startsWith('~') ? trimmed : resolvedFolder;
 }
 
-async function createOwnerTemplatedSession({ folder = '~', tool = '', name = '', app, userId = '', userName = '' } = {}) {
+async function createOwnerTemplatedSession({
+  folder = '~',
+  tool = '',
+  name = '',
+  app,
+  userId = '',
+  userName = '',
+  externalTriggerId = '',
+} = {}) {
   if (!app?.id || !isTemplateAppScopeId(app.id)) return null;
   let session = await createSession(
     folder,
@@ -645,14 +656,48 @@ async function createOwnerTemplatedSession({ folder = '~', tool = '', name = '',
       sourceName: 'Chat',
       userId,
       userName,
+      externalTriggerId,
     },
   );
   session = await applyAppTemplateToSession(session.id, app.id) || session;
-  if (app.welcomeMessage) {
+  if (app.welcomeMessage && Number(session?.messageCount || 0) === 0) {
     await appendEvent(session.id, messageEvent('assistant', app.welcomeMessage));
     session = await getSessionForClient(session.id) || session;
   }
   return session;
+}
+
+async function ensureOwnerWelcomeSession() {
+  if (ownerWelcomeSessionBootstrapPromise) {
+    return ownerWelcomeSessionBootstrapPromise;
+  }
+
+  ownerWelcomeSessionBootstrapPromise = (async () => {
+    const ownerSessions = (await listSessions({
+      includeVisitor: true,
+      includeArchived: true,
+    })).filter((session) => !session?.visitorId);
+
+    const activeOwnerSession = ownerSessions.find((session) => session?.archived !== true);
+    if (activeOwnerSession) return activeOwnerSession;
+
+    const welcomeApp = await getApp(WELCOME_APP_ID);
+    if (!welcomeApp || !isTemplateAppScopeId(welcomeApp.id)) return null;
+
+    return createOwnerTemplatedSession({
+      folder: '~',
+      tool: welcomeApp.tool || 'codex',
+      name: welcomeApp.name || 'Welcome',
+      app: welcomeApp,
+      externalTriggerId: OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID,
+    });
+  })();
+
+  try {
+    return await ownerWelcomeSessionBootstrapPromise;
+  } finally {
+    ownerWelcomeSessionBootstrapPromise = null;
+  }
 }
 
 async function ensureUserSeedSession(user, { folder = '~', tool = '' } = {}) {
@@ -1496,6 +1541,9 @@ export async function handleRequest(req, res) {
   }
 
   if (sessionGetRoute?.kind === 'list' || sessionGetRoute?.kind === 'archived-list') {
+    if (authSession?.role === 'owner') {
+      await ensureOwnerWelcomeSession();
+    }
     const includeVisitor = authSession?.role === 'owner'
       && ['1', 'true', 'yes'].includes(String(parsedUrl.query.includeVisitor || '').toLowerCase());
     const view = typeof parsedUrl.query.view === 'string'

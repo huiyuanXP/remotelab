@@ -21,6 +21,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-26 — new instances need an auto-open welcome session, not an empty chat shell
+
+- Source: direct user feedback while testing a fresh trial instance
+- User slice: first-time owner opening a newly created RemoteLab instance on mobile
+- Observed friction or ask: landing on an empty session list (or a stray blank default chat) gives no guidance and makes the product feel broken instead of guided
+- Signal: new instances should auto-create the built-in Welcome session and open it by default; zero-active-session owner states should prefer guided recovery over an empty shell
+- Implication: server-side bootstrap should guarantee an active Welcome session for owner-first entry, and onboarding must be resilient to legacy blank archived sessions
+- Promote to: onboarding implementation, welcome-session regression tests
+
 ### 2026-03-25 — mainstream automation framing beats orchestration-first framing
 
 - Source: synthesis of recent user interviews and product review
