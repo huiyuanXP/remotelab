@@ -225,6 +225,7 @@ async function main() {
     assert.match(page.text, /id="userFilterSelect"/);
     assert.match(page.text, /id="sortSessionListBtn"/);
     assert.match(page.text, /id="settingsAppsList"/);
+    assert.match(page.text, /id="settingsSessionPresentationList"/);
     assert.doesNotMatch(page.text, /id="tabBoard"/);
     assert.doesNotMatch(page.text, /id="boardPanel"/);
     assert.match(page.text, /id="settingsUsersList"/);

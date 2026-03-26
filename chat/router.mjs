@@ -1753,6 +1753,10 @@ export async function handleRequest(req, res) {
       writeJson(res, 400, { error: 'entryMode must be a string or null' });
       return;
     }
+    if (hasEntryModePatch && authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required to update entryMode' });
+      return;
+    }
     if (
       hasWorkflowStatePatch
       && patch.workflowState !== null

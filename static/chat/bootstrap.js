@@ -239,6 +239,7 @@ const createUserBtn = document.getElementById("createUserBtn");
 const userFormStatus = document.getElementById("userFormStatus");
 const settingsUsersList = document.getElementById("settingsUsersList");
 const settingsAppsList = document.getElementById("settingsAppsList");
+const settingsSessionPresentationList = document.getElementById("settingsSessionPresentationList");
 const uiLanguageSelect = document.getElementById("uiLanguageSelect");
 const uiLanguageStatus = document.getElementById("uiLanguageStatus");
 const newAppNameInput = document.getElementById("newAppNameInput");

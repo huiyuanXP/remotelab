@@ -706,6 +706,28 @@ async function updateUserRecord(userId, payload = {}) {
   return data.user || null;
 }
 
+async function updateSessionRecord(sessionId, payload = {}) {
+  const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (data.session) {
+    const session = upsertSession(data.session) || data.session;
+    renderSessionList();
+    if (currentSessionId === sessionId) {
+      applyAttachedSessionState(sessionId, session);
+    } else if (typeof renderSettingsSessionPresentationPanel === "function") {
+      renderSettingsSessionPresentationPanel();
+    }
+    return session;
+  }
+  if (currentSessionId === sessionId) {
+    return refreshCurrentSession();
+  }
+  return refreshSidebarSession(sessionId);
+}
+
 async function deleteUserRecord(userId) {
   await fetchJsonOrRedirect(`/api/users/${encodeURIComponent(userId)}`, {
     method: "DELETE",
@@ -722,6 +744,9 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
   applySessionListState(data.sessions || [], {
     archivedCount: Number.isInteger(data.archivedCount) ? data.archivedCount : 0,
   });
+  if (typeof renderSettingsSessionPresentationPanel === "function") {
+    renderSettingsSessionPresentationPanel();
+  }
   return sessions;
 }
 
@@ -815,6 +840,9 @@ function applyAttachedSessionState(id, session) {
 
   restoreDraft();
   renderSessionList();
+  if (typeof renderSettingsSessionPresentationPanel === "function") {
+    renderSettingsSessionPresentationPanel();
+  }
   syncBrowserState();
   syncForkButton();
   syncShareButton();
