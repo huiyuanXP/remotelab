@@ -12,6 +12,7 @@ import {
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
 import { normalizeSessionAgreements } from './session-agreements.mjs';
+import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import { normalizeSessionTaskCard } from './session-task-card.mjs';
 
 let sessionsMetaCache = null;
@@ -95,6 +96,19 @@ function normalizeStoredSessionMeta(meta) {
       }
     } else {
       delete normalized.sidebarOrder;
+      changed = true;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'entryMode')) {
+    const nextEntryMode = normalizeSessionEntryMode(normalized.entryMode);
+    if (nextEntryMode) {
+      if (normalized.entryMode !== nextEntryMode) {
+        normalized.entryMode = nextEntryMode;
+        changed = true;
+      }
+    } else {
+      delete normalized.entryMode;
       changed = true;
     }
   }

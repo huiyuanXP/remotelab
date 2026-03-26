@@ -10,12 +10,14 @@ import { BASIC_CHAT_APP_ID, WELCOME_APP_ID, getApp } from './apps.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { appendEvents, readEventsAfter } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
+import { SESSION_ENTRY_MODE_READ } from './session-entry-mode.mjs';
 import {
   applyAppTemplateToSession,
   createSession,
   getSession,
   listSessions,
   setSessionPinned,
+  updateSessionEntryMode,
   updateSessionGrouping,
   updateSessionLastReviewedAt,
 } from './session-manager.mjs';
@@ -135,6 +137,7 @@ function getOwnerBootstrapSessionDefinitions() {
       appId: WELCOME_APP_ID,
       externalTriggerId: OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID,
       name: 'Welcome',
+      entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
       sidebarOrder: 1,
       extraMessages: [
@@ -148,6 +151,7 @@ function getOwnerBootstrapSessionDefinitions() {
       appId: BASIC_CHAT_APP_ID,
       externalTriggerId: OWNER_BOOTSTRAP_FILE_SHOWCASE_EXTERNAL_TRIGGER_ID,
       name: '[示例] 上传一份表格，我把清洗后的文件回给你',
+      entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
       sidebarOrder: 2,
       messages: [
@@ -197,6 +201,7 @@ function getOwnerBootstrapSessionDefinitions() {
       appId: BASIC_CHAT_APP_ID,
       externalTriggerId: OWNER_BOOTSTRAP_DIGEST_SHOWCASE_EXTERNAL_TRIGGER_ID,
       name: '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
+      entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
       sidebarOrder: 3,
       messages: [
@@ -229,6 +234,7 @@ function getOwnerBootstrapSessionDefinitions() {
       appId: BASIC_CHAT_APP_ID,
       externalTriggerId: OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID,
       name: '[示例] 发一封邮件到这个实例，会自动开一个新会话',
+      entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
       sidebarOrder: 4,
       messages: [
@@ -261,11 +267,29 @@ function getStarterMessagesForDefinition(definition, app) {
     : (app?.welcomeMessage ? [{ role: 'assistant', content: app.welcomeMessage }] : []);
 }
 
+function resolveBootstrapSessionEntryMode(session, definition) {
+  if (definition?.entryMode !== SESSION_ENTRY_MODE_READ) {
+    return '';
+  }
+  if (
+    definition?.appId === WELCOME_APP_ID
+    && typeof session?.welcomeOnboardingRetiredAt === 'string'
+    && session.welcomeOnboardingRetiredAt.trim()
+  ) {
+    return '';
+  }
+  return SESSION_ENTRY_MODE_READ;
+}
+
 async function applyBootstrapSessionPresentation(session, definition) {
   let nextSession = session;
   if (Number.isInteger(definition.sidebarOrder) && definition.sidebarOrder > 0) {
     nextSession = await updateSessionGrouping(nextSession.id, { sidebarOrder: definition.sidebarOrder }) || nextSession;
   }
+  nextSession = await updateSessionEntryMode(
+    nextSession.id,
+    resolveBootstrapSessionEntryMode(nextSession, definition),
+  ) || nextSession;
   if (definition.pinned === true) {
     nextSession = await setSessionPinned(nextSession.id, true) || nextSession;
   }

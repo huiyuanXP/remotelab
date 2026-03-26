@@ -47,6 +47,10 @@ import {
   resolveInitialSessionName,
 } from './session-naming.mjs';
 import {
+  normalizeSessionEntryMode,
+  resolveSessionEntryMode,
+} from './session-entry-mode.mjs';
+import {
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
@@ -1586,6 +1590,7 @@ async function enrichSessionMeta(meta, _options = {}) {
   return {
     ...rest,
     appId: resolveEffectiveAppId(meta.appId),
+    entryMode: resolveSessionEntryMode(meta.entryMode),
     sourceId,
     sourceName: resolveSessionSourceName(meta, sourceId),
     latestSeq: snapshot.latestSeq,
@@ -3101,6 +3106,10 @@ async function maybeRetireWelcomeOnboarding(sessionId, session = null) {
       draft.welcomeOnboardingRetiredAt = retiredAt;
       changed = true;
     }
+    if (draft.entryMode) {
+      delete draft.entryMode;
+      changed = true;
+    }
     if (changed) {
       draft.updatedAt = retiredAt;
     }
@@ -3172,6 +3181,35 @@ export async function updateSessionLastReviewedAt(id, lastReviewedAt) {
 
     if (currentLastReviewedAt) {
       delete session.lastReviewedAt;
+      return true;
+    }
+
+    return false;
+  });
+
+  if (!result.meta) return null;
+  if (result.changed) {
+    broadcastSessionInvalidation(id);
+  }
+  return enrichSessionMeta(result.meta);
+}
+
+export async function updateSessionEntryMode(id, entryMode) {
+  const requestedEntryMode = normalizeSessionEntryMode(entryMode, { allowDefault: true });
+  const result = await mutateSessionMeta(id, (session) => {
+    const currentEntryMode = normalizeSessionEntryMode(session.entryMode);
+    if (requestedEntryMode === 'read') {
+      if (currentEntryMode !== 'read') {
+        session.entryMode = 'read';
+        session.updatedAt = nowIso();
+        return true;
+      }
+      return false;
+    }
+
+    if (currentEntryMode) {
+      delete session.entryMode;
+      session.updatedAt = nowIso();
       return true;
     }
 

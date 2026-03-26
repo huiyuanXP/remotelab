@@ -133,12 +133,23 @@ try {
   });
   assert.equal(invalidSidebarOrder.status, 400, 'invalid sidebar order should be rejected');
 
+  const invalidEntryModeType = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
+    entryMode: 123,
+  });
+  assert.equal(invalidEntryModeType.status, 400, 'invalid entry mode type should be rejected');
+
+  const invalidEntryModeValue = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
+    entryMode: 'top',
+  });
+  assert.equal(invalidEntryModeValue.status, 400, 'unknown entry mode should be rejected');
+
   const patched = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
     group: '  RemoteLab  ',
     description: '  Board-driven orchestration work.  ',
     sidebarOrder: 4,
+    entryMode: 'read',
   });
-  assert.equal(patched.status, 200, 'session patch should accept group, description, and sidebar order');
+  assert.equal(patched.status, 200, 'session patch should accept group, description, sidebar order, and entry mode');
   assert.equal(patched.json.session.group, 'RemoteLab', 'patch should trim and persist group');
   assert.equal(
     patched.json.session.description,
@@ -146,6 +157,7 @@ try {
     'patch should trim and persist description',
   );
   assert.equal(patched.json.session.sidebarOrder, 4, 'patch should persist sidebar order');
+  assert.equal(patched.json.session.entryMode, 'read', 'patch should persist entry mode');
 
   const detail = await request(port, 'GET', `/api/sessions/${sessionId}`);
   assert.equal(detail.status, 200, 'detail route should succeed after patch');
@@ -156,6 +168,7 @@ try {
     'detail route should expose patched description',
   );
   assert.equal(detail.json.session.sidebarOrder, 4, 'detail route should expose patched sidebar order');
+  assert.equal(detail.json.session.entryMode, 'read', 'detail route should expose patched entry mode');
 
   const listed = await request(port, 'GET', '/api/sessions');
   assert.equal(listed.status, 200, 'session list should succeed');
@@ -168,16 +181,19 @@ try {
     'session list should expose patched description',
   );
   assert.equal(listedSession.sidebarOrder, 4, 'session list should expose patched sidebar order');
+  assert.equal(listedSession.entryMode, 'read', 'session list should expose patched entry mode');
 
   const cleared = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
     group: null,
     description: '',
     sidebarOrder: null,
+    entryMode: null,
   });
-  assert.equal(cleared.status, 200, 'patch should accept clearing group, description, and sidebar order');
+  assert.equal(cleared.status, 200, 'patch should accept clearing group, description, sidebar order, and entry mode');
   assert.equal(cleared.json.session.group, undefined, 'patch should clear group');
   assert.equal(cleared.json.session.description, undefined, 'patch should clear description');
   assert.equal(cleared.json.session.sidebarOrder, undefined, 'patch should clear sidebar order');
+  assert.equal(cleared.json.session.entryMode, 'resume', 'clearing entry mode should fall back to resume');
 
   console.log('test-http-session-patch-grouping: ok');
 } finally {

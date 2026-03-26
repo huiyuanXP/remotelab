@@ -176,8 +176,32 @@ function isShareSnapshotReadOnlyMode() {
   return typeof shareSnapshotMode !== "undefined" && shareSnapshotMode === true;
 }
 
-function shouldOpenCurrentSessionFromTop() {
-  return isShareSnapshotReadOnlyMode();
+function resolveSessionEntryMode(value) {
+  return value === "read" ? "read" : "resume";
+}
+
+function findClientSessionRecord(sessionId = currentSessionId) {
+  return typeof sessions !== "undefined" && Array.isArray(sessions)
+    ? (sessions.find((session) => session?.id === sessionId) || null)
+    : null;
+}
+
+function getCurrentSessionEntryMode(sessionId = currentSessionId) {
+  if (isShareSnapshotReadOnlyMode()) return "read";
+  return resolveSessionEntryMode(findClientSessionRecord(sessionId)?.entryMode);
+}
+
+function shouldOpenCurrentSessionFromTop({
+  sessionId = currentSessionId,
+  viewportIntent = "preserve",
+} = {}) {
+  if (isShareSnapshotReadOnlyMode()) {
+    return true;
+  }
+  if (normalizeSessionViewportIntent(viewportIntent) !== "session_entry") {
+    return false;
+  }
+  return getCurrentSessionEntryMode(sessionId) === "read";
 }
 
 function scrollCurrentSessionViewportToTop() {
@@ -281,6 +305,7 @@ function buildShareSnapshotSessionRecord(snapshot = getActiveShareSnapshotPayloa
     lastEventAt,
     sourceId: "share_snapshot",
     sourceName: getShareSnapshotViewValue("badge", "Shared Snapshot"),
+    entryMode: "read",
     messageCount: displayEvents.filter((event) => event?.type === "message").length,
     activity: {
       run: { state: "idle" },

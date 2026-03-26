@@ -893,7 +893,7 @@ async function fetchSessionEvents(
     }
     updateRenderedEventState(sessionId, events, { runState });
     const latestTurnStart = applyFinishedTurnCollapseState();
-    if (shouldOpenCurrentSessionFromTop()) {
+    if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent: normalizedViewportIntent })) {
       scrollCurrentSessionViewportToTop();
     } else if (
       normalizedViewportIntent === "session_entry"
@@ -913,7 +913,7 @@ async function fetchSessionEvents(
     }
     updateRenderedEventState(sessionId, events, { runState });
     const latestTurnStart = applyFinishedTurnCollapseState();
-    if (shouldOpenCurrentSessionFromTop()) {
+    if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent: normalizedViewportIntent })) {
       scrollCurrentSessionViewportToTop();
     } else if (
       normalizedViewportIntent === "session_entry"
@@ -928,7 +928,7 @@ async function fetchSessionEvents(
 
   updateRenderedEventState(sessionId, events, { runState });
   const latestTurnStart = applyFinishedTurnCollapseState();
-  if (shouldOpenCurrentSessionFromTop()) {
+  if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent: normalizedViewportIntent })) {
     scrollCurrentSessionViewportToTop();
   } else if (
     normalizedViewportIntent === "session_entry"

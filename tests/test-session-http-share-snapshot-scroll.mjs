@@ -46,7 +46,7 @@ function makeElement() {
   };
 }
 
-function createContext({ shareSnapshotMode = false } = {}) {
+function createContext({ shareSnapshotMode = false, entryMode = 'resume' } = {}) {
   const metrics = {
     scrollToBottomCalls: 0,
     scrollNodeToTopCalls: 0,
@@ -97,7 +97,13 @@ function createContext({ shareSnapshotMode = false } = {}) {
     hasAttachedSession: true,
     hasLoadedSessions: true,
     archivedSessionCount: 0,
-    sessions: [],
+    sessions: shareSnapshotMode
+      ? []
+      : [{
+        id: 'session_regular',
+        name: 'Regular session',
+        entryMode,
+      }],
     jsonResponseCache: new Map(),
     renderedEventState: {
       sessionId: null,
@@ -254,6 +260,25 @@ await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
 
 assert.equal(regularContext.__metrics.scrollNodeToTopCalls, 1, 'regular sessions should keep focusing the latest user turn');
 assert.equal(regularContext.messagesEl.scrollTop, 680, 'regular sessions should not be forced back to the top');
+
+const readContext = createContext({ shareSnapshotMode: false, entryMode: 'read' });
+vm.runInNewContext(sessionHttpSource, readContext, { filename: 'static/chat/session-http.js' });
+
+await readContext.fetchSessionEvents(readContext.currentSessionId, {
+  runState: 'idle',
+  viewportIntent: 'session_entry',
+});
+
+assert.equal(readContext.messagesEl.scrollTop, 0, 'read-mode sessions should open from the top of the transcript');
+assert.equal(readContext.__metrics.scrollNodeToTopCalls, 0, 'read-mode sessions should not jump to the latest user turn');
+assert.equal(readContext.__metrics.scrollToBottomCalls, 0, 'read-mode sessions should not stick to the bottom on session entry');
+
+readContext.messagesEl.scrollTop = 412;
+await readContext.fetchSessionEvents(readContext.currentSessionId, {
+  runState: 'idle',
+});
+
+assert.equal(readContext.messagesEl.scrollTop, 412, 'read-mode sessions should preserve viewport on background refreshes');
 
 await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
   runState: 'idle',

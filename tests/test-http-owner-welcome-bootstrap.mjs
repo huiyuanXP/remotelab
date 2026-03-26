@@ -187,6 +187,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   for (const [index, session] of (list.json?.sessions || []).entries()) {
     assert.equal(session.pinned, true, 'starter sessions should be pinned for discoverability');
     assert.equal(session.sidebarOrder, index + 1, 'starter sessions should keep a stable sidebar order');
+    assert.equal(session.entryMode, 'read', 'starter sessions should open in read mode');
   }
 
   const welcomeSession = list.json?.sessions?.[0];

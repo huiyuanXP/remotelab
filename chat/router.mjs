@@ -40,12 +40,14 @@ import {
   setSessionArchived,
   setSessionPinned,
   submitHttpMessage,
+  updateSessionEntryMode,
   updateSessionLastReviewedAt,
   updateSessionGrouping,
   updateSessionAgreements,
   updateSessionWorkflowClassification,
   updateSessionRuntimePreferences,
 } from './session-manager.mjs';
+import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import {
   createTrigger,
   deleteTrigger,
@@ -1687,6 +1689,7 @@ export async function handleRequest(req, res) {
     const hasWorkflowStatePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workflowState');
     const hasWorkflowPriorityPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workflowPriority');
     const hasLastReviewedAtPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'lastReviewedAt');
+    const hasEntryModePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'entryMode');
     if (hasArchivedPatch && typeof patch.archived !== 'boolean') {
       writeJson(res, 400, { error: 'archived must be a boolean' });
       return;
@@ -1746,6 +1749,10 @@ export async function handleRequest(req, res) {
       writeJson(res, 400, { error: 'lastReviewedAt must be a string or null' });
       return;
     }
+    if (hasEntryModePatch && patch.entryMode !== null && typeof patch.entryMode !== 'string') {
+      writeJson(res, 400, { error: 'entryMode must be a string or null' });
+      return;
+    }
     if (
       hasWorkflowStatePatch
       && patch.workflowState !== null
@@ -1771,6 +1778,15 @@ export async function handleRequest(req, res) {
       && !Number.isFinite(Date.parse(String(patch.lastReviewedAt).trim()))
     ) {
       writeJson(res, 400, { error: 'lastReviewedAt must be a valid timestamp or null' });
+      return;
+    }
+    if (
+      hasEntryModePatch
+      && patch.entryMode !== null
+      && String(patch.entryMode).trim()
+      && !normalizeSessionEntryMode(String(patch.entryMode), { allowDefault: true })
+    ) {
+      writeJson(res, 400, { error: 'entryMode must be read, resume, or null' });
       return;
     }
     let session = null;
@@ -1811,6 +1827,9 @@ export async function handleRequest(req, res) {
     }
     if (hasLastReviewedAtPatch) {
       session = await updateSessionLastReviewedAt(sessionId, patch.lastReviewedAt || '') || session;
+    }
+    if (hasEntryModePatch) {
+      session = await updateSessionEntryMode(sessionId, patch.entryMode || '') || session;
     }
     if (!session) {
       session = await getSessionForClient(sessionId);
