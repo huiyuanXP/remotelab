@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-26 — abstract welcome needs concrete showcase examples
+
+- Source: direct product discussion after reviewing fresh-instance onboarding
+- User slice: first-time owner opening a newly created RemoteLab instance on mobile
+- Observed friction or ask: a pure conversational welcome is still too abstract; users need to see a few concrete finished cases before they understand what they can hand off
+- Signal: new instances should not rely only on generic intake copy; onboarding should expose 3–5 example workflows with visible outcomes, such as a scheduled news digest emailed to the user, an uploaded Excel file cleaned and returned as a result file, or an incoming email that opens a new processing session automatically
+- Product implication: Welcome should teach capability through example-driven showcase, ideally with clearly labeled example sessions or cards that show real inputs plus deliverables and can be adapted into the user's own workflow with minimal friction
+- Promote to: `notes/directional/product-vision.md`, welcome/onboarding implementation
+- Follow-up: decide whether the examples should live as pinned showcase sessions, cloneable templates, or welcome cards that open example transcripts
+
 ### 2026-03-26 — new instances need an auto-open welcome session, not an empty chat shell
 
 - Source: direct user feedback while testing a fresh trial instance
