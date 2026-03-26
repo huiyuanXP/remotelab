@@ -856,10 +856,10 @@ async function main() {
   const config = await loadConfig(args.configPath);
   try {
     const exitCode = await runAgent(config, args);
-    process.exit(exitCode);
+    process.exitCode = exitCode;
   } catch (error) {
     console.error(error?.stack || error?.message || String(error));
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 
