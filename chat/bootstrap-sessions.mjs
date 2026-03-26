@@ -1,4 +1,13 @@
+import { readFileSync } from 'fs';
+import { homedir } from 'os';
+import { basename, dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+import { CHAT_PORT, INSTANCE_ROOT } from '../lib/config.mjs';
+import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
+
 import { BASIC_CHAT_APP_ID, WELCOME_APP_ID, getApp } from './apps.mjs';
+import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { appendEvents } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import {
@@ -13,127 +22,213 @@ import {
 
 export const OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:welcome';
 
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const BOOTSTRAP_ASSETS_DIR = join(MODULE_DIR, 'bootstrap-assets');
+const RAW_SPREADSHEET_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.raw.xlsx');
+const CLEANED_SPREADSHEET_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.cleaned.xlsx');
+const CLEANUP_NOTES_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.notes.md');
+
+function safeReadJson(filePath, fallbackValue = null) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    return fallbackValue;
+  }
+}
+
+function normalizeMailboxName(value) {
+  return typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '')
+    : '';
+}
+
+function buildGuestMailboxAddress(instanceName, ownerIdentity) {
+  const normalizedInstanceName = normalizeMailboxName(instanceName);
+  const localPart = typeof ownerIdentity?.localPart === 'string' ? ownerIdentity.localPart.trim() : '';
+  const domain = typeof ownerIdentity?.domain === 'string' ? ownerIdentity.domain.trim() : '';
+  const addressMode = typeof ownerIdentity?.instanceAddressMode === 'string' ? ownerIdentity.instanceAddressMode.trim() : '';
+  if (!normalizedInstanceName || !localPart || !domain) return '';
+  if (addressMode === 'local_part') {
+    return `${normalizedInstanceName}@${domain}`;
+  }
+  return `${localPart}+${normalizedInstanceName}@${domain}`;
+}
+
+function resolveCurrentMailboxAddress() {
+  const normalizedPort = Number.parseInt(`${CHAT_PORT || 0}`, 10) || 0;
+  const registry = loadMailboxRuntimeRegistry({ homeDir: homedir() });
+  const matchedRuntime = registry.find((record) => Number.parseInt(`${record?.port || 0}`, 10) === normalizedPort) || null;
+  const runtimeMailboxAddress = typeof matchedRuntime?.mailboxAddress === 'string'
+    ? matchedRuntime.mailboxAddress.trim()
+    : '';
+  if (runtimeMailboxAddress) return runtimeMailboxAddress;
+
+  const ownerIdentity = safeReadJson(join(homedir(), '.config', 'remotelab', 'agent-mailbox', 'identity.json'), null);
+  const guestMailboxAddress = buildGuestMailboxAddress(basename(INSTANCE_ROOT || ''), ownerIdentity);
+  if (guestMailboxAddress) return guestMailboxAddress;
+  const ownerMailboxAddress = typeof ownerIdentity?.address === 'string' ? ownerIdentity.address.trim() : '';
+  return ownerMailboxAddress;
+}
+
+function buildEmailShowcaseIntro(mailboxAddress) {
+  if (mailboxAddress) {
+    return [
+      '这个示例基于我刚验证过的真实链路。',
+      `这个实例当前的收件地址是 \`${mailboxAddress}\`。你直接给它发邮件，左侧会自动多出一个新会话。`,
+      '下面这条用户消息，就是邮件进入会话后实际会出现的格式。',
+    ].join('\n\n');
+  }
+
+  return [
+    '这个示例基于我刚验证过的真实链路。',
+    '实例启用邮箱接入后，你直接给它发邮件，左侧会自动多出一个新会话。',
+    '下面这条用户消息，就是邮件进入会话后实际会出现的格式。',
+  ].join('\n\n');
+}
+
+function buildEmailShowcaseUserMessage(mailboxAddress) {
+  return [
+    'Inbound email.',
+    '- From: jiujianian@gmail.com',
+    '- Subject: 真实能力验证邮件',
+    '- Date: (no date)',
+    '- Message-ID: (no message id)',
+    '',
+    'User message:',
+    '这是一次真实能力验证邮件。',
+    '',
+    mailboxAddress
+      ? `如果链路正常，发到 ${mailboxAddress} 的邮件会自动进到一个新会话里。`
+      : '如果链路正常，发到这个实例地址的邮件会自动进到一个新会话里。',
+  ].join('\n');
+}
+
+function getOwnerBootstrapSessionDefinitions() {
+  const mailboxAddress = resolveCurrentMailboxAddress();
+
+  return [
+    {
+      appId: WELCOME_APP_ID,
+      externalTriggerId: OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID,
+      name: 'Welcome',
+      pinned: true,
+      sidebarOrder: 1,
+    },
+    {
+      appId: BASIC_CHAT_APP_ID,
+      externalTriggerId: 'owner_bootstrap:showcase:file_cleanup',
+      name: '[示例] 上传一份表格，我把清洗后的文件回给你',
+      pinned: true,
+      sidebarOrder: 2,
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            '这是一个已经实测跑通过的样例。',
+            '你可以直接点附件看交付长什么样：上面是用户上传的原始表，下面是我回给用户的结果文件。',
+          ].join('\n\n'),
+        },
+        {
+          role: 'user',
+          content: '我先上传一份样例销售表。你可以把它理解成用户真实会发来的那种“日期混乱、联系人和电话混在一起、还有重复客户”的表。',
+          attachments: [
+            {
+              localPath: RAW_SPREADSHEET_ASSET_PATH,
+              originalName: 'sales-march.raw.xlsx',
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              renderAs: 'file',
+            },
+          ],
+        },
+        {
+          role: 'assistant',
+          content: [
+            '这条链路我已经实际跑通过了。下面两个附件可以直接下载：一个是清洗后的表，一个是清洗说明。',
+            '你把自己的表发来后，我会先按同样方式跑第一版，再决定有没有必要固化成重复流程。',
+          ].join('\n\n'),
+          attachments: [
+            {
+              localPath: CLEANED_SPREADSHEET_ASSET_PATH,
+              originalName: 'sales-march.cleaned.xlsx',
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              renderAs: 'file',
+            },
+            {
+              localPath: CLEANUP_NOTES_ASSET_PATH,
+              originalName: '清洗说明.md',
+              mimeType: 'text/markdown',
+              renderAs: 'file',
+            },
+          ],
+        },
+      ],
+    },
+    {
+      appId: BASIC_CHAT_APP_ID,
+      externalTriggerId: 'owner_bootstrap:showcase:instance_email',
+      name: '[示例] 发一封邮件到这个实例，会自动开一个新会话',
+      pinned: true,
+      sidebarOrder: 3,
+      messages: [
+        {
+          role: 'assistant',
+          content: buildEmailShowcaseIntro(mailboxAddress),
+        },
+        {
+          role: 'user',
+          content: buildEmailShowcaseUserMessage(mailboxAddress),
+        },
+        {
+          role: 'assistant',
+          content: '这就是邮件进来后的实际起点。你自己试的时候，不用先进来手动新建聊天；邮件到达后我会先把它挂成单独会话，再继续处理。',
+        },
+      ],
+    },
+  ];
+}
+
 const LEGACY_WELCOME_SHOWCASE_HINT = [
-  '另外，左侧已经给你放了 3 个示例会话。',
-  '你可以按兴趣点开看看，主要是参考：用户通常怎么开头、我会怎么追问，以及最后能交付什么。',
+  '另外，左侧已经给你放了 2 个真实跑通过的示例会话。',
+  '你可以按兴趣点开看看，主要是参考：用户通常怎么开头、我会怎么交付，以及结果会长什么样。',
   '觉得哪个最像你的情况，就直接照着那个方式把你的版本发给我。',
 ].join('\n\n');
 
-const OWNER_BOOTSTRAP_SESSIONS = Object.freeze([
-  Object.freeze({
-    appId: WELCOME_APP_ID,
-    externalTriggerId: OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID,
-    name: 'Welcome',
-    pinned: true,
-    sidebarOrder: 1,
-  }),
-  Object.freeze({
-    appId: BASIC_CHAT_APP_ID,
-    externalTriggerId: 'owner_bootstrap:showcase:news_digest',
-    name: '[示例] 每天早上把 AI 行业新闻整理后发到我邮箱',
-    pinned: true,
-    sidebarOrder: 2,
-    messages: [
-      {
-        role: 'user',
-        content: '我想每天早上 8 点收到一封 AI 行业新闻简报，重点看模型公司、融资、产品发布和政策变化，控制在 5 条以内。',
-      },
-      {
-        role: 'assistant',
-        content: [
-          '好，我先确认两件事：',
-          '1）重点关注中文、英文还是都要？',
-          '2）简报发到哪个邮箱，标题想固定成什么格式？',
-        ].join('\n'),
-      },
-      {
-        role: 'user',
-        content: '中英文都可以，但优先英文一手信息。发到 `me@example.com`，标题就叫 `AI 情报晨报｜YYYY-MM-DD`。',
-      },
-      {
-        role: 'assistant',
-        content: [
-          '收到。我先跑一版今天的样例，再把它设成每天 8 点发送。',
-          '刚刚我已抓取近 24 小时公开信息源，去重后整理成 5 条以内摘要，并按“发生了什么 / 为什么值得看 / 原文链接”生成邮件。',
-          '结果物是：一封已发送到你邮箱的简报，以及一个每天自动执行的发送流程。',
-          '如果你要，我现在就可以把这个示例改成你的版本，比如只盯机器人、出海 SaaS，或者只看某几家公司。',
-        ].join('\n\n'),
-      },
-    ],
-  }),
-  Object.freeze({
-    appId: BASIC_CHAT_APP_ID,
-    externalTriggerId: 'owner_bootstrap:showcase:excel_cleanup',
-    name: '[示例] 把这份 Excel 清洗后回给我',
-    pinned: true,
-    sidebarOrder: 3,
-    messages: [
-      {
-        role: 'user',
-        content: '我上传了一份销售 Excel，里面日期格式很乱，联系人和电话混在一起，还有一些重复客户。你帮我清洗一下，再回我一个能直接导入 CRM 的版本。',
-      },
-      {
-        role: 'assistant',
-        content: [
-          '我先确认两件事：',
-          '1）你想用哪一列作为唯一客户标识去重？',
-          '2）省市信息是按现有地址推断，还是只保留能明确识别的行？',
-        ].join('\n'),
-      },
-      {
-        role: 'user',
-        content: '手机号是唯一标识。省市按地址推断，不确定的留空并标记出来。',
-      },
-      {
-        role: 'assistant',
-        content: [
-          '明白。我已经读取你上传的 `sales-march.xlsx`，标准化了日期格式，拆分了联系人与手机号，按手机号合并重复客户，并新增 `省`、`市`、`需人工确认` 三列。',
-          '结果物是：清洗后的 `sales-march.cleaned.xlsx`，以及一页 `清洗说明`，告诉你哪些记录还需要人工补一眼。',
-          '把你自己的表直接发给我，我会按同样流程先跑一次；如果结果稳定，再顺手把它固化成以后重复可用的流程。',
-        ].join('\n\n'),
-      },
-    ],
-  }),
-  Object.freeze({
-    appId: BASIC_CHAT_APP_ID,
-    externalTriggerId: 'owner_bootstrap:showcase:expense_email',
-    name: '[示例] 收到报销邮件后自动提取附件并汇总',
-    pinned: true,
-    sidebarOrder: 4,
-    messages: [
-      {
-        role: 'user',
-        content: '我想把收到的报销邮件自动处理掉。凡是主题里有“报销”或 `invoice` 的邮件，都把附件下载出来，提取金额、日期、申请人，汇总成一个表。',
-      },
-      {
-        role: 'assistant',
-        content: [
-          '我先确认两件事：',
-          '1）你用哪个邮箱接收，这类邮件有没有固定发件域名？',
-          '2）汇总表是每来一封就追加，还是每周给你一份总表？',
-        ].join('\n'),
-      },
-      {
-        role: 'user',
-        content: '用 `finance@example.com`，发件人不固定，但大多数都会带 PDF 或图片附件。先持续追加，周一早上再给我一份汇总。',
-      },
-      {
-        role: 'assistant',
-        content: [
-          '收到。我会在匹配邮件到达时自动新开处理线程：下载附件、OCR 或解析、提取金额/日期/申请人/类别，然后追加到 `expense-intake.xlsx`。',
-          '识别不确定的项会标成 `待确认`，并保留原邮件链接。',
-          '结果物是：一份持续更新的汇总表、归档好的附件，以及每周一早上发给你的汇总邮件。',
-          '你给我一封真实样例邮件后，我就可以把这个示例直接换成你的版本，让它开始替你接活。',
-        ].join('\n\n'),
-      },
-    ],
-  }),
-]);
+async function publishMessageAttachments(sessionId, attachments = []) {
+  const publishedAttachments = [];
+  for (const attachment of attachments) {
+    if (!(attachment && typeof attachment === 'object')) continue;
+    const published = await publishLocalFileAssetFromPath({
+      sessionId,
+      localPath: attachment.localPath,
+      originalName: attachment.originalName,
+      mimeType: attachment.mimeType,
+      createdBy: 'assistant',
+    });
+    publishedAttachments.push({
+      assetId: published.id,
+      originalName: attachment.originalName || published.originalName,
+      mimeType: attachment.mimeType || published.mimeType,
+      ...(Number.isInteger(published?.sizeBytes) && published.sizeBytes > 0 ? { sizeBytes: published.sizeBytes } : {}),
+      ...(attachment.renderAs ? { renderAs: attachment.renderAs } : {}),
+    });
+  }
+  return publishedAttachments;
+}
 
-function buildMessageEvents(messages = []) {
-  return messages
-    .filter((message) => message && typeof message.content === 'string' && message.content.trim())
-    .map((message) => messageEvent(message.role === 'user' ? 'user' : 'assistant', message.content));
+async function buildMessageEvents(sessionId, messages = []) {
+  const events = [];
+  for (const message of messages) {
+    if (!(message && typeof message.content === 'string' && message.content.trim())) continue;
+    const attachments = Array.isArray(message.attachments) && message.attachments.length > 0
+      ? await publishMessageAttachments(sessionId, message.attachments)
+      : [];
+    events.push(messageEvent(
+      message.role === 'user' ? 'user' : 'assistant',
+      message.content,
+      attachments,
+    ));
+  }
+  return events;
 }
 
 async function createOwnerBootstrapSession(definition, { appendLegacyWelcomeHint = false } = {}) {
@@ -154,7 +249,7 @@ async function createOwnerBootstrapSession(definition, { appendLegacyWelcomeHint
     const starterMessages = Array.isArray(definition.messages) && definition.messages.length > 0
       ? definition.messages
       : (app.welcomeMessage ? [{ role: 'assistant', content: app.welcomeMessage }] : []);
-    const starterEvents = buildMessageEvents(starterMessages);
+    const starterEvents = await buildMessageEvents(session.id, starterMessages);
     if (starterEvents.length > 0) {
       await appendEvents(session.id, starterEvents);
       session = await getSession(session.id) || session;
@@ -178,6 +273,7 @@ async function createOwnerBootstrapSession(definition, { appendLegacyWelcomeHint
 }
 
 export async function ensureOwnerBootstrapSessions() {
+  const ownerBootstrapSessions = getOwnerBootstrapSessionDefinitions();
   const ownerSessions = (await listSessions({
     includeVisitor: true,
     includeArchived: true,
@@ -193,7 +289,7 @@ export async function ensureOwnerBootstrapSessions() {
   }
 
   let welcomeSession = null;
-  for (const definition of OWNER_BOOTSTRAP_SESSIONS) {
+  for (const definition of ownerBootstrapSessions) {
     const session = await createOwnerBootstrapSession(definition, {
       appendLegacyWelcomeHint: hasLegacyBlankWelcomeOnly,
     });

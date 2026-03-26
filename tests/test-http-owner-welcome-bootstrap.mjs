@@ -174,14 +174,13 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const list = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
   assert.equal(list.status, 200, 'owner session list should load');
   assert.equal(list.json?.archivedCount, archivedCount, 'archived count should be preserved');
-  assert.equal((list.json?.sessions || []).length, 4, 'starter owner session set should include welcome plus three showcases');
+  assert.equal((list.json?.sessions || []).length, 3, 'starter owner session set should include welcome plus two verified showcases');
 
   const sessionNames = (list.json?.sessions || []).map((session) => session.name);
   assert.deepEqual(sessionNames, [
     'Welcome',
-    '[示例] 每天早上把 AI 行业新闻整理后发到我邮箱',
-    '[示例] 把这份 Excel 清洗后回给我',
-    '[示例] 收到报销邮件后自动提取附件并汇总',
+    '[示例] 上传一份表格，我把清洗后的文件回给你',
+    '[示例] 发一封邮件到这个实例，会自动开一个新会话',
   ], 'starter sessions should appear in the intended sidebar order');
 
   for (const [index, session] of (list.json?.sessions || []).entries()) {
@@ -203,21 +202,41 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   assert.ok(welcomeEvent, 'welcome session should include an assistant onboarding message');
   const welcomeContent = await resolveEventContent(port, welcomeSession.id, welcomeEvent, { Cookie: ownerCookie });
   assert.match(welcomeContent, /我是 Rowan|先接手、再梳理、再推进执行/u, 'welcome copy should come from the built-in Welcome app');
-  assert.match(welcomeContent, /左侧我已经先放了几个示例会话/u, 'welcome copy should point owners to the seeded showcase sessions');
+  assert.match(welcomeContent, /左侧我已经先放了 2 个真实跑通过的示例会话/u, 'welcome copy should point owners to the verified showcase sessions');
 
-  const showcaseSession = list.json?.sessions?.[1];
-  const showcaseEvents = await request(port, 'GET', `/api/sessions/${showcaseSession.id}/events`, null, { Cookie: ownerCookie });
-  assert.equal(showcaseEvents.status, 200, 'showcase session events should load');
-  const showcaseMessages = (showcaseEvents.json?.events || []).filter((event) => event.type === 'message');
-  assert.ok(showcaseMessages.some((event) => event.role === 'user'), 'showcase session should include a sample user ask');
-  assert.ok(showcaseMessages.some((event) => event.role === 'assistant'), 'showcase session should include a sample assistant reply');
-  const showcaseLastMessage = showcaseMessages[showcaseMessages.length - 1];
-  const showcaseContent = await resolveEventContent(port, showcaseSession.id, showcaseLastMessage, { Cookie: ownerCookie });
-  assert.match(showcaseContent, /已发送到你邮箱的简报|每天自动执行的发送流程/u, 'showcase session should end with a concrete deliverable');
+  const fileShowcaseSession = list.json?.sessions?.[1];
+  const fileShowcaseEvents = await request(port, 'GET', `/api/sessions/${fileShowcaseSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
+  assert.equal(fileShowcaseEvents.status, 200, 'file showcase session events should load');
+  const fileShowcaseMessages = (fileShowcaseEvents.json?.events || []).filter((event) => event.type === 'message');
+  assert.ok(fileShowcaseMessages.some((event) => event.role === 'user'), 'file showcase should include a sample user ask');
+  assert.ok(fileShowcaseMessages.some((event) => event.role === 'assistant'), 'file showcase should include a sample assistant reply');
+  const fileUserMessage = fileShowcaseMessages.find((event) => event.role === 'user');
+  const fileAssistantMessage = [...fileShowcaseMessages].reverse().find((event) => event.role === 'assistant' && Array.isArray(event.attachments) && event.attachments.length > 0);
+  assert.equal(fileUserMessage?.attachments?.length, 1, 'file showcase should include a sample uploaded file');
+  assert.equal(fileAssistantMessage?.attachments?.length, 2, 'file showcase should include downloadable result files');
+  const fileShowcaseContent = await resolveEventContent(port, fileShowcaseSession.id, fileAssistantMessage, { Cookie: ownerCookie });
+  assert.match(fileShowcaseContent, /直接下载|结果文件/u, 'file showcase should end with a concrete downloadable deliverable');
+  const fileDownloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${fileAssistantMessage.attachments[0].assetId}/download`, {
+    method: 'GET',
+    headers: { Cookie: ownerCookie },
+  });
+  assert.equal(fileDownloadRes.status, 200, 'file showcase result attachment should be downloadable');
+  const downloadedBuffer = Buffer.from(await fileDownloadRes.arrayBuffer());
+  assert.equal(downloadedBuffer.subarray(0, 2).toString('hex'), '504b', 'downloaded showcase spreadsheet should keep its xlsx zip signature');
+
+  const emailShowcaseSession = list.json?.sessions?.[2];
+  const emailShowcaseEvents = await request(port, 'GET', `/api/sessions/${emailShowcaseSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
+  assert.equal(emailShowcaseEvents.status, 200, 'email showcase session events should load');
+  const emailShowcaseMessages = (emailShowcaseEvents.json?.events || []).filter((event) => event.type === 'message');
+  assert.equal(emailShowcaseMessages.length, 3, 'email showcase should keep the expected three-message transcript');
+  const emailIntroContent = await resolveEventContent(port, emailShowcaseSession.id, emailShowcaseMessages[0], { Cookie: ownerCookie });
+  const emailUserContent = await resolveEventContent(port, emailShowcaseSession.id, emailShowcaseMessages[1], { Cookie: ownerCookie });
+  assert.match(emailIntroContent, /自动多出一个新会话/u, 'email showcase should explain the automatic session behavior');
+  assert.match(emailUserContent, /Inbound email\./u, 'email showcase should mirror the actual inbound email session format');
 
   const secondList = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
   assert.equal(secondList.status, 200, 'owner should be able to reload the session list');
-  assert.equal((secondList.json?.sessions || []).length, 4, 'reloading should not create duplicate starter sessions');
+  assert.equal((secondList.json?.sessions || []).length, 3, 'reloading should not create duplicate starter sessions');
   assert.equal(secondList.json?.sessions?.[0]?.id, welcomeSession.id, 'starter bootstrap should be idempotent for welcome');
 }
 
