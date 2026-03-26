@@ -402,14 +402,14 @@ async function main() {
     assert.equal(sessionHttpAsset.status, 200, 'session http asset should load');
     const bootstrapCatalogAsset = await request(port, 'GET', '/chat/bootstrap-session-catalog.js');
     assert.equal(bootstrapCatalogAsset.status, 200, 'bootstrap session catalog asset should load');
-    assert.match(bootstrapCatalogAsset.text, /function getEffectiveSessionAppId\(/);
+    assert.match(bootstrapCatalogAsset.text, /function getEffectiveSessionSourceId\(/);
     assert.match(bootstrapCatalogAsset.text, /function sortSessionsInPlace\(/);
 
-    if (/getEffectiveSessionAppId\(/.test(sessionHttpAsset.text)) {
+    if (/getEffectiveSessionSourceId\(/.test(sessionHttpAsset.text)) {
       assert.match(
         bootstrapCatalogAsset.text,
-        /function getEffectiveSessionAppId\(/,
-        'bootstrap session catalog asset should define the effective app helper used by session-http',
+        /function getEffectiveSessionSourceId\(/,
+        'bootstrap session catalog asset should define the effective source helper used by session-http',
       );
     }
 

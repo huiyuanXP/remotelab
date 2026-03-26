@@ -99,7 +99,7 @@ For those fields, the preferred migration order is:
 2. Remove app/user CRUD routes and interactive visitor entry routes.
 3. Keep `ShareSnapshot` routes and read-only frontend bootstrap.
 4. Replace Welcome bootstrap with normal-session seeding.
-5. Keep old data readable while stopping new writes to app/user/visitor-specific fields.
+5. Normalize surviving session metadata onto `sourceId` / `sourceName` so active code stops depending on legacy app/user/visitor surface fields.
 6. After subtraction, refactor router and session-manager boundaries around the smaller product model.
 
 ### Current implementation status
@@ -108,6 +108,7 @@ For those fields, the preferred migration order is:
 - `/api/apps*`, `/api/users*`, `/api/visitors*`, `/app/:shareToken`, and `/visitor/:shareToken` are now removed from the active product surface rather than kept as explicit retirement stubs.
 - Share snapshots remain the only public share surface.
 - Owner bootstrap Welcome now lands as a normal starter session with a seeded assistant opening message instead of a product-visible Welcome app flow.
+- Active session presentation and prompt-routing paths now read canonical `sourceId` / `sourceName`; legacy app-scoped metadata is only normalized forward, not used as the steady-state read model.
 
 ---
 

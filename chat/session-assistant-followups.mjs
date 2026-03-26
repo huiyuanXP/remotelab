@@ -37,7 +37,7 @@ export function scheduleSessionTaskCardSuggestion(session, run, services = {}) {
     id: session.id,
     folder: session.folder,
     name: session.name || '',
-    appName: session.appName || '',
+    sourceName: session.sourceName || '',
     taskCard: session.taskCard,
     tool: run.tool || session.tool,
     model: run.model || undefined,

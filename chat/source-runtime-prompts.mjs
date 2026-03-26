@@ -69,7 +69,7 @@ function buildGithubRuntimePrompt(session) {
 }
 
 export function buildSourceRuntimePrompt(session) {
-  const sourceId = normalizeSourceKey(session?.sourceId || session?.appId);
+  const sourceId = normalizeSourceKey(session?.sourceId);
   if (sourceId === 'feishu' || sourceId === 'lark') {
     return buildFeishuRuntimePrompt(session);
   }

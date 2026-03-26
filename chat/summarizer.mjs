@@ -217,7 +217,6 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     name,
     group,
     description,
-    appName,
     sourceName,
     autoRenamePending,
   } = sessionMeta;
@@ -270,7 +269,6 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     `Current session name: ${name || '(unnamed)'}`,
     currentGroup ? `Current display group: ${currentGroup}` : '',
     currentDescription ? `Current session description: ${currentDescription}` : '',
-    appName ? `Current app label: ${appName}` : '',
     sourceName ? `Current source label: ${sourceName}` : '',
     promptContext.contextSummary ? `Earlier session context:\n${promptContext.contextSummary}` : '',
     promptContext.scopeRouter ? `Known scope router entries:\n${promptContext.scopeRouter}` : '',
@@ -278,7 +276,7 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     shouldGenerateTitle ? 'The current name is only a temporary draft. Generate a better final title based on the latest full turn, using the user request as the main signal and the assistant reply to sharpen the task wording.' : '',
     shouldGenerateGrouping ? 'Also generate a stable one-level display group for session-list organization. This is not a filesystem path.' : '',
     shouldGenerateTitle ? 'The display group is shown separately in the UI. The title must focus on the specific task inside that group and should not repeat the group/domain words unless disambiguation truly requires it.' : '',
-    shouldGenerateTitle ? 'Likewise, avoid repeating connector, provider, source, or app labels that are already captured elsewhere in session metadata unless they add real disambiguating context.' : '',
+    shouldGenerateTitle ? 'Likewise, avoid repeating connector, provider, or source labels that are already captured elsewhere in session metadata unless they add real disambiguating context.' : '',
     '',
     'Latest turn:',
     turnText,
@@ -460,7 +458,7 @@ async function runSessionTaskCardSuggestion(sessionMeta, _options = {}) {
     id: sessionId,
     folder,
     name,
-    appName,
+    sourceName,
     taskCard,
   } = sessionMeta;
 
@@ -496,7 +494,7 @@ async function runSessionTaskCardSuggestion(sessionMeta, _options = {}) {
     '',
     `Session folder: ${folder}`,
     `Current session name: ${name || '(unnamed)'}`,
-    appName ? `Current app label: ${appName}` : '',
+    sourceName ? `Current source label: ${sourceName}` : '',
     currentTaskCard ? `Current task card:\n${currentTaskCard}` : 'Current task card: none',
     '',
     'Latest turn:',

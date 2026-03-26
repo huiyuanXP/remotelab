@@ -153,8 +153,8 @@ function syncBrowserState(state = {}) {
   }
 }
 
-function normalizeAppId(appId, { fallbackDefault = false } = {}) {
-  const trimmed = typeof appId === "string" ? appId.trim() : "";
+function normalizeSourceId(sourceId, { fallbackDefault = false } = {}) {
+  const trimmed = typeof sourceId === "string" ? sourceId.trim() : "";
   if (!trimmed) {
     return fallbackDefault ? DEFAULT_APP_ID : "";
   }
@@ -174,18 +174,13 @@ function normalizeSourceFilter(value) {
     : FILTER_ALL_VALUE;
 }
 
-function isTemplateAppScopeId(appId) {
-  const normalized = normalizeAppId(appId);
-  return /^app[_-]/i.test(normalized);
-}
-
 function persistActiveSourceFilter(value) {
   if (visitorMode) return;
   localStorage.setItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY, normalizeSourceFilter(value));
 }
 
-function formatAppNameFromId(appId) {
-  const normalized = normalizeAppId(appId);
+function formatSourceNameFromId(sourceId) {
+  const normalized = normalizeSourceId(sourceId);
   if (!normalized) return DEFAULT_APP_NAME;
   if (normalized === DEFAULT_APP_ID) return DEFAULT_APP_NAME;
   return normalized
@@ -193,19 +188,8 @@ function formatAppNameFromId(appId) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function getEffectiveSessionAppId(session) {
-  return normalizeAppId(session?.appId, { fallbackDefault: true });
-}
-
 function getEffectiveSessionSourceId(session) {
-  const explicitSourceId = normalizeAppId(session?.sourceId);
-  if (explicitSourceId) return explicitSourceId;
-
-  const legacyAppId = normalizeAppId(session?.appId, { fallbackDefault: true });
-  if (!legacyAppId || isTemplateAppScopeId(legacyAppId)) {
-    return DEFAULT_APP_ID;
-  }
-  return legacyAppId;
+  return normalizeSourceId(session?.sourceId, { fallbackDefault: true });
 }
 
 function getEffectiveSessionSourceName(session) {
@@ -214,17 +198,7 @@ function getEffectiveSessionSourceName(session) {
     : "";
   if (explicitSourceName) return explicitSourceName;
 
-  const sourceId = getEffectiveSessionSourceId(session);
-  if (
-    typeof session?.appName === "string"
-    && session.appName.trim()
-    && !isTemplateAppScopeId(session?.appId)
-    && normalizeAppId(session?.appId) === sourceId
-  ) {
-    return session.appName.trim();
-  }
-
-  return formatAppNameFromId(sourceId);
+  return formatSourceNameFromId(getEffectiveSessionSourceId(session));
 }
 
 function getSessionSourceCategory(session) {

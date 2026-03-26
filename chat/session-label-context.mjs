@@ -396,8 +396,6 @@ function buildRelatedSessionHaystack(meta, contextHead = null) {
     meta?.group,
     meta?.name,
     meta?.description,
-    meta?.appId,
-    meta?.appName,
     meta?.sourceId,
     meta?.sourceName,
     meta?.externalTriggerId,
@@ -485,8 +483,8 @@ function scoreScopeRouterRelatedSessionCandidate(
     return { score: 0, reasons: [] };
   }
 
-  const currentSource = normalizeInlineText(currentSessionMeta?.sourceId || currentSessionMeta?.appId).toLowerCase();
-  const candidateSource = normalizeInlineText(meta?.sourceId || meta?.appId).toLowerCase();
+  const currentSource = normalizeInlineText(currentSessionMeta?.sourceId).toLowerCase();
+  const candidateSource = normalizeInlineText(meta?.sourceId).toLowerCase();
   if (currentSource && candidateSource && currentSource === candidateSource) {
     score += 3;
   }

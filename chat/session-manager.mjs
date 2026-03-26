@@ -416,12 +416,6 @@ function formatSessionSourceNameFromId(sourceId) {
 function resolveSessionSourceId(meta) {
   const explicitSourceId = normalizeAppId(meta?.sourceId);
   if (explicitSourceId) return explicitSourceId;
-
-  const legacyAppId = normalizeAppId(meta?.appId);
-  if (legacyAppId && !isTemplateAppScopeId(legacyAppId)) {
-    return legacyAppId;
-  }
-
   return DEFAULT_APP_ID;
 }
 
@@ -429,10 +423,39 @@ function resolveSessionSourceName(meta, sourceId = resolveSessionSourceId(meta))
   const explicitSourceName = normalizeSessionSourceName(meta?.sourceName);
   if (explicitSourceName) return explicitSourceName;
 
-  const legacyAppId = normalizeAppId(meta?.appId);
-  if (legacyAppId && !isTemplateAppScopeId(legacyAppId) && legacyAppId === sourceId) {
-    const legacyAppName = normalizeSessionAppName(meta?.appName);
-    if (legacyAppName) return legacyAppName;
+  const builtinSource = getBuiltinApp(sourceId);
+  if (builtinSource?.name) return builtinSource.name;
+
+  return formatSessionSourceNameFromId(sourceId);
+}
+
+function hasRequestedSessionSourceHint(extra = {}) {
+  const explicitSourceId = normalizeAppId(extra?.sourceId);
+  if (explicitSourceId) return true;
+  const requestedAppId = normalizeAppId(extra?.appId);
+  return !!(requestedAppId && !isTemplateAppScopeId(requestedAppId));
+}
+
+function resolveRequestedSessionSourceId(extra = {}) {
+  const explicitSourceId = normalizeAppId(extra?.sourceId);
+  if (explicitSourceId) return explicitSourceId;
+
+  const requestedAppId = normalizeAppId(extra?.appId);
+  if (requestedAppId && !isTemplateAppScopeId(requestedAppId)) {
+    return requestedAppId;
+  }
+
+  return DEFAULT_APP_ID;
+}
+
+function resolveRequestedSessionSourceName(extra = {}, sourceId = resolveRequestedSessionSourceId(extra)) {
+  const explicitSourceName = normalizeSessionSourceName(extra?.sourceName);
+  if (explicitSourceName) return explicitSourceName;
+
+  const requestedAppId = normalizeAppId(extra?.appId);
+  if (requestedAppId && !isTemplateAppScopeId(requestedAppId) && requestedAppId === sourceId) {
+    const requestedAppName = normalizeSessionAppName(extra?.appName);
+    if (requestedAppName) return requestedAppName;
   }
 
   const builtinSource = getBuiltinApp(sourceId);
@@ -2348,7 +2371,6 @@ async function runSessionTurnCompletionEffects(sessionId, latestSession, finaliz
         name: session.name || '',
         group: session.group || '',
         description: session.description || '',
-        appName: session.appName || '',
         sourceName: session.sourceName || '',
         autoRenamePending: session.autoRenamePending,
         tool: finalizedRun.tool || session.tool,
@@ -2706,8 +2728,9 @@ export async function createSession(folder, tool, name, extra = {}) {
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
   const requestedAppId = normalizeAppId(extra.appId);
   const requestedAppName = normalizeSessionAppName(extra.appName);
-  const requestedSourceId = normalizeAppId(extra.sourceId);
-  const requestedSourceName = normalizeSessionSourceName(extra.sourceName);
+  const requestedSourceId = resolveRequestedSessionSourceId(extra);
+  const requestedSourceName = resolveRequestedSessionSourceName(extra, requestedSourceId);
+  const hasRequestedSourceHint = hasRequestedSessionSourceHint(extra);
   const requestedVisitorName = normalizeSessionVisitorName(extra.visitorName);
   const requestedUserId = typeof extra.userId === 'string' ? extra.userId.trim() : '';
   const requestedUserName = normalizeSessionUserName(extra.userName);
@@ -2730,8 +2753,8 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedInitialNaming = resolveInitialSessionName(name, {
     group: requestedGroup,
     appName: requestedAppName,
-    sourceId: requestedSourceId,
-    sourceName: requestedSourceName,
+    sourceId: hasRequestedSourceHint ? requestedSourceId : '',
+    sourceName: hasRequestedSourceHint ? requestedSourceName : '',
     externalTriggerId,
   });
   const created = await withSessionsMetaMutation(async (metas, saveSessionsMeta) => {
@@ -2755,8 +2778,12 @@ export async function createSession(folder, tool, name, extra = {}) {
         const refreshedInitialNaming = resolveInitialSessionName(name, {
           group: requestedGroup || updated.group || '',
           appName: requestedAppName || updated.appName || '',
-          sourceId: requestedSourceId || updated.sourceId || '',
-          sourceName: requestedSourceName || updated.sourceName || '',
+          sourceId: hasRequestedSourceHint
+            ? requestedSourceId
+            : ((updated.sourceId || '') === DEFAULT_APP_ID ? '' : (updated.sourceId || '')),
+          sourceName: hasRequestedSourceHint
+            ? requestedSourceName
+            : ((updated.sourceId || '') === DEFAULT_APP_ID ? '' : (updated.sourceName || '')),
           externalTriggerId: externalTriggerId || updated.externalTriggerId || '',
         });
         if (isSessionAutoRenamePending(updated) && !refreshedInitialNaming.autoRenamePending) {
@@ -2784,12 +2811,12 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (requestedSourceId && updated.sourceId !== requestedSourceId) {
+        if (hasRequestedSourceHint && updated.sourceId !== requestedSourceId) {
           updated.sourceId = requestedSourceId;
           changed = true;
         }
 
-        if (requestedSourceName && updated.sourceName !== requestedSourceName) {
+        if (hasRequestedSourceHint && updated.sourceName !== requestedSourceName) {
           updated.sourceName = requestedSourceName;
           changed = true;
         }
@@ -2885,6 +2912,7 @@ export async function createSession(folder, tool, name, extra = {}) {
       folder,
       tool,
       appId: resolveEffectiveAppId(extra.appId),
+      sourceId: requestedSourceId,
       name: initialNaming.name,
       autoRenamePending: initialNaming.autoRenamePending,
       created: now,
@@ -2896,7 +2924,6 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (workflowState) session.workflowState = workflowState;
     if (workflowPriority) session.workflowPriority = workflowPriority;
     if (requestedAppName) session.appName = requestedAppName;
-    if (requestedSourceId) session.sourceId = requestedSourceId;
     if (requestedSourceName) session.sourceName = requestedSourceName;
     if (extra.visitorId) session.visitorId = extra.visitorId;
     if (requestedVisitorName) session.visitorName = requestedVisitorName;
@@ -3751,7 +3778,6 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       name: session.name || '',
       group: session.group || '',
       description: session.description || '',
-      appName: session.appName || '',
       sourceName: session.sourceName || '',
       autoRenamePending: false,
       tool: effectiveTool,

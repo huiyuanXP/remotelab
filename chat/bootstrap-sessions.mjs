@@ -418,9 +418,8 @@ export async function backfillOwnerBootstrapSessions() {
   const ownerBootstrapSessions = getOwnerBootstrapSessionDefinitions();
   const mailboxAddress = resolveCurrentMailboxAddress();
   const ownerSessions = (await listSessions({
-    includeVisitor: true,
     includeArchived: true,
-  })).filter((session) => !session?.visitorId);
+  }));
   const activeOwnerSessions = ownerSessions.filter((session) => session?.archived !== true);
   const sessionsByTrigger = new Map(
     activeOwnerSessions
@@ -460,9 +459,8 @@ export async function backfillOwnerBootstrapSessions() {
 export async function ensureOwnerBootstrapSessions() {
   const ownerBootstrapSessions = getOwnerBootstrapSessionDefinitions();
   const ownerSessions = (await listSessions({
-    includeVisitor: true,
     includeArchived: true,
-  })).filter((session) => !session?.visitorId);
+  }));
 
   const activeOwnerSessions = ownerSessions.filter((session) => session?.archived !== true);
   const hasLegacyBlankWelcomeOnly = activeOwnerSessions.length === 1

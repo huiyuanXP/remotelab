@@ -372,8 +372,8 @@ async function ensureContextCompactorSession(sourceSessionId, session, run, serv
   }
 
   const created = await services.createSession(session.folder, run?.tool || session.tool, `auto-compress - ${session.name || 'session'}`, {
-    appId: session.appId || '',
-    appName: session.appName || '',
+    sourceId: session.sourceId || '',
+    sourceName: session.sourceName || '',
     systemPrompt: CONTEXT_COMPACTOR_SYSTEM_PROMPT,
     internalRole: INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR,
     compactsSessionId: sourceSessionId,

@@ -14,6 +14,7 @@ import {
 import { normalizeSessionAgreements } from './session-agreements.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import { normalizeSessionTaskCard } from './session-task-card.mjs';
+import { DEFAULT_APP_ID, getBuiltinApp, normalizeAppId } from './apps.mjs';
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheMtimeMs = null;
@@ -33,6 +34,61 @@ function normalizeStoredSidebarOrder(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function normalizeStoredSessionSourceName(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function isTemplateAppScopeId(appId) {
+  const normalized = normalizeAppId(appId);
+  return /^app[_-]/i.test(normalized);
+}
+
+function formatStoredSourceNameFromId(sourceId) {
+  const normalized = typeof sourceId === 'string' ? sourceId.trim() : '';
+  if (!normalized) return 'Chat';
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function normalizeStoredSessionSourceFields(normalized) {
+  let changed = false;
+
+  const explicitSourceId = normalizeAppId(normalized.sourceId);
+  const legacyAppId = normalizeAppId(normalized.appId);
+  const nextSourceId = explicitSourceId
+    || (legacyAppId && !isTemplateAppScopeId(legacyAppId) ? legacyAppId : DEFAULT_APP_ID);
+
+  if (normalized.sourceId !== nextSourceId) {
+    normalized.sourceId = nextSourceId;
+    changed = true;
+  }
+
+  const explicitSourceName = normalizeStoredSessionSourceName(normalized.sourceName);
+  const legacyAppName = normalizeStoredSessionSourceName(normalized.appName);
+  let nextSourceName = explicitSourceName;
+  if (!nextSourceName && legacyAppName && legacyAppId && !isTemplateAppScopeId(legacyAppId) && legacyAppId === nextSourceId) {
+    nextSourceName = legacyAppName;
+  }
+  if (!nextSourceName && nextSourceId !== DEFAULT_APP_ID) {
+    const builtinSource = getBuiltinApp(nextSourceId);
+    nextSourceName = builtinSource?.name || formatStoredSourceNameFromId(nextSourceId);
+  }
+
+  if (nextSourceName) {
+    if (normalized.sourceName !== nextSourceName) {
+      normalized.sourceName = nextSourceName;
+      changed = true;
+    }
+  } else if (Object.prototype.hasOwnProperty.call(normalized, 'sourceName')) {
+    delete normalized.sourceName;
+    changed = true;
+  }
+
+  return changed;
+}
+
 function normalizeStoredSessionMeta(meta) {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return { meta: null, changed: true };
@@ -47,6 +103,8 @@ function normalizeStoredSessionMeta(meta) {
       changed = true;
     }
   }
+
+  changed = normalizeStoredSessionSourceFields(normalized) || changed;
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'workflowState')) {
     const nextWorkflowState = normalizeSessionWorkflowState(normalized.workflowState || '');

@@ -126,7 +126,6 @@ function isConnectorStyleSession(context = {}) {
 function collectContextualSessionLabels(context = {}) {
   const labels = [
     normalizeSessionGroup(context.group || ''),
-    normalizeContextLabel(context.appName || ''),
     normalizeContextLabel(context.sourceName || ''),
   ].filter(Boolean);
   return [...new Set(labels)].sort((a, b) => b.length - a.length);
