@@ -83,5 +83,10 @@ assert.match(context, /Pause only for a real blocker: an explicitly requested st
 assert.match(context, /Do not treat the absence of micro-instructions as a blocker; execution-layer decisions are part of your job/);
 assert.match(context, /~\/instance-data\/memory\//);
 assert.doesNotMatch(context, /~\/\.remotelab\/memory\//);
+assert.match(context, /Agent Self-Management/);
+assert.match(context, /flexible control surface, not a brittle scenario router/);
+assert.match(context, /reusable capability, skill, wrapper, note, or prior session pattern/);
+assert.match(context, /do not wait for a hard router to tell you/);
+assert.match(context, /preserve the underlying principle and adapt the tactic rather than following brittle wording literally/);
 
 console.log('test-system-prompt: ok');

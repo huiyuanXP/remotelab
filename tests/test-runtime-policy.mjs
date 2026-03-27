@@ -111,6 +111,16 @@ try {
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /Build work habits rather than brittle branch tables: before improvising, check whether existing local skills, wrappers, notes, or prior workflows already fit the task/,
+    'default Codex developer instructions should prefer reusable capabilities over ad hoc improvisation',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /Shape the work yourself: if the turn contains independently actionable goals or noisy exploration, decide whether to split work, create a short scratch note, or continue in one thread based on clarity rather than a hard-coded rule/,
+    'default Codex developer instructions should frame task shaping as agent judgment rather than rigid routing',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /universal product rules belong in shared startup context, this user's standing preferences belong in personal memory, and repo-specific or specialized workflows belong in repo-local instructions or on-demand skills/,
     'default Codex developer instructions should separate shared defaults, personal memory, and repo-local workflows',
   );
@@ -158,6 +168,11 @@ try {
     MANAGER_TURN_POLICY_REMINDER,
     /If the work is still on a single obvious track, treat the current request as standing authorization and keep going/,
     'turn-level policy reminder should keep single-track work moving without extra permission checks',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /Prefer soft-control habits over brittle scripts: check for reusable local capabilities before inventing a new path, shape noisy work deliberately, and do a quick self-review before replying/,
+    'turn-level policy reminder should reinforce reusable capabilities and self-review rather than rigid scripts',
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,
