@@ -432,6 +432,109 @@ try {
   assert.equal(updatedRetryItem?.automation?.lastError, null);
   assert.equal(updatedRetryItem?.automation?.delivery?.provider, 'cloudflare_worker');
 
+  saveOutboundConfig(mailboxRoot, {
+    provider: 'cloudflare_worker',
+    workerBaseUrl: `http://127.0.0.1:${port}`,
+    from: 'rowan@example.com',
+    workerToken: 'cloudflare-worker-secret',
+    fallback: {
+      provider: 'apple_mail',
+      account: 'Google',
+    },
+  });
+
+  const ingestedFallback = ingestRawMessage(
+    [
+      'From: owner@example.com',
+      'To: rowan@example.com',
+      'Subject: hello from fallback routing!',
+      'Date: Tue, 10 Mar 2026 05:00:00 +0800',
+      'Message-ID: <mail-fallback-test@example.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'please test fallback routing for non-verified recipients!',
+    ].join('\n'),
+    'fallback-routing-test.eml',
+    mailboxRoot,
+    { text: 'please test fallback routing for non-verified recipients!' },
+  );
+
+  const approvedFallback = approveMessage(ingestedFallback.id, mailboxRoot, 'tester');
+  const fallbackRequestId = `mailbox_reply_${approvedFallback.id}`;
+  const fallbackSession = await createSession(workspace, 'codex', 'Fallback outbound reply test', {
+    completionTargets: [{
+      type: 'email',
+      requestId: fallbackRequestId,
+      to: 'outside@example.net',
+      subject: 'Re: hello from fallback routing!',
+      mailboxRoot,
+      mailboxItemId: approvedFallback.id,
+    }],
+  });
+  const fallbackRun = await createRun({
+    status: {
+      sessionId: fallbackSession.id,
+      requestId: fallbackRequestId,
+      state: 'completed',
+      tool: 'codex',
+    },
+    manifest: {
+      sessionId: fallbackSession.id,
+      requestId: fallbackRequestId,
+      folder: workspace,
+      tool: 'codex',
+      prompt: 'reply using cloudflare first, then fallback if needed',
+      options: {},
+    },
+  });
+
+  await appendEvent(fallbackSession.id, messageEvent('assistant', 'Fallback reply body.', undefined, {
+    runId: fallbackRun.id,
+    requestId: fallbackRequestId,
+  }));
+
+  const fallbackAppleMailMessages = [];
+  const fallbackDeliveries = await dispatchSessionEmailCompletionTargets(fallbackSession, fallbackRun, {
+    fetchImpl: async () => ({
+      status: 502,
+      text: async () => JSON.stringify({
+        error: 'Failed to send email',
+        details: {
+          message: 'destination address is not a verified address',
+        },
+      }),
+    }),
+    sendAppleMailMessageImpl: async (message) => {
+      fallbackAppleMailMessages.push(message);
+      return {
+        sender: 'Google <owner@example.com>',
+      };
+    },
+  });
+  assert.equal(fallbackDeliveries.length, 1);
+  assert.equal(fallbackDeliveries[0].state, 'sent');
+  assert.equal(fallbackDeliveries[0].delivery?.provider, 'apple_mail');
+  assert.equal(fallbackDeliveries[0].delivery?.requestedProvider, 'cloudflare_worker');
+  assert.equal(fallbackDeliveries[0].delivery?.fallbackFromProvider, 'cloudflare_worker');
+  assert.equal(fallbackDeliveries[0].delivery?.fallbackReason, 'cloudflare_verified_destination_only');
+  assert.equal(fallbackAppleMailMessages.length, 1);
+  assert.deepEqual(fallbackAppleMailMessages[0], {
+    provider: 'apple_mail',
+    account: 'Google',
+    from: '',
+    to: ['outside@example.net'],
+    subject: 'Re: hello from fallback routing!',
+    text: 'Fallback reply body.',
+  });
+
+  const updatedFallbackItem = findQueueItem(approvedFallback.id, mailboxRoot)?.item;
+  assert.equal(updatedFallbackItem?.status, 'reply_sent');
+  assert.equal(updatedFallbackItem?.automation?.status, 'reply_sent');
+  assert.equal(updatedFallbackItem?.automation?.delivery?.provider, 'apple_mail');
+  assert.equal(updatedFallbackItem?.automation?.delivery?.requestedProvider, 'cloudflare_worker');
+  assert.equal(updatedFallbackItem?.automation?.delivery?.fallbackFromProvider, 'cloudflare_worker');
+  assert.equal(updatedFallbackItem?.automation?.delivery?.fallbackReason, 'cloudflare_verified_destination_only');
+
   const requestedRecipientIndex = requests.length;
   const requestedRecipientResult = await sendOutboundEmail({
     to: 'recipient@outside.test',

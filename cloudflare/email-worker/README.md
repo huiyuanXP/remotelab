@@ -32,6 +32,8 @@ Configured in `wrangler.example.jsonc` and then copied locally to `wrangler.json
 
 Do not set `destination_address` or `allowed_destination_addresses` unless you intentionally want to restrict outbound recipients further. An unrestricted binding allows sending to any Email Routing destination address verified on this Cloudflare account; it does not bypass Cloudflare's verified-destination requirement.
 
+If RemoteLab also needs to reach arbitrary external recipients, configure a local fallback outbound provider in `~/.config/remotelab/agent-mailbox/outbound.json` such as `apple_mail`; Cloudflare's platform-level verified-destination rule itself cannot be disabled.
+
 Configured as secrets during deploy:
 
 - `OUTBOUND_API_TOKEN`

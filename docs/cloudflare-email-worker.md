@@ -89,9 +89,15 @@ The Worker should not carry RemoteLab login or session-orchestration config. Tha
   "provider": "cloudflare_worker",
   "workerBaseUrl": "https://remotelab-email-worker.example.workers.dev",
   "from": "agent@example.com",
-  "workerToken": "<same token uploaded as OUTBOUND_API_TOKEN>"
+  "workerToken": "<same token uploaded as OUTBOUND_API_TOKEN>",
+  "fallback": {
+    "provider": "apple_mail",
+    "account": "Google"
+  }
 }
 ```
+
+When `fallback.provider` is set to `apple_mail`, RemoteLab first tries Cloudflare and automatically falls back to Mail.app when Cloudflare rejects a recipient because it is not a verified Email Routing destination address on the account.
 
 ## Success state
 
@@ -118,4 +124,4 @@ node tests/test-agent-mail-cloudflare-outbound-live.mjs --to verified@example.co
 
 - No Forward Email dependency
 - No SMTP setup
-- `apple_mail` remains as a local fallback outbound provider for manual testing
+- `apple_mail` can be configured as an automatic local fallback when Cloudflare rejects non-verified external recipients
