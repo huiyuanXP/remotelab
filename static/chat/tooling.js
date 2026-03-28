@@ -354,6 +354,16 @@ function buildShareSnapshotShareText(session, shareUrl) {
   return link ? `${title}\n${link}` : title;
 }
 
+function getShareSnapshotBaseUrl() {
+  if (typeof document === "object" && typeof document.baseURI === "string" && document.baseURI) {
+    return document.baseURI;
+  }
+  if (typeof location === "object" && typeof location.href === "string" && location.href) {
+    return location.href;
+  }
+  return location.origin;
+}
+
 async function shareCurrentSessionSnapshot() {
   if (!currentSessionId || visitorMode || !shareSnapshotBtn) return;
 
@@ -371,7 +381,7 @@ async function shareCurrentSessionSnapshot() {
     } catch {}
 
     const shareUrl = payload?.share?.url
-      ? new URL(payload.share.url, location.origin).toString()
+      ? new URL(payload.share.url, getShareSnapshotBaseUrl()).toString()
       : null;
     const shareText = buildShareSnapshotShareText(currentSession, shareUrl);
 

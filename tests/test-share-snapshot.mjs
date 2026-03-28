@@ -221,7 +221,7 @@ async function main() {
   });
   assert.strictEqual(shareRes.status, 201, 'share creation should succeed');
   const sharePayload = JSON.parse(shareRes.body);
-  assert.ok(/^\/share\/snap_[a-f0-9]{48}$/.test(sharePayload.share?.url || ''), 'share URL should be generated');
+  assert.ok(/^share\/snap_[a-f0-9]{48}$/.test(sharePayload.share?.url || ''), 'share URL should be generated');
 
   const shareId = sharePayload.share.url.split('/').pop();
   const snapshotPath = join(configDir, 'shared-snapshots', `${shareId}.json`);
@@ -237,7 +237,7 @@ async function main() {
   assert.ok(storedUserEvent?.images?.length === 1, 'user attachment should be preserved');
   const storedAttachment = storedUserEvent.images[0];
   assert.match(storedAttachment.assetId || '', /^asset_[a-f0-9]{24}$/, 'share attachment should be externalized');
-  assert.strictEqual(storedAttachment.url, `/share-asset/${shareId}/${storedAttachment.assetId}`, 'share attachment should point at a public share asset URL');
+  assert.strictEqual(storedAttachment.url, `../share-asset/${shareId}/${storedAttachment.assetId}`, 'share attachment should point at a public share asset URL');
   assert.ok(!('data' in storedAttachment), 'share snapshot should not inline attachment bytes');
   const storedAssetPath = join(configDir, 'shared-snapshots', `${shareId}.assets`, storedAttachment.assetId);
   assert.ok(existsSync(storedAssetPath), 'share asset should be persisted alongside the snapshot');
@@ -256,7 +256,7 @@ async function main() {
   assert.match(publicShareRes.body, /<meta name="description" content="A read-only RemoteLab conversation snapshot\.">/, 'share page should expose a generic preview description');
   assert.match(publicShareRes.body, /<meta property="og:title" content="Share preview title">/, 'share page should expose an OG title for previews');
   assert.match(publicShareRes.body, /<meta property="og:description" content="A read-only RemoteLab conversation snapshot\.">/, 'share page should expose an OG description for previews');
-  assert.match(publicShareRes.body, new RegExp(`<meta property="og:url" content="${escapeRegex(`${base}${sharePayload.share.url}`)}">`), 'share page should expose an absolute OG URL for previews');
+  assert.match(publicShareRes.body, new RegExp(`<meta property="og:url" content="${escapeRegex(new URL(sharePayload.share.url, `${base}/`).toString())}">`), 'share page should expose an absolute OG URL for previews');
   assert.match(publicShareRes.body, /<meta name="twitter:card" content="summary">/, 'share page should expose a compact twitter preview card');
   assert.match(publicShareRes.body, /<meta name="twitter:title" content="Share preview title">/, 'share page should mirror the preview title for twitter cards');
   assert.match(publicShareRes.body, /\/favicon\.ico\?v=/, 'share page should fingerprint icon URLs for immutable caching');
@@ -264,7 +264,7 @@ async function main() {
   assert.match(publicShareRes.body, /<body class="visitor-mode share-snapshot-mode">/, 'share page should boot directly into read-only chat mode');
   assert.match(publicShareRes.body, /\/chat\/chat\.css\?v=/, 'share page should reuse the main chat stylesheet');
   assert.match(publicShareRes.body, /\/chat\/bootstrap\.js\?v=/, 'share page should reuse the main chat frontend bootstrap');
-  assert.ok(publicShareRes.body.includes(`/share-payload/${shareId}.js`), 'share shell should bootstrap an external payload resource');
+  assert.ok(publicShareRes.body.includes(`../share-payload/${shareId}.js`), 'share shell should bootstrap an external payload resource');
   assert.ok(!publicShareRes.body.includes('/share.js'), 'share page should not load the removed legacy share renderer');
   assert.ok(!publicShareRes.body.includes('window.__REMOTELAB_SHARE__ ='), 'share shell should not inline the snapshot payload');
   assert.ok(!publicShareRes.body.includes('Please review this snippet.'), 'share shell should not inline conversation bodies');
@@ -343,7 +343,7 @@ async function main() {
   const migratedLegacySnapshot = JSON.parse(readFileSync(legacySharePath, 'utf8'));
   const migratedLegacyAttachment = migratedLegacySnapshot.events[0].images[0];
   assert.match(migratedLegacyAttachment.assetId || '', /^asset_[a-f0-9]{24}$/, 'legacy inline shares should migrate to external assets');
-  assert.ok(migratedLegacyAttachment.url, 'legacy inline shares should gain public asset URLs');
+  assert.equal(migratedLegacyAttachment.url, `../share-asset/${legacyShareId}/${migratedLegacyAttachment.assetId}`, 'legacy inline shares should gain relative public asset URLs');
   assert.ok(!('data' in migratedLegacyAttachment), 'legacy inline shares should drop embedded base64 after migration');
   assert.ok(existsSync(join(configDir, 'shared-snapshots', `${legacyShareId}.assets`, migratedLegacyAttachment.assetId)), 'legacy migration should materialize asset files');
 

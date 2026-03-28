@@ -736,7 +736,7 @@ export async function handleControlRoutes({
       share: {
         id: snapshot.id,
         createdAt: snapshot.createdAt,
-        url: `/share/${snapshot.id}`,
+        url: `share/${snapshot.id}`,
       },
     });
     return true;

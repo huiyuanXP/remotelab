@@ -101,7 +101,7 @@ function getAttachmentDownloadSource(attachment) {
     ? attachment.downloadUrl.trim()
     : "";
   if (downloadUrl) {
-    if (!/^\/(?:api\/assets\/[^/]+\/download|share-asset\/[^/]+\/[^/?#]+)(?:[?#]|$)/.test(downloadUrl)) {
+    if (!/^(?:\/(?:api\/assets\/[^/]+\/download|share-asset\/[^/]+\/[^/?#]+)|(?:\.\.\/)?share-asset\/[^/]+\/[^/?#]+)(?:[?#]|$)/.test(downloadUrl)) {
       return downloadUrl;
     }
     if (/[?&]download=1(?:&|$)/.test(downloadUrl)) {
@@ -113,7 +113,7 @@ function getAttachmentDownloadSource(attachment) {
     ? attachment.url.trim()
     : "";
   if (shareUrl) {
-    if (!/^\/share-asset\/[^/]+\/[^/?#]+(?:[?#]|$)/.test(shareUrl)) {
+    if (!/^(?:\/share-asset\/[^/]+\/[^/?#]+|(?:\.\.\/)?share-asset\/[^/]+\/[^/?#]+)(?:[?#]|$)/.test(shareUrl)) {
       return shareUrl;
     }
     if (/[?&]download=1(?:&|$)/.test(shareUrl)) {

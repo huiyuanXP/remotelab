@@ -16,7 +16,12 @@ if (shareStart < 0 || shareEnd < 0 || shareEnd <= shareStart) {
 }
 const shareSource = toolingSource.slice(shareStart, shareEnd);
 
-function createContext({ navigatorShare = null, copyShouldFail = false } = {}) {
+function createContext({
+  navigatorShare = null,
+  copyShouldFail = false,
+  baseUri = 'https://chat.example.com/',
+  locationHref = 'https://chat.example.com/',
+} = {}) {
   const captured = {
     navigatorPayload: null,
     copiedText: null,
@@ -36,8 +41,12 @@ function createContext({ navigatorShare = null, copyShouldFail = false } = {}) {
     visitorMode: false,
     shareSnapshotBtn,
     forkSessionBtn: null,
+    document: {
+      baseURI: baseUri,
+    },
     location: {
       origin: 'https://chat.example.com',
+      href: locationHref,
     },
     navigator: navigatorShare
       ? {
@@ -61,7 +70,7 @@ function createContext({ navigatorShare = null, copyShouldFail = false } = {}) {
       async json() {
         return {
           share: {
-            url: '/share/snap_1234567890abcdef1234567890abcdef1234567890abcdef',
+            url: 'share/snap_1234567890abcdef1234567890abcdef1234567890abcdef',
           },
         };
       },
@@ -132,6 +141,20 @@ assert.equal(
   promptFallbackContext.__captured.promptArgs?.value,
   'A better share title\nhttps://chat.example.com/share/snap_1234567890abcdef1234567890abcdef1234567890abcdef',
   'prompt fallback should expose the same title-plus-link share text',
+);
+
+const prefixedContext = createContext({
+  baseUri: 'https://chat.example.com/trial16/',
+  locationHref: 'https://chat.example.com/trial16/?token=demo',
+});
+vm.runInNewContext(shareSource, prefixedContext, { filename: 'static/chat/tooling.js' });
+
+await prefixedContext.shareCurrentSessionSnapshot();
+
+assert.equal(
+  prefixedContext.__captured.copiedText,
+  'A better share title\nhttps://chat.example.com/trial16/share/snap_1234567890abcdef1234567890abcdef1234567890abcdef',
+  'prefixed share links should stay inside the current product base path',
 );
 
 console.log('test-chat-share-snapshot-message: ok');

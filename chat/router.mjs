@@ -1019,7 +1019,7 @@ async function writeSnapshotPage(req, res, shareId, {
       ...buildTemplateReplacements(pageBuildInfo),
       ...(snapshot ? buildShareSnapshotPageReplacements(req, shareId, snapshot) : {}),
       BODY_CLASS: 'visitor-mode share-snapshot-mode',
-      BOOTSTRAP_SCRIPT_TAGS: `<script src="/share-payload/${shareId}.js"></script>`,
+      BOOTSTRAP_SCRIPT_TAGS: `<script src="../share-payload/${shareId}.js"></script>`,
     });
     writeCachedResponse(req, res, {
       statusCode: 200,
