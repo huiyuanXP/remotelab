@@ -10,6 +10,7 @@ Execution companions:
 - `notes/current/session-first-workflow-surfaces.md`
 - `notes/current/session-first-product-contraction.md`
 - `notes/current/knowledge-layers-and-connectors.md`
+- `notes/current/external-solution-providers.md`
 
 Evidence log: `notes/current/user-feedback-log.md`
 
@@ -26,6 +27,7 @@ Evidence log: `notes/current/user-feedback-log.md`
 - Optimize for one concrete automation win: take one recurring digital chore from a vague description to a trusted result on a real machine.
 - Let repeated user evidence outrank internally elegant abstractions when the two conflict.
 - Keep knowledge layering and execution connectors separate: shared toolchains and connectors may stay common, while domain knowledge stays retrievable and user context stays private.
+- When local domain coverage is thin, prefer a replaceable external solution-provider adapter over baking a temporary vendor into core knowledge or memory.
 - Prefer owner sessions plus read-only share snapshots over product-facing `App` / `User` abstractions during the current simplification phase.
 - Treat multi-session orchestration, context carry, reusable packaging, and other higher-order capabilities as support layers unless user evidence clearly pulls them forward again.
 
@@ -50,6 +52,7 @@ Evidence log: `notes/current/user-feedback-log.md`
 
 - `notes/current/user-feedback-log.md` — running evidence log
 - `notes/current/knowledge-layers-and-connectors.md` — current working shape for base/domain/user knowledge plus shared connectors
+- `notes/current/external-solution-providers.md` — isolated fallback-provider shape for third-party domain search or solution sources
 - `notes/directional/product-vision.md` — durable product judgments and target-user framing
 - `README.md` / `README.zh.md` — user-facing product promise
 - `notes/current/session-main-flow-next-push.md` — near-term capability push

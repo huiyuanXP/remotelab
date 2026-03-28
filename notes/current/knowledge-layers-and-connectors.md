@@ -5,6 +5,7 @@ Status: current working product note as of 2026-03-28
 Companions:
 
 - `notes/current/product-mainline.md`
+- `notes/current/external-solution-providers.md`
 - `notes/current/user-feedback-log.md`
 - `notes/directional/product-vision.md`
 - `docs/shared-tools.md`
@@ -54,12 +55,20 @@ Companions:
 - These are execution surfaces, not knowledge layers.
 - Authorization, revocation, scope, and audit should stay independent from memory writes and domain promotion.
 
+## External fallback providers
+
+- When the local domain layer is too thin, RemoteLab may query a replaceable external solution provider for baseline context or workflow ideas.
+- That provider does not become the `domain layer`; it stays a capability-side adapter that returns temporary evidence for the current task.
+- External provider output should stay attributable to the source/provider and should not auto-promote into shared domain knowledge or private user memory.
+- Provider-specific auth, APIs, prompt shaping, and response parsing should stay inside the adapter boundary so a temporary choice such as `evomap` does not become long-term product architecture.
+
 ## Near-term implementation bias
 
 - Do not overbuild migration, marketplace packaging, or a full hosted account system first.
 - Do keep data cleanly separated now so migration remains possible later.
 - Reuse one common connector surface across users instead of cloning tool logic per instance.
 - Let the domain layer begin as a retrievable knowledge folder before designing a heavier distribution system.
+- Treat external search or solution platforms as swappable fallback providers rather than as the canonical home for shared domain knowledge.
 - Keep secrets and tokens out of user memory and out of shared domain notes.
 
 ## Practical rules
