@@ -143,13 +143,15 @@ function isSessionCompleteAndReviewed(session) {
 }
 
 function renderSessionLabelHtml(session) {
-  if (!session?.label) return "";
-  const labelId = session.label;
+  const labelId = session?.label || null;
   const labelDefs = Array.isArray(window._sessionLabelDefs) ? window._sessionLabelDefs : [];
+  if (!labelId) {
+    return `<span class="session-label-badge session-label-empty" data-session-id="${session?.id || ""}" title="Set label">◇ label</span>`;
+  }
   const def = labelDefs.find((l) => l.id === labelId);
   const name = def ? def.name : labelId;
   const color = def ? def.color : "var(--text-muted)";
-  return `<span class="session-label-badge" style="color:${esc(color)}" title="${esc(name)}">◆ ${esc(name)}</span>`;
+  return `<span class="session-label-badge" data-session-id="${session?.id || ""}" style="color:${esc(color)}" title="${esc(name)}">◆ ${esc(name)}</span>`;
 }
 
 function buildSessionMetaParts(session) {
@@ -238,7 +240,6 @@ function createActiveSessionItem(session) {
       ${metaHtml ? `<div class="session-item-meta">${metaHtml}</div>` : ""}
     </div>
     <div class="session-item-actions">
-      <button class="session-action-btn label-btn" type="button" title="Label" aria-label="Label" data-id="${session.id}">◆</button>
       <button class="session-action-btn pin${session.pinned ? " pinned" : ""}" type="button" title="${pinTitle}" aria-label="${pinTitle}" data-id="${session.id}">${renderUiIcon(session.pinned ? "pinned" : "pin")}</button>
       <button class="session-action-btn rename" type="button" title="${esc(t("action.rename"))}" aria-label="${esc(t("action.rename"))}" data-id="${session.id}">${renderUiIcon("edit")}</button>
       <button class="session-action-btn archive" type="button" title="${esc(t("action.archive"))}" aria-label="${esc(t("action.archive"))}" data-id="${session.id}">${renderUiIcon("archive")}</button>
@@ -267,10 +268,14 @@ function createActiveSessionItem(session) {
     dispatchAction({ action: "archive", sessionId: session.id });
   });
 
-  div.querySelector(".label-btn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    showLabelPicker(e.target, session);
-  });
+  // Label badge click → open label picker
+  const labelBadge = div.querySelector(".session-label-badge");
+  if (labelBadge) {
+    labelBadge.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showLabelPicker(e.target, session);
+    });
+  }
 
   return div;
 }
