@@ -15,6 +15,13 @@ interface OutboundSendPayload {
   text?: string;
   inReplyTo?: string;
   references?: string;
+  attachments?: OutboundAttachmentPayload[];
+}
+
+interface OutboundAttachmentPayload {
+  filename?: string;
+  contentType?: string;
+  contentBase64?: string;
 }
 
 function trimString(value: unknown): string {
@@ -104,6 +111,14 @@ function base64Utf8(value: string): string {
   return btoa(binary).replace(/(.{76})/g, '$1\r\n').trim();
 }
 
+function wrapBase64(value: string): string {
+  return trimString(value).replace(/\s+/g, '').replace(/(.{76})/g, '$1\r\n').trim();
+}
+
+function quotedHeaderParam(value: string): string {
+  return `"${String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 function base64FromArrayBuffer(value: ArrayBuffer): string {
   const bytes = new Uint8Array(value);
   let binary = '';
@@ -163,6 +178,78 @@ function buildPlainTextMime({
   return `${headers.join('\r\n')}\r\n\r\n${base64Utf8(text)}\r\n`;
 }
 
+function normalizeOutboundAttachments(value: OutboundAttachmentPayload[] | undefined): Array<{ filename: string; contentType: string; contentBase64: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => ({
+      filename: trimString(entry?.filename) || 'attachment.bin',
+      contentType: trimString(entry?.contentType) || 'application/octet-stream',
+      contentBase64: wrapBase64(entry?.contentBase64 || ''),
+    }))
+    .filter((entry) => entry.contentBase64);
+}
+
+function buildMultipartMime({
+  fromAddress,
+  recipient,
+  subject,
+  text,
+  inReplyTo,
+  references,
+  messageId,
+  attachments,
+}: {
+  fromAddress: string;
+  recipient: string;
+  subject: string;
+  text: string;
+  inReplyTo?: string;
+  references?: string;
+  messageId: string;
+  attachments: Array<{ filename: string; contentType: string; contentBase64: string }>;
+}): string {
+  const boundary = `remotelab-mixed-${crypto.randomUUID()}`;
+  const headers = [
+    `From: ${fromAddress}`,
+    `To: ${recipient}`,
+    `Subject: ${headerValue(subject)}`,
+    `Date: ${new Date().toUTCString()}`,
+    `Message-ID: ${messageId}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary=${quotedHeaderParam(boundary)}`,
+  ];
+  if (trimString(inReplyTo)) {
+    headers.push(`In-Reply-To: ${trimString(inReplyTo)}`);
+  }
+  if (trimString(references)) {
+    headers.push(`References: ${trimString(references)}`);
+  } else if (trimString(inReplyTo)) {
+    headers.push(`References: ${trimString(inReplyTo)}`);
+  }
+
+  const parts = [
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    base64Utf8(text),
+  ];
+
+  for (const attachment of attachments) {
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${attachment.contentType}; name=${quotedHeaderParam(attachment.filename)}`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename=${quotedHeaderParam(attachment.filename)}`,
+      '',
+      attachment.contentBase64,
+    );
+  }
+
+  parts.push(`--${boundary}--`, '');
+  return `${headers.join('\r\n')}\r\n\r\n${parts.join('\r\n')}\r\n`;
+}
+
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,
@@ -204,7 +291,8 @@ async function handleOutboundSend(request: Request, env: Env): Promise<Response>
   const text = trimString(payload.text);
   const inReplyTo = trimString(payload.inReplyTo);
   const references = trimString(payload.references) || inReplyTo;
-  const useRawMimeReply = Boolean(inReplyTo || references || !subject);
+  const attachments = normalizeOutboundAttachments(payload.attachments);
+  const useRawMimeReply = Boolean(inReplyTo || references || !subject || attachments.length > 0);
 
   if (!sender) {
     return jsonResponse({ error: 'A sender address is required' }, 400);
@@ -227,15 +315,26 @@ async function handleOutboundSend(request: Request, env: Env): Promise<Response>
   try {
     if (useRawMimeReply) {
       for (const recipient of recipients) {
-        const rawMime = buildPlainTextMime({
-          fromAddress: sender,
-          recipient,
-          subject,
-          text,
-          inReplyTo,
-          references,
-          messageId: generatedMessageId,
-        });
+        const rawMime = attachments.length > 0
+          ? buildMultipartMime({
+            fromAddress: sender,
+            recipient,
+            subject,
+            text,
+            inReplyTo,
+            references,
+            messageId: generatedMessageId,
+            attachments,
+          })
+          : buildPlainTextMime({
+            fromAddress: sender,
+            recipient,
+            subject,
+            text,
+            inReplyTo,
+            references,
+            messageId: generatedMessageId,
+          });
         await env.EMAIL.send(new EmailMessage(sender, recipient, rawMime));
       }
     } else {
