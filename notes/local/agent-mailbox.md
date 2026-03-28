@@ -64,7 +64,9 @@ The CLI supports:
 Recommended low-cost outbound path:
 
 - use `remotelab mail send --to ... --subject ... --text ...` as the stable agent-facing send entry
-- prefer `remotelab mail outbound configure-resend-api` for arbitrary public recipients on a custom sender domain
+- new mailbox roots default to `resend_api`, so exporting `RESEND_API_KEY` is enough for many instances to start sending immediately with the mailbox identity as `from`
+- prefer `remotelab mail outbound configure-resend-api` when you want to pin sender details explicitly for arbitrary public recipients on a custom sender domain
+- use `remotelab mail outbound status` to confirm whether the default low-cost route is ready or still missing setup
 - keep `configure-cloudflare-worker` for verified internal Email Routing destinations and `configure-apple-mail` as a local fallback path
 
 Queue layout:
@@ -116,7 +118,7 @@ Key design choices:
 - On this machine, the Cloudflare Email Routing API does not accept the OAuth token from `wrangler login`; use `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_GLOBAL_API_KEY`/`CLOUDFLARE_API_KEY` plus `CLOUDFLARE_EMAIL`.
 - `node scripts/agent-mail-cloudflare-routing.mjs status --live` prints the desired and live Cloudflare state, `sync` can push the routable shape, and `probe --address <email>` does a live SMTP RCPT check against the domain MX records.
 - Delivery state is written back into the mailbox item, so `approved/` items can show `processing_for_reply`, `reply_sent`, or `reply_failed`.
-- The preferred outbound path is the Cloudflare Worker fetch endpoint backed by Cloudflare `send_email` for verified internal destinations, with `resend_api` as the lowest-friction custom-domain option for arbitrary external recipients and `apple_mail` still available for local fallback testing.
+- The default outbound path is now `resend_api` for the lowest-friction public-internet delivery path, while the Cloudflare Worker fetch endpoint remains useful for verified internal destinations and `apple_mail` stays available for local fallback testing.
 - The preferred inbound path is Cloudflare Email Routing -> thin Worker ingress -> local mailbox bridge -> local agent-mail-worker, so provider logic stays thin and business logic stays in RemoteLab-owned code.
 
 ## Public ingress architecture configured on this machine

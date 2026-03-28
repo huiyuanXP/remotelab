@@ -118,6 +118,8 @@ This keeps Cloudflare on inbound routing while delegating real outbound delivery
 
 Once the local mailbox outbound config is set, the stable agent-facing entry point is:
 
+New mailbox roots now default outbound delivery to `resend_api`. If `RESEND_API_KEY` is already present and the mailbox identity has the sender address you want, `remotelab mail send ...` works without extra provider setup. If Resend is not configured yet, the command returns a clear setup hint and still honors an explicitly configured fallback provider from `outbound.json`.
+
 ```bash
 remotelab mail send --to someone@example.com --subject "RemoteLab update" --text "Hello from RemoteLab"
 ```
@@ -134,6 +136,12 @@ Provider setup examples:
 ```bash
 remotelab mail outbound configure-resend-api --from agent@example.com --api-key-env RESEND_API_KEY
 remotelab mail outbound configure-cloudflare-worker --from agent@example.com --worker-base-url https://remotelab-email-worker.example.workers.dev
+```
+
+Quick status check:
+
+```bash
+remotelab mail outbound status
 ```
 
 ## Success state
