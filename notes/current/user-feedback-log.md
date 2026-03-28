@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-28 — separate knowledge layers from shared capability connectors even in the single-machine phase
+
+- Source: direct product architecture discussion about domain reuse, user-private memory, and early connector strategy
+- User slice: owner/operator defining the next reusable abstraction layer for RemoteLab itself
+- Observed friction or ask: the team needs a simpler product frame for reusable assets without prematurely over-designing migration, marketplace packaging, or a full hosted account system; shared capabilities, domain knowledge, and user-private context were at risk of being mixed into one layer.
+- Signal: the early architecture should separate a shared base agent, a retrievable shared domain layer, and a private user layer, while treating email/calendar/IM/docs-style integrations as a separate common connector surface with per-user configuration and permissions.
+- Product implication: keep the first version simple — one reusable toolchain, a clean on-disk location for domain assets, private user context by default, and no automatic promotion of private case material into shared knowledge.
+- Promote to: `notes/current/knowledge-layers-and-connectors.md`, `notes/directional/product-vision.md`, `notes/current/product-mainline.md`
+- Follow-up: define the minimum retrieval path for domain packs and the minimum connector/auth shape without committing yet to a full marketplace or migration platform
+
 ### 2026-03-27 — background turn-completion checks should stay collapsed by default
 
 - Source: direct product feedback during mobile transcript review

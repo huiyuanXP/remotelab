@@ -9,6 +9,7 @@ Execution companions:
 - `notes/current/session-main-flow-next-push.md`
 - `notes/current/session-first-workflow-surfaces.md`
 - `notes/current/session-first-product-contraction.md`
+- `notes/current/knowledge-layers-and-connectors.md`
 
 Evidence log: `notes/current/user-feedback-log.md`
 
@@ -24,6 +25,7 @@ Evidence log: `notes/current/user-feedback-log.md`
 - Use onboarding, support, and product-review conversations as product discovery, not just as one-off troubleshooting.
 - Optimize for one concrete automation win: take one recurring digital chore from a vague description to a trusted result on a real machine.
 - Let repeated user evidence outrank internally elegant abstractions when the two conflict.
+- Keep knowledge layering and execution connectors separate: shared toolchains and connectors may stay common, while domain knowledge stays retrievable and user context stays private.
 - Prefer owner sessions plus read-only share snapshots over product-facing `App` / `User` abstractions during the current simplification phase.
 - Treat multi-session orchestration, context carry, reusable packaging, and other higher-order capabilities as support layers unless user evidence clearly pulls them forward again.
 
@@ -47,6 +49,7 @@ Evidence log: `notes/current/user-feedback-log.md`
 ## Shared surfaces
 
 - `notes/current/user-feedback-log.md` — running evidence log
+- `notes/current/knowledge-layers-and-connectors.md` — current working shape for base/domain/user knowledge plus shared connectors
 - `notes/directional/product-vision.md` — durable product judgments and target-user framing
 - `README.md` / `README.zh.md` — user-facing product promise
 - `notes/current/session-main-flow-next-push.md` — near-term capability push

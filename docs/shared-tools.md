@@ -8,6 +8,12 @@ RemoteLab can now load lightweight shared tool definitions from a common directo
 - keep per-instance enablement and local defaults isolated
 - keep the tool definition human-readable with Markdown first
 
+## Scope boundary
+
+- Shared tools are the reusable execution surface, not the shared knowledge layer.
+- Keep per-user secrets, credentials, scopes, and account bindings local to that instance or overlay.
+- Keep domain knowledge and user-private memory in their own retrieval layers instead of encoding them into shared tool cards.
+
 ## Paths
 
 - shared tool library: `~/.remotelab/shared-tools/`

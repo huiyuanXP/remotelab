@@ -25,6 +25,7 @@ Current examples:
 - `current/model-sovereign-control-architecture.md`
 - `current/session-control-state-phase1.md`
 - `current/product-mainline.md`
+- `current/knowledge-layers-and-connectors.md`
 - `current/self-hosting-dev-restarts.md`
 - `current/user-feedback-log.md`
 
