@@ -2,7 +2,7 @@
 import { join } from 'path';
 
 const http = await import('http');
-const [{ CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR }, { handleRequest }, apiRequestLog, ws, sessionManager, triggers, { ensureDir }, sessionLabels, taskManager, scheduler] = await Promise.all([
+const [{ CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR }, { handleRequest }, apiRequestLog, ws, sessionManager, triggers, { ensureDir }, sessionLabels] = await Promise.all([
   import('./lib/config.mjs'),
   import('./chat/router.mjs'),
   import('./chat/api-request-log.mjs'),
@@ -11,8 +11,6 @@ const [{ CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR }, { handleReques
   import('./chat/triggers.mjs'),
   import('./chat/fs-utils.mjs'),
   import('./chat/session-labels.mjs'),
-  import('./chat/task-manager.mjs'),
-  import('./chat/scheduler.mjs'),
 ]);
 
 for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
@@ -20,10 +18,6 @@ for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
 }
 
 await apiRequestLog.initApiRequestLog();
-taskManager.initTaskManager(null);
-scheduler.startScheduler((schedule) => {
-  console.log(`[Scheduler] Triggered schedule "${schedule.id}" — no workflow executor wired yet`);
-});
 
 const server = http.createServer((req, res) => {
   const requestLog = apiRequestLog.startApiRequestLog(req, res);
