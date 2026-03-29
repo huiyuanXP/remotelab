@@ -282,8 +282,7 @@ function createActiveSessionItem(session) {
 
 // ---- Label picker dropdown ----
 function showLabelPicker(anchor, session) {
-  const existing = document.querySelector(".label-picker-dropdown");
-  if (existing) existing.remove();
+  document.querySelectorAll(".label-picker-dropdown").forEach((node) => node.remove());
 
   const labels = window._sessionLabelDefs || [];
   const dropdown = document.createElement("div");
@@ -302,6 +301,12 @@ function showLabelPicker(anchor, session) {
   dropdown.style.top = (rect.bottom + 2) + "px";
   dropdown.style.left = rect.left + "px";
   dropdown.style.zIndex = "9999";
+  dropdown.style.background = "var(--bg-elevated, var(--bg-secondary, #ffffff))";
+  dropdown.style.color = "var(--text, #111827)";
+  dropdown.style.border = "1px solid var(--border, rgba(15, 23, 42, 0.12))";
+  dropdown.style.borderRadius = "10px";
+  dropdown.style.boxShadow = "0 16px 40px rgba(15, 23, 42, 0.18)";
+  dropdown.style.overflow = "hidden";
   document.body.appendChild(dropdown);
 
   dropdown.addEventListener("click", async (e) => {
