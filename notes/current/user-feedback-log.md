@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-29 — capability accumulation should happen through selective post-task review, not prompt bloat inside the work step
+
+- Source: direct product discussion about how RemoteLab should get better through repeated use, with drawing/image-generation used as a concrete example
+- User slice: owner/operator shaping the product's long-term learning loop rather than a one-off prompt tweak
+- Observed friction or ask: if the system solves a generally reusable problem, it should learn a reusable strategy from that success; stuffing more standing instructions directly into the drawing/generation prompt feels like the wrong mechanism because it diffuses model attention, is easy to forget, and mixes execution with abstraction.
+- Signal: reusable capability accumulation should primarily happen in a bounded post-task or post-turn review layer that decides whether a strong-signal lesson is worth abstracting into durable memory, a workflow pattern, or a reusable skill candidate; execution-time prompts should stay focused on the immediate job.
+- Product implication: keep the generation step narrow and task-focused; let end-of-turn review handle “did we learn a reusable pattern?”, “is this durable or just case-specific?”, and “where should it live?”; prefer selective promotion with validation over automatic prompt accretion.
+- Promote to: `notes/current/model-autonomy-control-loop.md`, `notes/current/model-sovereign-control-architecture.md`, `notes/current/knowledge-layers-and-connectors.md`
+- Follow-up: when the control loop grows beyond reply self-check and task-card refresh, add a small promotion candidate path that can classify a lesson as session continuity, private user memory, shared domain pattern, or reusable skill draft without auto-promoting weak or transient observations.
+
 ### 2026-03-28 — use isolated external solution providers as fallback, not product truth
 
 - Source: direct product architecture discussion about how to cover unfamiliar domains without pretending one temporary provider is the long-term answer
