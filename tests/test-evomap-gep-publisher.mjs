@@ -9,6 +9,7 @@ import {
   buildBuiltinEvomapRecipeProfile,
   computeEvomapAssetId,
   loadEvomapNodeConfig,
+  runEvomapRecipePublishWatch,
   runEvomapRecipePublishWorkflow,
   saveEvomapNodeConfig,
 } from '../lib/evomap-gep-publisher.mjs';
@@ -28,7 +29,7 @@ const sameAssetDifferentModel = {
   ...baseAsset,
   model_name: 'claude-sonnet-4',
 };
-assert.equal(computeEvomapAssetId(baseAsset), computeEvomapAssetId(sameAssetDifferentModel));
+assert.notEqual(computeEvomapAssetId(baseAsset), computeEvomapAssetId(sameAssetDifferentModel));
 
 const profile = buildBuiltinEvomapRecipeProfile('hotel-housekeeping-analysis', {
   versionTag: 'hackathon-v1',
@@ -42,6 +43,7 @@ assert.equal(profile.recipe.price_per_execution, 7);
 assert.equal(profile.recipe.max_concurrent, 2);
 assert.equal(profile.recipe.genes[0].gene_asset_id, profile.gene.asset_id);
 assert.ok(profile.capsule.content.includes('Privacy rule:'));
+assert.equal('validation' in profile.gene, false);
 
 const envelope = buildA2AMessageEnvelope('publish', 'node_demo', { assets: [] }, {
   messageId: 'msg_demo',
@@ -69,6 +71,19 @@ try {
   const requests = [];
   const fetchImpl = async (url, init = {}) => {
     requests.push({ url: String(url), init });
+    if (String(url).endsWith('/a2a/validate')) {
+      return new Response(JSON.stringify({
+        payload: {
+          valid: true,
+          computed_assets: [
+            { type: 'Gene', asset_id: profile.gene.asset_id },
+            { type: 'Capsule', asset_id: profile.capsule.asset_id },
+          ],
+          computed_bundle_id: 'bundle_123',
+          estimated_fee: 0,
+        },
+      }), { status: 200 });
+    }
     if (String(url).endsWith('/a2a/publish')) {
       return new Response(JSON.stringify({ status: 'acknowledged' }), { status: 200 });
     }
@@ -88,9 +103,58 @@ try {
   });
   assert.equal(workflow.dryRun, false);
   assert.equal(workflow.node.nodeId, 'node_saved');
+  assert.equal(workflow.validation.valid, true);
+  assert.equal(workflow.validation.bundleId, 'bundle_123');
   assert.equal(workflow.bundle.publishStatus, 200);
   assert.equal(workflow.recipe.recipeId, 'recipe_123');
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 4);
+
+  let publishAttempts = 0;
+  const watchRequests = [];
+  const watchFetchImpl = async (url, init = {}) => {
+    watchRequests.push({ url: String(url), init });
+    if (String(url).endsWith('/a2a/validate')) {
+      return new Response(JSON.stringify({
+        payload: {
+          valid: true,
+          computed_assets: [
+            { type: 'Gene', asset_id: 'sha256:gene_watch' },
+            { type: 'Capsule', asset_id: 'sha256:capsule_watch' },
+          ],
+          computed_bundle_id: 'bundle_watch',
+          estimated_fee: 0,
+        },
+      }), { status: 200 });
+    }
+    if (String(url).endsWith('/a2a/publish')) {
+      publishAttempts += 1;
+      if (publishAttempts === 1) {
+        return new Response(JSON.stringify({ error: 'server_busy', retry_after_ms: 1 }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ payload: { decision: 'quarantine', bundle_id: 'bundle_watch' } }), { status: 200 });
+    }
+    if (String(url).endsWith('/a2a/recipe')) {
+      return new Response(JSON.stringify({ recipe: { id: 'recipe_watch', status: 'draft' } }), { status: 200 });
+    }
+    if (String(url).endsWith('/a2a/recipe/recipe_watch/publish')) {
+      return new Response(JSON.stringify({ recipe: { id: 'recipe_watch', status: 'published' } }), { status: 200 });
+    }
+    throw new Error(`unexpected URL: ${url}`);
+  };
+
+  const watched = await runEvomapRecipePublishWatch({
+    profileId: 'hotel-housekeeping-analysis',
+    versionTag: 'watch-v1',
+    fetchImpl: watchFetchImpl,
+    publishAttempts: 2,
+    attemptIntervalMs: 1,
+    attemptJitterMs: 0,
+    retries: 0,
+  });
+  assert.equal(watched.watch.attemptsUsed, 2);
+  assert.equal(watched.watch.lastError.error, 'server_busy');
+  assert.equal(watched.recipe.recipeId, 'recipe_watch');
+  assert.equal(watchRequests.filter((entry) => entry.url.endsWith('/a2a/validate')).length, 1);
 } finally {
   process.env.HOME = originalHome;
   rmSync(tempHome, { recursive: true, force: true });
