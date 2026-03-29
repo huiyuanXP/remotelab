@@ -196,9 +196,13 @@ async function startServer({ home, port, promptFile, storagePort }) {
       SECURE_COOKIES: '0',
       REMOTELAB_FAKE_PROMPT_FILE: promptFile,
       REMOTELAB_ASSET_STORAGE_BASE_URL: `http://127.0.0.1:${storagePort}/bucket`,
+      REMOTELAB_ASSET_STORAGE_PUBLIC_BASE_URL: '',
+      REMOTELAB_ASSET_STORAGE_PROVIDER: 's3',
       REMOTELAB_ASSET_STORAGE_REGION: 'auto',
       REMOTELAB_ASSET_STORAGE_ACCESS_KEY_ID: 'test-access-key',
       REMOTELAB_ASSET_STORAGE_SECRET_ACCESS_KEY: 'test-secret-key',
+      REMOTELAB_ASSET_STORAGE_PRESIGN_TTL_SECONDS: '3600',
+      REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
