@@ -117,7 +117,7 @@ if (pathname === '/m/install' && req.method === 'GET') {
   let installHtml;
   const pageBuildInfo = await getPageBuildInfo();
   try { installHtml = await readFile(mobileInstallTemplatePath, 'utf8'); } catch { installHtml = '<h1>Mobile install template missing</h1>'; }
-  const manifestHref = `/manifest.install.json?h=${encodeURIComponent(currentHandoffToken)}&v=${encodeURIComponent(pageBuildInfo.assetVersion)}`;
+  const manifestHref = `../manifest.install.json?h=${encodeURIComponent(currentHandoffToken)}&v=${encodeURIComponent(pageBuildInfo.assetVersion)}`;
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.writeHead(200, buildHeaders({
     'Content-Type': 'text/html; charset=utf-8',

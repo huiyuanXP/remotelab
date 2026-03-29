@@ -1201,8 +1201,8 @@ export async function handleRequest(req, res) {
       const manifest = {
         ...manifestTemplate,
         start_url: handoffToken
-          ? `/m/install?h=${encodeURIComponent(handoffToken)}`
-          : '/m/install',
+          ? `m/install?h=${encodeURIComponent(handoffToken)}`
+          : 'm/install',
       };
       writeCachedResponse(req, res, {
         statusCode: 200,

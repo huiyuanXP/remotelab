@@ -392,6 +392,14 @@ async function main() {
     assert.ok(splitAsset.headers.etag, 'split asset should expose an ETag');
     assert.match(splitAsset.text, /const buildInfo = window\.__REMOTELAB_BUILD__ \|\| \{\};/);
 
+    const initAsset = await request(port, 'GET', '/chat/init.js');
+    assert.equal(initAsset.status, 200, 'chat init asset should load');
+    assert.match(
+      initAsset.text,
+      /window\.location\.replace\("m\/install\?source=auto"\);/,
+      'mobile install redirects should stay relative to the current product base path',
+    );
+
     const sessionHttpHelpersAsset = await request(port, 'GET', '/chat/session-http-helpers.js');
     assert.equal(sessionHttpHelpersAsset.status, 200, 'session http helpers asset should load');
     assert.match(sessionHttpHelpersAsset.text, /function enhanceRenderedContentLinks\(/);
@@ -594,11 +602,11 @@ async function main() {
     const voiceInputAsset = await request(port, 'GET', '/chat/voice-input.js');
     assert.equal(voiceInputAsset.status, 404, 'removed voice input asset should no longer be served');
 
-    const initAsset = await request(port, 'GET', '/chat/init.js');
-    assert.equal(initAsset.status, 200, 'init asset should load');
-    assert.match(initAsset.text, /typeof getBootstrapAuthInfo === "function"/);
-    assert.match(initAsset.text, /loadInlineTools\(\{ skipModelLoad: true \}\)/);
-    assert.match(initAsset.text, /bootstrapViaHttp\(\{ deferOwnerRestore: true \}\)/);
+    const initAssetReload = await request(port, 'GET', '/chat/init.js');
+    assert.equal(initAssetReload.status, 200, 'init asset should load');
+    assert.match(initAssetReload.text, /typeof getBootstrapAuthInfo === "function"/);
+    assert.match(initAssetReload.text, /loadInlineTools\(\{ skipModelLoad: true \}\)/);
+    assert.match(initAssetReload.text, /bootstrapViaHttp\(\{ deferOwnerRestore: true \}\)/);
 
     const tokenLogin = await request(
       port,

@@ -166,8 +166,18 @@ async function main() {
     assert.match(installPage.text, /window\.__REMOTELAB_BOOTSTRAP__ = /, 'install page should inline bootstrap data');
     assert.match(
       installPage.text,
-      new RegExp(`/manifest\\.install\\.json\\?h=${handoffToken}`),
+      new RegExp(`\.\./manifest\\.install\\.json\\?h=${handoffToken}`),
       'install page should point installable browsers at the handoff-aware manifest',
+    );
+    assert.match(
+      installPage.text,
+      /\.\.\/api\/install\/handoff\/redeem/,
+      'install page should redeem the handoff through a product-root relative API path',
+    );
+    assert.match(
+      installPage.text,
+      /\.\.\/sw\.js\?v=/,
+      'install page should register the service worker through a product-root relative path',
     );
 
     const installManifest = await request(port, 'GET', `/manifest.install.json?h=${encodeURIComponent(handoffToken)}`);
@@ -175,7 +185,7 @@ async function main() {
     const installManifestJson = JSON.parse(installManifest.text);
     assert.equal(
       installManifestJson.start_url,
-      `/m/install?h=${handoffToken}`,
+      `m/install?h=${handoffToken}`,
       'install manifest should boot back into the install bridge with the handoff token',
     );
 

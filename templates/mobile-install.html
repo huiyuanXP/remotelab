@@ -10,9 +10,9 @@
   <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)">
   <meta name="remotelab-build" content="{{BUILD_TITLE}}">
   <link rel="manifest" href="{{MANIFEST_HREF}}">
-  <link rel="icon" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
-  <link rel="icon" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <link rel="icon" href="../favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+  <link rel="icon" href="../icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png?v={{ASSET_VERSION}}">
   <title>{{PAGE_TITLE}}</title>
   <style>
     :root {
@@ -439,7 +439,7 @@
         if (!('serviceWorker' in navigator)) return null;
         try {
           const registration = await navigator.serviceWorker.register(
-            `/sw.js?v=${encodeURIComponent(buildInfo.assetVersion || 'dev')}`,
+            `../sw.js?v=${encodeURIComponent(buildInfo.assetVersion || 'dev')}`,
             { updateViaCache: 'none' },
           );
           await registration.update().catch(function ignoreUpdateError() {});
@@ -453,7 +453,7 @@
         try {
           localStorage.setItem(browserSkipKey, String(Date.now() + browserSkipMs));
         } catch {}
-        window.location.assign('/?skipInstall=1');
+        window.location.assign('../?skipInstall=1');
       }
 
       function showGuide() {
@@ -538,7 +538,7 @@
         primaryBtn.classList.remove('hidden');
         primaryBtn.textContent = text.redeemErrorPrimary;
         primaryBtn.onclick = function goToLogin() {
-          window.location.assign('/login');
+          window.location.assign('../login');
         };
         secondaryBtn.classList.remove('hidden');
         secondaryBtn.textContent = text.redeemErrorSecondary;
@@ -557,7 +557,7 @@
         secondaryBtn.classList.add('hidden');
 
         try {
-          const response = await fetch('/api/install/handoff/redeem', {
+          const response = await fetch('../api/install/handoff/redeem', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: handoffToken }),
@@ -568,7 +568,7 @@
           try {
             localStorage.setItem(installNotificationKey, '1');
           } catch {}
-          window.location.replace('/');
+          window.location.replace('../');
         } catch {
           showRedeemError();
         }

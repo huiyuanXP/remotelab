@@ -87,6 +87,7 @@ function hasRecentInstallSkip() {
 }
 
 function shouldOpenMobileInstallFlow(authInfo) {
+  const pathname = String(window.location?.pathname || "");
   return !!(
     authInfo
     && authInfo.role === "owner"
@@ -94,7 +95,7 @@ function shouldOpenMobileInstallFlow(authInfo) {
     && !shareSnapshotMode
     && isMobileInstallEligibleDevice()
     && !isStandaloneDisplayMode()
-    && window.location.pathname !== "/m/install"
+    && !pathname.endsWith("/m/install")
     && !hasRecentInstallSkip()
   );
 }
@@ -149,7 +150,7 @@ async function initApp() {
   }
 
   if (shouldOpenMobileInstallFlow(authInfo)) {
-    window.location.replace("/m/install?source=auto");
+    window.location.replace("m/install?source=auto");
     return;
   }
 
