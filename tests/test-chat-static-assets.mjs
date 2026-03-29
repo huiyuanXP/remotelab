@@ -494,6 +494,11 @@ async function main() {
       'public, max-age=31536000, immutable',
       'versioned chat stylesheet should be immutable cache hits',
     );
+    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-base\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-sidebar\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-messages\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-input\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-responsive\.css\?v=test-build"\);/);
 
     const versionedChatBaseStylesheet = await request(port, 'GET', '/chat/chat-base.css?v=test-build');
     assert.equal(versionedChatBaseStylesheet.status, 200, 'versioned split chat stylesheet should load');

@@ -712,6 +712,79 @@ function hasVersionedAssetTag(query = {}) {
   return getSingleQueryValue(query?.v).trim().length > 0;
 }
 
+function isAbsoluteAssetUrl(value = '') {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('//')) return true;
+  return /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+}
+
+function appendVersionTagToAssetUrl(assetUrl, versionTag) {
+  const normalizedUrl = String(assetUrl || '').trim();
+  const normalizedTag = String(versionTag || '').trim();
+  if (!normalizedUrl || !normalizedTag || isAbsoluteAssetUrl(normalizedUrl)) {
+    return normalizedUrl;
+  }
+
+  const hashIndex = normalizedUrl.indexOf('#');
+  const baseUrl = hashIndex >= 0 ? normalizedUrl.slice(0, hashIndex) : normalizedUrl;
+  const hash = hashIndex >= 0 ? normalizedUrl.slice(hashIndex) : '';
+  if (!baseUrl || /(?:^|[?&])v=/.test(baseUrl)) {
+    return normalizedUrl;
+  }
+
+  const separator = baseUrl.includes('?') ? '&' : '?';
+  return `${baseUrl}${separator}v=${encodeURIComponent(normalizedTag)}${hash}`;
+}
+
+function findQuotedImportUrl(line) {
+  const singleQuoteIndex = line.indexOf("'");
+  const doubleQuoteIndex = line.indexOf('"');
+  if (singleQuoteIndex < 0 && doubleQuoteIndex < 0) return null;
+
+  const useSingleQuote = singleQuoteIndex >= 0 && (doubleQuoteIndex < 0 || singleQuoteIndex < doubleQuoteIndex);
+  const startIndex = useSingleQuote ? singleQuoteIndex : doubleQuoteIndex;
+  const quote = useSingleQuote ? "'" : '"';
+  const endIndex = line.indexOf(quote, startIndex + 1);
+  if (endIndex < 0) return null;
+
+  return {
+    startIndex,
+    endIndex,
+    url: line.slice(startIndex + 1, endIndex),
+  };
+}
+
+function rewriteCssImportUrls(content, versionTag) {
+  const normalizedTag = String(versionTag || '').trim();
+  if (!normalizedTag) return content;
+
+  const source = Buffer.isBuffer(content)
+    ? content.toString('utf8')
+    : String(content || '');
+  if (!source.includes('@import')) return content;
+
+  let changed = false;
+  const rewrittenSource = source
+    .split('\n')
+    .map((line) => {
+      if (!line.includes('@import')) return line;
+      const quotedImport = findQuotedImportUrl(line);
+      if (!quotedImport?.url) return line;
+
+      const versionedAssetUrl = appendVersionTagToAssetUrl(quotedImport.url, normalizedTag);
+      if (!versionedAssetUrl || versionedAssetUrl === quotedImport.url) {
+        return line;
+      }
+
+      changed = true;
+      return `${line.slice(0, quotedImport.startIndex + 1)}${versionedAssetUrl}${line.slice(quotedImport.endIndex)}`;
+    })
+    .join('\n');
+
+  return changed ? rewrittenSource : content;
+}
+
 async function resolveStaticAsset(pathname, query = {}) {
   if (!pathname.startsWith('/')) return null;
 
@@ -1101,7 +1174,11 @@ export async function handleRequest(req, res) {
   const staticAsset = await resolveStaticAsset(pathname, parsedUrl.query);
   if (staticAsset) {
     try {
-      const content = await readFile(staticAsset.filepath);
+      const versionTag = getSingleQueryValue(parsedUrl.query?.v).trim();
+      const content = rewriteCssImportUrls(
+        await readFile(staticAsset.filepath),
+        staticAsset.contentType.startsWith('text/css') ? versionTag : '',
+      );
       writeFileCached(req, res, staticAsset.contentType, content, {
         cacheControl: staticAsset.cacheControl,
       });
